@@ -122,6 +122,28 @@ async def set_channel(client: Client, message: Message):
     await update_user(user_id, {"channel_dump": userinfo.channel_dump})
     
     await m.edit(f"Le canal a été défini sur {channel_id}.")
+
+@Client.on_message(filters.private & filters.command("set_caption"))
+async def set_caption(client: Client, message: Message):
+    user_id = message.from_user.id
+    userinfo = await read_user(user_id)
+    
+    if not userinfo:
+        await message.reply_text("Vous devez d'abord démarrer avec /start.")
+        return
+    
+    if len(message.command) < 2:
+        await message.reply_text("Veuillez fournir un model: /set_caption [model]")
+        return
+    
+    caption = message.command[1]
+    m=await message.reply_text(
+        "Enregistrement en cours"
+    )
+    userinfo.channel_dump = {"caption": caption}
+    await update_user(user_id, {"channel_dump": userinfo.channel_dump})
+    
+    await m.edit(f"Le caption a été défini sur {caption}.")
     
 # -------------------------------------------------------------------------------------------------------------------------------------
 # Gestionnaire pour /auto

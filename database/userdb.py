@@ -158,3 +158,20 @@ async def create_new_user(user_id: int, username: str) -> User:
     )
     await create_user(user)
     return user
+
+async def get_all_users() -> List[User]:
+    """
+    Lit tous les utilisateurs de la base de données.
+    Retourne une liste d'objets User.
+    """
+    try:
+        users = []
+        async for user_data in users_collection.find():
+            users.append(User(**user_data))
+        return users
+    except ValidationError as e:
+        print(f"Validation error while finding users: {e}")
+        return []
+    except Exception as e:
+        print(f"Error finding users: {e}")
+        return []
