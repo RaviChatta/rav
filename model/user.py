@@ -64,7 +64,7 @@ class User(CreatedDate):
     thumb: Optional[str] = None
     auto: Optional[str] = None
     caption: Optional[str] = None
-    is_video: Optional[bool] = None
+    is_video: Optional[bool] = False
     channel_dump: Optional[Dict[str, str]] = None
     pending_points: Optional[int] = None
     unique_code: Optional[str] = None

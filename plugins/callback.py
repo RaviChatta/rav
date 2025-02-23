@@ -78,7 +78,7 @@ async def cb_handler(client, query: CallbackQuery):
     userinfo = await read_user(user_id)
     
     # --------debug callback----------------------------------------------------------------------------------------------------------
-    print(f"Callback received : {data}")
+    # print(f"Callback received : {data}")
     # ---------------------------------------------------------------------------------------------------------------------------------
 
     try:
@@ -253,23 +253,35 @@ async def cb_handler(client, query: CallbackQuery):
             )
             
         
-        elif data in ["connectChannel", "delchannel"]:
+        elif data in ["connectChannel", "delchannel", "upload_at"]:
             if data == "delchannel":
+                # Déconnecter le canal
                 userinfo.channel_dump = {}  
                 await update_user(user_id, {"channel_dump": userinfo.channel_dump})
-
-                caption = ("✅ Le canal a été déconnecté avec succès.")
+                caption = "✅ Le canal a été déconnecté avec succès."
                 await asyncio.sleep(3)  
 
-            caption = (
-                "LIER UN CANAL AU BOT\n"
-                "Cette fonctionalité vous permet de connecter un canal pour envoyer vos vidéos en ordre après le renommage.\n"
-                "Ajoutez le bot en tant qu'admin de votre canal, puis utilisez la commande `/set_channel [channel_id]` pour me connecter au canal.\n"
-                "Exemple : `/set_channel -1002175858655`\n\n"
-            )
-            userinfo = await read_user(user_id)
+            
 
+            else:
+                # Afficher les informations du canal
+                caption = (
+                    "LIER UN CANAL AU BOT\n"
+                    "Cette fonctionalité vous permet de connecter un canal pour envoyer vos vidéos en ordre après le renommage.\n"
+                    "Ajoutez le bot en tant qu'admin de votre canal, puis utilisez la commande `/set_channel [channel_id]` pour me connecter au canal.\n"
+                    "Exemple : `/set_channel -1002175858655`\n\n"
+                )
+
+            if data == "upload_at":
+                # Basculer entre vidéo et document
+                userinfo.is_video = not userinfo.is_video  # Inverser la valeur actuelle
+                await update_user(user_id, {"is_video": userinfo.is_video})
+                # Ne pas modifier le caption, seulement mettre à jour le bouton
+
+            # Mettre à jour les informations du canal
+            userinfo = await read_user(user_id)
             channelinfo = userinfo.channel_dump
+
             if channelinfo:
                 try:
                     channel = await client.get_chat(channelinfo["channel_id"])
@@ -289,6 +301,14 @@ async def cb_handler(client, query: CallbackQuery):
                 btn = InlineKeyboardMarkup([
                     [InlineKeyboardButton("Retour", callback_data="help")]
                 ])
+
+            # Ajouter le bouton toggle pour upload_at
+            btn.inline_keyboard.insert(0, [
+                InlineKeyboardButton(
+                    f"Upload en: {'Video' if userinfo.is_video else 'Document'}",
+                    callback_data="upload_at"
+                )
+            ])
             
         elif data == "premium":
             me = await client.get_me()
@@ -423,7 +443,7 @@ async def cb_handler(client, query: CallbackQuery):
         
         elif data == "process":
             caption = (
-                "Traitement en cours..."
+                "Traitement en cours...\n Vous serez signaler une fois la tache finis"
             )
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Retour", callback_data="myAccount")]

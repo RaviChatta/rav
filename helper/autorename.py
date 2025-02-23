@@ -218,8 +218,10 @@ async def process_file(queue_item: QueueItem, session, client, message, user, me
         new_file_path = Path(settings.TEMP_DIR) / new_file_name  
         metadata_file_path.rename(new_file_path)
 
+        is_video = user.is_video
+
         # Téléverser le fichier avec la légende formatée
-        uploaded_message = await upload_file(client, str(new_file_path), settings.CHANNEL_LOG, message, f"**{cap}**", user.thumb)
+        uploaded_message = await upload_file(client, str(new_file_path), settings.CHANNEL_LOG, message, f"**{cap}**", user.thumb, is_video)
         if not uploaded_message:
             await safe_reply(client, message, f"⚠️ Échec de l'upload du fichier {new_file_name}.")
             return
