@@ -203,60 +203,67 @@ async def handle_user_response(client: Client, message: Message):
 # -------------------------------------------------------------------------------------------------------------------------------------
         
 # -------------------------------------------------------------------------------------------------------------------------------------
+
+
+db_lock = asyncio.Lock()
+
 @Client.on_message(filters.private & (filters.document | filters.video | filters.photo))
 async def handle_incoming_file(client: Client, message: Message):
-    """
-    Gère les fichiers entrants et les ajoute à la file d'attente de l'utilisateur.
-    Vérifie que l'utilisateur a suffisamment de points avant d'ajouter un fichier.
-    """
+
     user_id = message.from_user.id
-    userinfo = await read_user(user_id)
     img = await get_user_profile_photo(client, user_id)
-    if not userinfo:
-        await message.reply("Vous devez d'abord démarrer avec /start.")
-        return
 
-    if userinfo.type.points < 1:
-        await message.reply_photo(
-            photo=img,
-            caption="Vous n'avez pas assez de points pour ajouter un fichier à la file d'attente. Vous pouvez obtenir plus de points en achetant un pack de points.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Premium", callback_data="premium")]])
-        )
-        return
+    async with db_lock:  
+        userinfo = await read_user(user_id)
+        if not userinfo:
+            await message.reply("Vous devez d'abord démarrer avec /start.")
+            return
 
-    if message.photo:
-        file = message.photo
+        if userinfo.type.points < 1:
+            await message.reply_photo(
+                photo=img,
+                caption="Vous n'avez pas assez de points pour ajouter un fichier à la file d'attente. Vous pouvez obtenir plus de points en achetant un pack de points.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Premium", callback_data="premium")]])
+            )
+            return
+
+        if message.photo:
+            file = message.photo
+            file_id = file.file_id
+            userinfo.thumb = file_id
+            await update_user(user_id, {"thumb": userinfo.thumb})
+            await message.reply("La photo a été enregistrée comme miniature.")
+            return
+
+        if message.document:
+            file = message.document
+        elif message.video:
+            file = message.video
+        elif message.audio:
+            file = message.audio
+        else:
+            await message.reply("Type de fichier non supporté.")
+            return
+
         file_id = file.file_id
-        userinfo.thumb = file_id
-        await update_user(user_id, {"thumb": userinfo.thumb})
-        await message.reply("La photo a été enregistrée comme miniature.")
-        return
+        file_name = getattr(file, "file_name", "unknown_file")
+        mimetype = getattr(file, "mime_type", "application/octet-stream")
 
-    if message.document:
-        file = message.document
-    elif message.video:
-        file = message.video
-    elif message.audio:
-        file = message.audio
-    else:
-        await message.reply("Type de fichier non supporté.")
-        return
+        # Vérifier si le fichier est déjà dans la file d'attente
+        if file_id in [item.file_id for item in userinfo.queue.files]:
+            await message.reply("Ce fichier est déjà dans la file d'attente.")
+            return
 
-    file_id = file.file_id
-    file_name = getattr(file, "file_name", "unknown_file")
-    mimetype = getattr(file, "mime_type", "application/octet-stream")
+        try:
+            # Déduire un point et mettre à jour l'utilisateur
+            userinfo.type.points -= 1
+            await update_user(user_id, {"type": userinfo.type.model_dump()})
 
-    if file_id in [item.file_id for item in userinfo.queue.files]:
-        await message.reply("Ce fichier est déjà dans la file d'attente.")
-        return
-
-    try:
-        userinfo.type.points -= 1
-        # await update_user(user_id, {"type": userinfo.type.model_dump()})
-
-        await add_file_to_user_queue(user_id, file_id, file_name, mimetype)
-        await message.reply(f"Fichier {file_name} ajouté à la file d'attente. Un point a été déduit.")
-    except Exception as e:
-        userinfo.type.points += 1
-        await update_user(user_id, {"type": userinfo.type.model_dump()})
-        await message.reply(f"❌ Erreur lors de l'ajout du fichier à la file d'attente. Votre point a été restitué. Erreur : {e}")
+            # Ajouter le fichier à la file d'attente
+            await add_file_to_user_queue(user_id, file_id, file_name, mimetype)
+            await message.reply(f"Fichier {file_name} ajouté à la file d'attente. Un point a été déduit.")
+        except Exception as e:
+            # En cas d'erreur, restaurer le point et informer l'utilisateur
+            userinfo.type.points += 1
+            await update_user(user_id, {"type": userinfo.type.model_dump()})
+            await message.reply(f"❌ Erreur lors de l'ajout du fichier à la file d'attente. Votre point a été restitué. Erreur : {e}")

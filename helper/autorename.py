@@ -17,7 +17,7 @@ from model.user import QueueItem
 from .extract_data import extract_season_episode, extract_quality
 from config import settings
 from helper.enti_nfsw import check_anti_nsfw
-from helper.utils import get_video_duration, progress_for_pyrogram
+from helper.utils import progress_for_pyrogram
 
 
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 Go
@@ -62,7 +62,7 @@ async def download_file(client, file_source, file_name, message=None):
     except Exception as e:
         return None
 
-async def upload_file(client, file_path, dest, message=None, thumb=None, is_video=False):
+async def upload_file(client, file_path, dest, message=None,caption=None, thumb=None, is_video=False):
 
     ud_type = "Téléversement..."
     download_file = None  
@@ -84,6 +84,7 @@ async def upload_file(client, file_path, dest, message=None, thumb=None, is_vide
         upload_message = await message.reply_text("**__ᴛᴇʟᴇ́versement...__**")
         upload_args = {
             "chat_id": chat_id,
+            "caption": caption,
             "file_name": os.path.basename(file_path),
             "progress": progress_for_pyrogram,
             "progress_args": (ud_type, upload_message, time.time())
@@ -169,7 +170,8 @@ async def apply_metadata(file_path: Path, metadata: Dict[str, str], output_path:
 
 async def process_file(queue_item: QueueItem, session, client, message, user, metadata_dict, temp_queue):
     file_path = None
-    metadata_file_path = None  
+    metadata_file_path = None
+    new_file_path = None  
 
     try:
         file_id = queue_item.file_id
@@ -177,25 +179,47 @@ async def process_file(queue_item: QueueItem, session, client, message, user, me
         unique_file_name = f"{uuid4()}_{file_name}" 
         file_path = Path(settings.TEMP_DIR) / unique_file_name  
 
+        # Télécharger le fichier
         downloaded_path = await download_file(client, file_id, str(file_path), message)
         if not downloaded_path:
             await safe_reply(client, message, f"⚠️ Échec du téléchargement du fichier {file_name}.")
             return
 
+        # Appliquer les métadonnées
         metadata_file_path = Path(settings.TEMP_DIR) / f"metadata_{unique_file_name}"
         await apply_metadata(file_path, metadata_dict, metadata_file_path)
 
+        # Extraire les informations (saison, épisode, qualité)
         season_episode = await extract_season_episode(file_name)
         quality = await extract_quality(file_name)
         file_extension = Path(file_name).suffix  
+
+        # Formater le nouveau nom de fichier
         new_file_name = user.auto.format(
             episode=season_episode[1] if season_episode else "",
             saison=season_episode[0] if season_episode else "",
             quality=quality
         ) + file_extension  
-        new_file_path = Path(settings.TEMP_DIR) / new_file_name
+
+        # Formater la légende (caption)
+        if user.caption:
+            cap = user.caption.format(
+                saison=season_episode[0] if season_episode else "N/A",
+                episode=season_episode[1] if season_episode else "N/A",
+                quality=quality,
+                titre=metadata_dict.get("title", "N/A"),
+                album=metadata_dict.get("album", "N/A"),
+                artiste=metadata_dict.get("artist", "N/A"),
+                genre=metadata_dict.get("genre", "N/A")
+            )
+        else:
+            cap = new_file_name
+
+        new_file_path = Path(settings.TEMP_DIR) / new_file_name  
         metadata_file_path.rename(new_file_path)
-        uploaded_message = await upload_file(client, str(new_file_path), settings.CHANNEL_LOG, message, user.thumb)
+
+        # Téléverser le fichier avec la légende formatée
+        uploaded_message = await upload_file(client, str(new_file_path), settings.CHANNEL_LOG, message, f"**{cap}**", user.thumb)
         if not uploaded_message:
             await safe_reply(client, message, f"⚠️ Échec de l'upload du fichier {new_file_name}.")
             return
@@ -208,13 +232,14 @@ async def process_file(queue_item: QueueItem, session, client, message, user, me
         }
 
     except Exception as e:
-        pass
+        await safe_reply(client, message, f"⚠️ Une erreur s'est produite lors du traitement du fichier : {e}")
     finally:
+        # Nettoyer les fichiers temporaires
         if file_path and file_path.exists():
             cleanup_temp_files(file_path)
         if metadata_file_path and metadata_file_path.exists():
             cleanup_temp_files(metadata_file_path)
-        if new_file_path and new_file_path.exists():
+        if new_file_path and new_file_path.exists():  
             cleanup_temp_files(new_file_path)
 
 async def process_user_queue(user_id: int, client: Client, update: Union[Message, CallbackQuery]):

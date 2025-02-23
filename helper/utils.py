@@ -10,23 +10,24 @@ from pyrogram import Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait
 import re
-from moviepy.editor import VideoFileClip
+# from moviepy.editor import VideoFileClip
 from shortzy import Shortzy
 
 
-PPROGRESS_BAR = """\n
+from pyrogram.errors import FloodWait
+import asyncio
+import time
+
+PROGRESS_BAR = """\n
 <b>» ᴛᴀɪʟʟᴇ</b> : {1} | {2}  
 <b>» ꜰᴀɪᴛ</b> : {0}%  
 <b>» ᴠɪᴛᴇssᴇ</b> : {3}/s  
 <b>» ᴇᴛᴀ</b> : {4}"""
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
-    """
-    Affiche la progression du téléchargement ou de l'upload.
-    """
     try:
         if total == 0:
-            percentage = 0  # Éviter la division par zéro
+            percentage = 0  
         else:
             percentage = current * 100 / total
 
@@ -40,11 +41,15 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
             f"Vitesse : {speed / 1024:.2f} KB/s\n"
             f"Temps écoulé : {elapsed_time:.2f}s"
         )
-
         await message.edit_text(progress_message)
+
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        await progress_for_pyrogram(current, total, ud_type, message, start)  
+
     except Exception as e:
-        print(f"Erreur lors du traitement du callback : {e}")
-        
+        pass
+            
 def humanbytes(size):    
     if not size:
         return ""
@@ -130,19 +135,19 @@ async def get_user_profile_photo(client: Client, user_id: int) -> Optional[str]:
         print(f"Erreur lors de la récupération des photos de profil : {e}")
     return None
 
-async def get_video_duration(file_path: Path) -> str:
-    """
-    Calcule la durée d'une vidéo et la retourne sous forme de chaîne de caractères (HH:MM:SS).
-    """
-    try:
-        clip = VideoFileClip(str(file_path))
-        duration = int(clip.duration)
-        hours, remainder = divmod(duration, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{hours:02}:{minutes:02}:{seconds:02}"
-    except Exception as e:
-        print(f"Erreur lors du calcul de la durée de la vidéo: {e}")
-        return "00:00:00"
+# async def get_video_duration(file_path: Path) -> str:
+#     """
+#     Calcule la durée d'une vidéo et la retourne sous forme de chaîne de caractères (HH:MM:SS).
+#     """
+#     try:
+#         clip = VideoFileClip(str(file_path))
+#         duration = int(clip.duration)
+#         hours, remainder = divmod(duration, 3600)
+#         minutes, seconds = divmod(remainder, 60)
+#         return f"{hours:02}:{minutes:02}:{seconds:02}"
+#     except Exception as e:
+#         print(f"Erreur lors du calcul de la durée de la vidéo: {e}")
+#         return "00:00:00"
 
 async def get_shortlink(url, api, link):
     """
