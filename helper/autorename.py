@@ -269,7 +269,7 @@ async def process_user_queue(user_id: int, client: Client, update: Union[Message
 
         temp_queue = {}
         async with ClientSession() as session:
-            semaphore = asyncio.Semaphore(3)
+            semaphore = asyncio.Semaphore(1)
 
             async def process_file_with_semaphore(file):
                 async with semaphore:
