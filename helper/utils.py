@@ -41,7 +41,7 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
             f"Vitesse : {speed / 1024:.2f} KB/s\n"
             f"Temps écoulé : {elapsed_time:.2f}s"
         )
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)
         await message.edit_text(progress_message)
 
     except FloodWait as e:
