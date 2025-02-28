@@ -18,9 +18,11 @@ import uuid
 renaming_operations = {}
 secantial_operations = {}
 user_semaphores = {}  
+
 async def get_user_semaphore(user_id):
+    """Retourne un sémaphore pour l'utilisateur, avec une limite de 3 fichiers simultanés."""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(3)  
+        user_semaphores[user_id] = asyncio.Semaphore(3)  # Limite de 3 fichiers simultanés
     return user_semaphores[user_id]
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
@@ -62,7 +64,7 @@ async def auto_rename_files(client, message):
     renaming_operations[file_id] = datetime.now()
 
     user_semaphore = await get_user_semaphore(user_id)
-    await user_semaphore.acquire() 
+    await user_semaphore.acquire()
 
     try:
         if user_id not in secantial_operations:
@@ -209,47 +211,30 @@ async def auto_rename_files(client, message):
                         "episode": episode_number
                     })
 
-                    if secantial_operations[user_id]["expected_count"] == 1:
+                    if len(secantial_operations[user_id]["files"]) == secantial_operations[user_id]["expected_count"]:
+                        sorted_files = sorted(
+                            secantial_operations[user_id]["files"],
+                            key=lambda x: (x["season"], x["episode"])
+                        )
+
                         user_channel = await hyoshcoder.get_user_channel(user_id)
                         if not user_channel:
                             user_channel = user_id  
 
                         try:
-                            await client.get_chat(user_channel) 
-                            await client.copy_message(
-                                user_channel,
-                                settings.LOG_CHANNEL,
-                                log_message.id
-                            )
-                            await message.reply_text(f"Le fichier a été envoyé dans le canal {user_channel}.")
+                            await client.get_chat(user_channel)  
+                            for file_info in sorted_files:
+                                print(f"Copie du fichier {file_info['file_name']} vers le canal {user_channel}")
+                                await client.copy_message(
+                                    user_channel,
+                                    settings.LOG_CHANNEL,
+                                    file_info["message_id"]
+                                )
+                            await message.reply_text(f"Tous les fichiers ont été envoyés dans le canal {user_channel}.")
                         except Exception as e:
                             await message.reply_text(f"Erreur : Le canal {user_channel} n'est pas accessible. {e}")
 
                         del secantial_operations[user_id]
-                    else:
-                        if len(secantial_operations[user_id]["files"]) == secantial_operations[user_id]["expected_count"]:
-                            sorted_files = sorted(
-                                secantial_operations[user_id]["files"],
-                                key=lambda x: (x["season"], x["episode"])
-                            )
-
-                            user_channel = await hyoshcoder.get_user_channel(user_id)
-                            if not user_channel:
-                                user_channel = user_id  
-
-                            try:
-                                await client.get_chat(user_channel)  
-                                for file_info in sorted_files:
-                                    await client.copy_message(
-                                        user_channel,
-                                        settings.LOG_CHANNEL,
-                                        file_info["message_id"]
-                                    )
-                                await message.reply_text(f"Tous les fichiers ont été envoyés dans le canal {user_channel}.")
-                            except Exception as e:
-                                await message.reply_text(f"Erreur : Le canal {user_channel} n'est pas accessible. {e}")
-
-                            del secantial_operations[user_id]
                 else:
                     if media_type == "document":
                         await client.send_document(
