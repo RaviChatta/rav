@@ -11,11 +11,12 @@ import pyrogram.utils
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
-Config = settings
-pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
+from dotenv import load_dotenv
+load_dotenv()
 
-# Setting SUPPORT_CHAT directly here
-SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", "-1001953724858"))
+pyrogram.utils.MIN_CHANNEL_ID =-1002175858655
+Config = settings
+SUPPORT_CHAT =-1002229122792
 
 class Bot(Client):
 
@@ -46,22 +47,22 @@ class Bot(Client):
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
 
-        for chat_id in [Config.CHANNEL_LOG, SUPPORT_CHAT]:
+        for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
-                curr = datetime.now(timezone("Asia/Kolkata"))
+                curr = datetime.now(timezone("Africa/Lubumbashi"))
                 date = curr.strftime('%d %B, %Y')
                 time_str = curr.strftime('%I:%M:%S %p')
                 
                 await self.send_photo(
                     chat_id=chat_id,
-                    photo=Config.START_PIC,
-                    caption=(
-                        "**ᴀɴʏᴀ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
-                        f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ​: `{uptime_string}`"
+                    photo="https://telegra.ph/file/41a6574ff59f886a79071.jpg",
+                    caption = (
+                        "**Hinata ᴇsᴛ ʀᴇᴅᴇᴍᴀʀʀᴇᴇ ᴇɴᴄᴏʀᴇ !**\n\n"
+                        f"ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴅᴏʀᴍɪs ᴅᴇᴘᴜɪs​ : `{uptime_string}`"
                     ),
                     reply_markup=InlineKeyboardMarkup(
                         [[
-                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/codeflix_bots")
+                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/hyoshmangavf")
                         ]]
                     )
                 )
