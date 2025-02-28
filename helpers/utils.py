@@ -9,7 +9,7 @@ from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from scripts import Txt
 from config import settings
-Config = settings
+
 
 
 # Patterns for extracting season numbers
@@ -144,12 +144,12 @@ def convert(seconds):
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
 async def send_log(b, u):
-    if Config.LOG_CHANNEL is not None:
+    if settings.LOG_CHANNEL is not None:
         curr = datetime.now(timezone("Africa/Lubumbashi"))
         date = curr.strftime('%d %B, %Y')
         time = curr.strftime('%I:%M:%S %p')
         await b.send_message(
-            Config.LOG_CHANNEL,
+            settings.LOG_CHANNEL,
             f"**--Nᴏᴜᴠᴇᴀᴜ Uᴛɪʟɪꜱᴀᴛᴇᴜʀ A Dᴇ́ᴍᴀʀʀᴇ́ Lᴇ Bᴏᴛ--**\n\nUᴛɪʟɪꜱᴀᴛᴇᴜʀ : {u.mention}\nIᴅ : `{u.id}`\nNᴏᴍ ᴅ'ᴜᴛɪʟɪꜱᴀᴛᴇᴜʀ : @{u.username}\n\nDᴀᴛᴇ : {date}\nHᴏʀᴀɪʀᴇ : {time}\n\nPᴀʀ : {b.mention}"
 
         )
