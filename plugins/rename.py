@@ -102,7 +102,7 @@ async def auto_rename_files(client, message):
         os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
         os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
 
-        file_uuid = str(uuid.uuid4())
+        file_uuid = str(uuid.uuid4())[:8]
         renamed_file_path_with_uuid = f"{renamed_file_path}_{file_uuid}"
 
         download_msg = await message.reply_text("**__ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ...__**")
