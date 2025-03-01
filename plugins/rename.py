@@ -23,7 +23,7 @@ user_queue_messages = {}
 
 async def get_user_semaphore(user_id):
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(3)  
+        user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
@@ -32,7 +32,7 @@ async def auto_rename_files(client, message):
 
     user_data = await hyoshcoder.read_user(user_id)
     if not user_data:
-        return await message.reply_text("❌ Impossible de charger vos informations. Veuillez réessayer plus tard.")
+        return await message.reply_text("❌ Impossible de charger vos informations. Veuillez vous inscrire /start.")
 
     user_points = user_data.get("points", 0)
     format_template = user_data.get("format_template", "")
@@ -69,7 +69,19 @@ async def auto_rename_files(client, message):
 
     renaming_operations[file_id] = datetime.now()
 
-    queue_message = await message.reply_text(f"📥 **Fichier ajouté à la file d'attente :** `{file_name}`")
+    episode_number = await extract_episode(file_name)
+    saison = await extract_season(file_name)
+    extracted_qualities = await extract_quality(file_name)
+
+    assurance_message = (
+        "**Fichier ajouté à la file d'attente**\n"
+        f"➲ **Nom :** `{file_name}`\n"
+        f"➲ **Saison :** `{saison if saison else 'N/A'}`\n"
+        f"➲ **Episode :** `{episode_number if episode_number else 'N/A'}`\n"
+        f"➲ **Qualité :** `{extracted_qualities if extracted_qualities else 'N/A'}`"
+    )
+
+    queue_message = await message.reply_text(assurance_message)
 
     if user_id not in user_queue_messages:
         user_queue_messages[user_id] = []
@@ -81,15 +93,13 @@ async def auto_rename_files(client, message):
     try:
         if user_id in user_queue_messages and user_queue_messages[user_id]:
             await user_queue_messages[user_id][0].edit_text(f"🔄 **Traitement du fichier :** `{file_name}`")
-            user_queue_messages[user_id].pop(0)  
-
+            user_queue_messages[user_id].pop(0)
+            
         if user_id not in secantial_operations:
             secantial_operations[user_id] = {"files": [], "expected_count": 0}
 
         secantial_operations[user_id]["expected_count"] += 1
 
-        episode_number = await extract_episode(file_name)
-        saison = await extract_season(file_name)
         if episode_number or saison:
             placeholders = [
                 "episode", "Episode", "EPISODE", "{episode}",
@@ -104,7 +114,6 @@ async def auto_rename_files(client, message):
             quality_placeholders = ["quality", "Quality", "QUALITY", "{quality}"]
             for quality_placeholder in quality_placeholders:
                 if quality_placeholder in format_template:
-                    extracted_qualities = await extract_quality(file_name)
                     if extracted_qualities == "Unknown":
                         await queue_message.edit_text("**ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴘᴜ ᴇxᴛʀᴀɪʀᴇ ʟᴀ ǫᴜᴀʟɪᴛᴇ́ ᴄᴏʀʀᴇᴄᴛᴇᴍᴇɴᴛ. ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇɴ 'Unknown'...**")
                         del renaming_operations[file_id]
@@ -246,9 +255,9 @@ async def auto_rename_files(client, message):
                                     settings.LOG_CHANNEL,
                                     file_info["message_id"]
                                 )
-                            await queue_message.edit_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`")
+                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`")
                         except Exception as e:
-                            await queue_message.edit_text(f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
+                            await queue_message.reply_text(f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
 
                         del secantial_operations[user_id]
                 else:
