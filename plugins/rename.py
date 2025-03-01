@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, safe_edit, safe_send_file
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
 from database.data import hyoshcoder
 from config import settings
 import os
@@ -92,7 +92,7 @@ async def auto_rename_files(client, message):
 
     try:
         if user_id in user_queue_messages and user_queue_messages[user_id]:
-            await safe_edit(client, user_queue_messages[user_id][0].chat.id, user_queue_messages[user_id][0].id, f"🔄 **Traitement du fichier :** `{file_name}`")
+            await user_queue_messages[user_id][0].edit_text(f"🔄 **Traitement du fichier :** `{file_name}`")
             user_queue_messages[user_id].pop(0)
             
         if user_id not in secantial_operations:
@@ -115,7 +115,7 @@ async def auto_rename_files(client, message):
             for quality_placeholder in quality_placeholders:
                 if quality_placeholder in format_template:
                     if extracted_qualities == "Unknown":
-                        await safe_edit(client, queue_message.chat.id, queue_message.id, "**ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴘᴜ ᴇxᴛʀᴀɪʀᴇ ʟᴀ ǫᴜᴀʟɪᴛᴇ́ ᴄᴏʀʀᴇᴄᴛᴇᴍᴇɴᴛ. ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇɴ 'Unknown'...**")
+                        await queue_message.edit_text("**ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴘᴜ ᴇxᴛʀᴀɪʀᴇ ʟᴀ ǫᴜᴀʟɪᴛᴇ́ ᴄᴏʀʀᴇᴄᴛᴇᴍᴇɴᴛ. ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇɴ 'Unknown'...**")
                         del renaming_operations[file_id]
                         return
 
@@ -131,7 +131,7 @@ async def auto_rename_files(client, message):
         file_uuid = str(uuid.uuid4())[:8]
         renamed_file_path_with_uuid = f"{renamed_file_path}_{file_uuid}"
 
-        await safe_edit(client, queue_message.chat.id, queue_message.id, f"📥 **Téléchargement en cours :** `{file_name}`")
+        await queue_message.edit_text(f"📥 **Téléchargement en cours :** `{file_name}`")
 
         try:
             path = await client.download_media(
@@ -142,9 +142,9 @@ async def auto_rename_files(client, message):
             )
         except Exception as e:
             del renaming_operations[file_id]
-            return await safe_edit(client, queue_message.chat.id, queue_message.id, f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
+            return await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
-        await safe_edit(client, queue_message.chat.id, queue_message.id, f"🔄 **Renommage en cours :** `{file_name}`")
+        await queue_message.edit_text(f"🔄 **Renommage en cours :** `{file_name}`")
 
         try:
             os.rename(path, renamed_file_path)
@@ -168,23 +168,26 @@ async def auto_rename_files(client, message):
                             path = metadata_file_path
                         else:
                             error_message = stderr.decode()
-                            await safe_edit(client, queue_message.chat.id, queue_message.id, f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs:**\n{error_message}")
+                            await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs:**\n{error_message}")
                     except asyncio.TimeoutError:
-                        await safe_edit(client, queue_message.chat.id, queue_message.id, "**ᴄᴏᴍᴍᴀɴᴅᴇ ғғᴍᴘᴇɢ ᴇxᴘɪʀᴇ́ᴇ.**")
+                        await queue_message.edit_text("**ᴄᴏᴍᴍᴀɴᴅᴇ ғғᴍᴘᴇɢ ᴇxᴘɪʀᴇ́ᴇ.**")
                         return
                     except Exception as e:
-                        await safe_edit(client, queue_message.chat.id, queue_message.id, f"**ᴜɴᴇ ᴇxᴄᴇᴘᴛɪᴏɴ s'ᴇsᴛ ᴘʀᴏᴅᴜɪᴛᴇ:**\n{str(e)}")
+                        await queue_message.edit_text(f"**ᴜɴᴇ ᴇxᴄᴇᴘᴛɪᴏɴ s'ᴇsᴛ ᴘʀᴏᴅᴜɪᴛᴇ:**\n{str(e)}")
                         return
             else:
                 metadata_added = True
 
             if not metadata_added:
-                await safe_edit(client, queue_message.chat.id, queue_message.id,
+                await queue_message.edit_text(
                     "L'ᴀᴊᴏᴜᴛ ᴅᴇs mᴇ́ᴛᴀᴅᴏɴɴᴇᴇs ᴀ ᴇ́ᴄʜᴏᴜᴇ́. ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴅᴜ ғɪᴄʜɪᴇʀ ʀᴇɴᴏᴍᴍᴇ́."
                 )
                 path = renamed_file_path
 
-            await safe_edit(client, queue_message.chat.id, queue_message.id, f"📤 **Téléversement en cours :** `{file_name}`")
+            await queue_message.edit_text(f"📤 **Téléversement en cours :** `{file_name}`")
+
+            # Ajout d'une pause de 5 secondes avant le téléversement
+            await asyncio.sleep(5)
 
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
@@ -197,7 +200,7 @@ async def auto_rename_files(client, message):
                 file_size = humanbytes(message.video.file_size)
                 duration = convert(message.video.duration or 0)
             else:
-                await safe_edit(client, queue_message.chat.id, queue_message.id, "Le message ne contient pas de document ou de vidéo pris en charge.")
+                await queue_message.edit_text("Le message ne contient pas de document ou de vidéo pris en charge.")
                 return
 
             caption = (
@@ -222,12 +225,11 @@ async def auto_rename_files(client, message):
 
             try:
                 if sequential_mode:
-                    log_message = await safe_send_file(
-                        client,
+                    log_message = await client.send_document(
                         settings.LOG_CHANNEL,
-                        path,
-                        caption=caption,
+                        document=path,
                         thumb=ph_path,
+                        caption=caption,
                         progress=progress_for_pyrogram,
                         progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
                     )
@@ -256,39 +258,38 @@ async def auto_rename_files(client, message):
                                     settings.LOG_CHANNEL,
                                     file_info["message_id"]
                                 )
-                            await safe_edit(client, queue_message.chat.id, queue_message.id, f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`")
+                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`")
                         except Exception as e:
-                            await safe_edit(client, queue_message.chat.id, queue_message.id, f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
+                            await queue_message.reply_text(f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
 
                         del secantial_operations[user_id]
                 else:
                     if media_type == "document":
-                        await safe_send_file(
-                            client,
+                        await client.send_document(
                             message.chat.id,
-                            path,
-                            caption=caption,
+                            document=path,
                             thumb=ph_path,
+                            caption=caption,
                             progress=progress_for_pyrogram,
                             progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
                         )
                     elif media_type == "video":
-                        await safe_send_file(
-                            client,
+                        await client.send_video(
                             message.chat.id,
-                            path,
+                            video=path,
                             caption=caption,
                             thumb=ph_path,
+                            duration=0,
                             progress=progress_for_pyrogram,
                             progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
                         )
                     elif media_type == "audio":
-                        await safe_send_file(
-                            client,
+                        await client.send_audio(
                             message.chat.id,
-                            path,
+                            audio=path,
                             caption=caption,
                             thumb=ph_path,
+                            duration=0,
                             progress=progress_for_pyrogram,
                             progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
                         )
@@ -296,13 +297,14 @@ async def auto_rename_files(client, message):
                 os.remove(renamed_file_path)
                 if ph_path:
                     os.remove(ph_path)
-                return await safe_edit(client, queue_message.chat.id, queue_message.id, f"❌ **Erreur :** {e}")
-            
+                return await queue_message.edit_text(f"❌ **Erreur :** {e}")
+
             os.remove(renamed_file_path)
             if ph_path:
                 os.remove(ph_path)
 
             await queue_message.delete()
+
         finally:
             await hyoshcoder.degrade_points(user_id, 1)
             if os.path.exists(renamed_file_path):
