@@ -9,6 +9,9 @@ from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from scripts import Txt
 from config import settings
+from pyrogram.errors import FloodWait
+import asyncio
+
 
 
 
@@ -210,6 +213,82 @@ async def get_shortlink(url, api, link):
     shortzy = Shortzy(api_key=api, base_site=url)
     shortlink = await shortzy.convert(link)
     return shortlink
+
+
+async def safe_edit(client, chat_id, message_id, text, max_retries=3):
+    """
+    Fonction sécurisée pour éditer un message avec gestion des erreurs FloodWait.
+    
+    :param client: Le client Pyrogram.
+    :param chat_id: L'ID du chat où se trouve le message.
+    :param message_id: L'ID du message à éditer.
+    :param text: Le nouveau texte du message.
+    :param max_retries: Nombre maximum de tentatives en cas de FloodWait.
+    """
+    retries = 0
+    while retries < max_retries:
+        try:
+            await client.edit_message_text(chat_id, message_id, text)
+            break  
+        except FloodWait as e:
+            retries += 1
+            print(f"FloodWait: Attente de {e.x} secondes (tentative {retries}/{max_retries})")
+            await asyncio.sleep(e.x)
+        except Exception as e:
+            print(f"Erreur inattendue lors de l'édition du message : {e}")
+            break 
+
+async def safe_send_file(client, chat_id, file_path, caption=None, thumb=None, progress=None, progress_args=None, max_retries=3):
+    """
+    Fonction sécurisée pour envoyer un fichier avec gestion des erreurs FloodWait.
+    
+    :param client: Le client Pyrogram.
+    :param chat_id: L'ID du chat où envoyer le fichier.
+    :param file_path: Le chemin du fichier à envoyer.
+    :param caption: La légende du fichier (optionnel).
+    :param thumb: Le chemin de la miniature (optionnel).
+    :param progress: Fonction de progression (optionnel).
+    :param progress_args: Arguments pour la fonction de progression (optionnel).
+    :param max_retries: Nombre maximum de tentatives en cas de FloodWait.
+    """
+    retries = 0
+    while retries < max_retries:
+        try:
+            if file_path.endswith(".mp4") or file_path.endswith(".mkv"):
+                await client.send_video(
+                    chat_id,
+                    video=file_path,
+                    caption=caption,
+                    thumb=thumb,
+                    progress=progress,
+                    progress_args=progress_args,
+                )
+            elif file_path.endswith(".mp3") or file_path.endswith(".m4a"):
+                await client.send_audio(
+                    chat_id,
+                    audio=file_path,
+                    caption=caption,
+                    thumb=thumb,
+                    progress=progress,
+                    progress_args=progress_args,
+                )
+            else:
+                await client.send_document(
+                    chat_id,
+                    document=file_path,
+                    caption=caption,
+                    thumb=thumb,
+                    progress=progress,
+                    progress_args=progress_args,
+                )
+            break  
+        except FloodWait as e:
+            retries += 1
+            print(f"FloodWait: Attente de {e.x} secondes (tentative {retries}/{max_retries})")
+            await asyncio.sleep(e.x)  
+        except Exception as e:
+            print(f"Erreur inattendue lors de l'envoi du fichier : {e}")
+            break  
 
 # # Example usage
 # import asyncio
