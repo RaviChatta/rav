@@ -45,38 +45,53 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
 }
 
-async def extract_season(filename: str) -> Optional[int]:
+async def extract_season(filename: str) -> Optional[str]:
+    """
+    Extrait le numéro de saison sous forme de chaîne de caractères.
+    Retourne None si aucun numéro de saison n'est trouvé.
+    """
     for pattern in SEASON_PATTERNS:
         match = pattern.search(filename)
         if match:
-            return int(match.group(1))
+            return match.group(1)  # Retourne la chaîne telle quelle
     return None
 
-async def extract_episode(filename: str) -> Optional[int]:
+async def extract_episode(filename: str) -> Optional[str]:
+    """
+    Extrait le numéro d'épisode sous forme de chaîne de caractères.
+    Retourne None si aucun numéro d'épisode n'est trouvé.
+    """
     for pattern in EPISODE_PATTERNS:
         match = pattern.search(filename)
         if match:
-            return int(match.group(1))
+            return match.group(1)  # Retourne la chaîne telle quelle
     return None
 
-async def extract_season_episode(filename: str) -> Optional[Tuple[int, int]]:
+async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
+    """
+    Extrait à la fois le numéro de saison et d'épisode sous forme de chaînes de caractères.
+    Retourne None si aucun des deux n'est trouvé.
+    """
     season = await extract_season(filename)
     episode = await extract_episode(filename)
     
     if episode is not None and season is None:
-        season = 1  
+        season = "01"  # Valeur par défaut pour la saison si elle n'est pas trouvée
     
     if season is not None and episode is not None:
         return season, episode
     return None
 
 async def extract_quality(filename: str) -> str:
+    """
+    Extrait la qualité de la vidéo.
+    Retourne "Unknown" si aucune qualité n'est trouvée.
+    """
     for pattern, extractor in QUALITY_PATTERNS.items():
         match = pattern.search(filename)
         if match:
             return extractor(match)
     return "Unknown"
-
 
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):

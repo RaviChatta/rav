@@ -17,12 +17,11 @@ import uuid
 
 renaming_operations = {}
 secantial_operations = {}
-user_semaphores = {}  
+user_semaphores = {}
 
 async def get_user_semaphore(user_id):
-    """Retourne un sémaphore pour l'utilisateur, avec une limite de 3 fichiers simultanés."""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(3)  # Limite de 3 fichiers simultanés
+        user_semaphores[user_id] = asyncio.Semaphore(3) 
     return user_semaphores[user_id]
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
@@ -69,6 +68,7 @@ async def auto_rename_files(client, message):
     try:
         if user_id not in secantial_operations:
             secantial_operations[user_id] = {"files": [], "expected_count": 0}
+
         secantial_operations[user_id]["expected_count"] += 1
 
         episode_number = await extract_episode(file_name)
@@ -118,7 +118,7 @@ async def auto_rename_files(client, message):
             del renaming_operations[file_id]
             return await download_msg.edit(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
-        await download_msg.edit("**__ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇᴛ ᴀᴊᴏᴜᴛ ᴅᴇ ᴍéᴛᴀᴅᴏɴɴéᴇs...__**")
+        await download_msg.edit("**__ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇᴛ ᴀᴊᴏᴜᴛ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs...__**")
 
         try:
             os.rename(path, renamed_file_path)
@@ -142,9 +142,9 @@ async def auto_rename_files(client, message):
                             path = metadata_file_path
                         else:
                             error_message = stderr.decode()
-                            await download_msg.edit(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴍéᴛᴀᴅᴏɴɴéᴇs:**\n{error_message}")
+                            await download_msg.edit(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs:**\n{error_message}")
                     except asyncio.TimeoutError:
-                        await download_msg.edit("**ᴄᴏᴍᴍᴀɴᴅᴇ ғғᴍᴘᴇɢ ᴇxᴘɪʀéᴇ.**")
+                        await download_msg.edit("**ᴄᴏᴍᴍᴀɴᴅᴇ ғғᴍᴘᴇɢ ᴇxᴘɪʀᴇ́ᴇ.**")
                         return
                     except Exception as e:
                         await download_msg.edit(f"**ᴜɴᴇ ᴇxᴄᴇᴘᴛɪᴏɴ s'ᴇsᴛ ᴘʀᴏᴅᴜɪᴛᴇ:**\n{str(e)}")
@@ -154,11 +154,11 @@ async def auto_rename_files(client, message):
 
             if not metadata_added:
                 await download_msg.edit(
-                    "L'ᴀᴊᴏᴜᴛ ᴅᴇs mᴇ́tᴀᴅᴏɴᴇᴇs ᴀ échoué. ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ du ғɪchiᴇr ʀᴇɴᴏᴍᴍé."
+                    "L'ᴀᴊᴏᴜᴛ ᴅᴇs mᴇ́ᴛᴀᴅᴏɴɴᴇᴇs ᴀ ᴇ́ᴄʜᴏᴜᴇ́. ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴅᴜ ғɪᴄʜɪᴇʀ ʀᴇɴᴏᴍᴍᴇ́."
                 )
                 path = renamed_file_path
 
-            upload_msg = await download_msg.edit("**ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ...__**")
+            upload_msg = await download_msg.edit("**__ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ...__**")
 
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
@@ -202,7 +202,7 @@ async def auto_rename_files(client, message):
                         thumb=ph_path,
                         caption=caption,
                         progress=progress_for_pyrogram,
-                        progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
+                        progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
                     )
                     secantial_operations[user_id]["files"].append({
                         "message_id": log_message.id,
@@ -220,7 +220,6 @@ async def auto_rename_files(client, message):
                         user_channel = await hyoshcoder.get_user_channel(user_id)
                         if not user_channel:
                             user_channel = user_id  
-
                         try:
                             await client.get_chat(user_channel)  
                             for file_info in sorted_files:
@@ -243,7 +242,7 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             caption=caption,
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
+                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
                         )
                     elif media_type == "video":
                         await client.send_video(
@@ -253,7 +252,7 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             duration=0,
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
+                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
                         )
                     elif media_type == "audio":
                         await client.send_audio(
@@ -263,7 +262,7 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             duration=0,
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
+                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", upload_msg, time.time()),
                         )
             except Exception as e:
                 os.remove(renamed_file_path)
@@ -286,4 +285,4 @@ async def auto_rename_files(client, message):
                 os.remove(ph_path)
             del renaming_operations[file_id]
     finally:
-        user_semaphore.release()  
+        user_semaphore.release()
