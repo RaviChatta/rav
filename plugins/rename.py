@@ -92,7 +92,7 @@ async def auto_rename_files(client, message):
 
     try:
         if user_id in user_queue_messages and user_queue_messages[user_id]:
-            await user_queue_messages[user_id][0].edit_text(f"🔄 **Traitement du fichier :** `{file_name}`")
+            await user_queue_messages[user_id][0].edit_text(f"🔄 **Traitement du fichier :**\n➲**Filename**: `{file_name}`")
             user_queue_messages[user_id].pop(0)
             
         if user_id not in secantial_operations:
@@ -144,7 +144,7 @@ async def auto_rename_files(client, message):
             del renaming_operations[file_id]
             return await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
-        await queue_message.edit_text(f"🔄 **Renommage en cours :** `{file_name}`")
+        await queue_message.edit_text(f"🔄 **Renommage et ajout de metadonée en cours :** `{file_name}`")
 
         try:
             os.rename(path, renamed_file_path)
