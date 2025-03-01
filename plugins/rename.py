@@ -252,13 +252,13 @@ async def auto_rename_files(client, message):
                         try:
                             await client.get_chat(user_channel)  
                             for file_info in sorted_files:
-                                print(f"Copie du fichier {file_info['file_name']} vers le canal {user_channel}")
+                                await asyncio.sleep(3)
                                 await client.copy_message(
                                     user_channel,
                                     settings.LOG_CHANNEL,
                                     file_info["message_id"]
                                 )
-                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`")
+                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`\nSi des fichiers n'ont pas été completement envoyer, ce probleme est dus au flood de requis par telegram, veillez m'envoyer individuellemt ces fichier")
                         except Exception as e:
                             await queue_message.reply_text(f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
 
