@@ -1,12 +1,11 @@
-FROM python:latest
+FROM python:slim
 
 WORKDIR /app
 
 COPY requirements.txt .
 
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && apt-get install -y ffmpeg git \
+    ffmpeg git \
     && echo "FFmpeg installed successfully. Version:" \
     && ffmpeg -version \
     && rm -rf /var/lib/apt/lists/*
