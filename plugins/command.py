@@ -298,12 +298,26 @@ async def command(client, message: Message):
                 bot = await client.get_me()
                 mention = bot.mention
                 caption = Txt.HELP_TXT.format(mention=mention) 
+                secantial_statut = await hyoshcoder.get_sequential_mode(user_id)
+                src_info = await hyoshcoder.get_src_info(user_id)  
+                if secantial_statut:
+                    btn_sec_text = "Secantiel ✅"
+                else:
+                    btn_sec_text = "Secantiel ❌"
+                
+                if src_info == "file_name":
+                    src_txt = "Nom du fichier"
+                else:
+                    src_txt = "Caption du fichier"
                 buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("• ғᴏʀᴍᴀᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ •", callback_data='file_names')],
-                    [InlineKeyboardButton('• ᴠɪɢɴᴇᴛᴛᴇ', callback_data='thumbnail'), InlineKeyboardButton('ʟᴇ́ɢᴇɴᴅᴇ •', callback_data='caption')],
-                    [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴏɴɴᴇ́ᴇs', callback_data='meta'), InlineKeyboardButton('ғᴀɪʀᴇ ᴜɴ ᴅᴏɴ •', callback_data='donate')],
-                    [InlineKeyboardButton('• ᴀᴄᴄᴜᴇɪʟ', callback_data='home')]
-                ])
+                                [InlineKeyboardButton("• ғᴏʀᴍᴀᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ •", callback_data='file_names')],
+                                [InlineKeyboardButton('• ᴠɪɢɴᴇᴛᴛᴇ', callback_data='thumbnail'), InlineKeyboardButton('ʟᴇ́ɢᴇɴᴅᴇ •', callback_data='caption')],
+                                [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴏɴɴᴇ́ᴇs', callback_data='meta'), InlineKeyboardButton('ғᴀɪʀᴇ ᴜɴ ᴅᴏɴ •', callback_data='donate')],
+                                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ •', callback_data='premiumx')],
+                                [InlineKeyboardButton(f'• Extraire depuis : {src_txt}', callback_data='toogle_src')],
+                                [InlineKeyboardButton('• ᴀᴄᴄᴜᴇɪʟ', callback_data='home')]
+                            ])
+                caption =Txt.HELP_TXT.format(client.mention)
                 if img:
                     await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
                 else:

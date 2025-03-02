@@ -38,6 +38,7 @@ async def auto_rename_files(client, message):
     format_template = user_data.get("format_template", "")
     media_preference = user_data.get("media_preference", "")
     sequential_mode = user_data.get("sequential_mode", False)
+    src_info = await hyoshcoder.get_src_info(user_id)  
 
     if user_points < 1:
         return await message.reply_text("❌ Vous n'avez pas assez de points pour renommer un fichier. Rechargez vos points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
@@ -69,9 +70,19 @@ async def auto_rename_files(client, message):
 
     renaming_operations[file_id] = datetime.now()
 
-    episode_number = await extract_episode(file_name)
-    saison = await extract_season(file_name)
-    extracted_qualities = await extract_quality(file_name)
+    if src_info == "file_name":
+        episode_number = await extract_episode(file_name)
+        saison = await extract_season(file_name)
+        extracted_qualities = await extract_quality(file_name)
+    elif src_info == "caption":
+        caption = message.caption if message.caption else ""
+        episode_number = await extract_episode(caption)
+        saison = await extract_season(caption)
+        extracted_qualities = await extract_quality(caption)
+    else:
+        episode_number = await extract_episode(file_name)
+        saison = await extract_season(file_name)
+        extracted_qualities = await extract_quality(file_name)
 
     assurance_message = (
         "**Fichier ajouté à la file d'attente**\n"
@@ -144,7 +155,7 @@ async def auto_rename_files(client, message):
             del renaming_operations[file_id]
             return await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
-        await queue_message.edit_text(f"🔄 **Renommage et ajout de metadonée en cours :** `{file_name}`")
+        await queue_message.edit_text(f"🔄 **Renommage et ajout de métadonnées en cours :** `{file_name}`")
 
         try:
             os.rename(path, renamed_file_path)
@@ -185,10 +196,7 @@ async def auto_rename_files(client, message):
                 path = renamed_file_path
 
             await queue_message.edit_text(f"📤 **Téléversement en cours :** `{file_name}`")
-
-            # Ajout d'une pause de 5 secondes avant le téléversement
-            await asyncio.sleep(5)
-
+            await asyncio.sleep(5)  
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
             c_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
@@ -258,7 +266,7 @@ async def auto_rename_files(client, message):
                                     settings.LOG_CHANNEL,
                                     file_info["message_id"]
                                 )
-                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`\nSi des fichiers n'ont pas été completement envoyer, ce probleme est dus au flood de requis par telegram, veillez m'envoyer individuellemt ces fichier")
+                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`\nSi des fichiers n'ont pas été complètement envoyés, ce problème est dû au flood de requêtes par Telegram. Veuillez m'envoyer individuellement ces fichiers.")
                         except Exception as e:
                             await queue_message.reply_text(f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
 

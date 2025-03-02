@@ -36,7 +36,8 @@ class Database:
             unique_code=None,
             referrer_id=None,
             sequential_mode=False,
-            user_channel=None
+            user_channel=None,
+            src_info="file_name"
         )
 
     async def add_user(self, b, m):
@@ -309,6 +310,26 @@ class Database:
             return user.get("user_channel", None)
         except Exception as e:
             logging.error(f"Error getting user channel for user {id}: {e}")
+            return None
+    
+    async def toogle_src_info(self, id):
+        """Toggle between file_name and caption"""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if user:
+                new_info = "caption" if user.get("scr_info") == "file_name" else "file_name"
+                await self.col.update_one({"_id": int(id)}, {"$set": {"scr_info": new_info}})
+            else:
+                await self.col.insert_one({"_id": int(id), "scr_info": "file_name"})
+        except Exception as e:
+            logging.error(f"Error toggling scr_info for user {id}: {e}")
+    
+    async def get_src_info(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("scr_info", None)
+        except Exception as e:
+            logging.error(f"Error getting scr_info for user {id}: {e}")
             return None
 
 
