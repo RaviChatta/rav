@@ -17,6 +17,11 @@ async def cb_handler(client, query: CallbackQuery):
     img = await get_random_photo() 
     thumb = await hyoshcoder.get_thumbnail(user_id) 
     disable_web_page_preview = False
+    src_info = await hyoshcoder.get_src_info(user_id)
+    if src_info == "file_name":
+                src_txt = "Nom du fichier"
+    else:
+        src_txt = "Caption du fichier"
     
     # print(f"Callback data received: {data}")  
     
@@ -36,16 +41,18 @@ async def cb_handler(client, query: CallbackQuery):
             caption = Txt.CAPTION_TXT
         
         elif data == "help":
-            secantial_statut = await hyoshcoder.get_sequential_mode(user_id)
+            secantial_statut = await hyoshcoder.get_sequential_mode(user_id)  
             if secantial_statut:
                 btn_sec_text = "Secantiel ✅"
             else:
                 btn_sec_text = "Secantiel ❌"
+
             btn = InlineKeyboardMarkup([
                             [InlineKeyboardButton("• ғᴏʀᴍᴀᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ •", callback_data='file_names')],
                             [InlineKeyboardButton('• ᴠɪɢɴᴇᴛᴛᴇ', callback_data='thumbnail'), InlineKeyboardButton('ʟᴇ́ɢᴇɴᴅᴇ •', callback_data='caption')],
                             [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴏɴɴᴇ́ᴇs', callback_data='meta'), InlineKeyboardButton('ғᴀɪʀᴇ ᴜɴ ᴅᴏɴ •', callback_data='donate')],
                             [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ •', callback_data='premiumx')],
+                            [InlineKeyboardButton(f'• Extraire depuis : {src_txt}', callback_data='toogle_src')],
                             [InlineKeyboardButton('• ᴀᴄᴄᴜᴇɪʟ', callback_data='home')]
                         ])
             caption =Txt.HELP_TXT.format(client.mention)
@@ -252,6 +259,29 @@ async def cb_handler(client, query: CallbackQuery):
                             [InlineKeyboardButton('• ᴠɪɢɴᴇᴛᴛᴇ', callback_data='thumbnail'), InlineKeyboardButton('ʟᴇ́ɢᴇɴᴅᴇ •', callback_data='caption')],
                             [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴏɴɴᴇ́ᴇs', callback_data='meta'), InlineKeyboardButton('ғᴀɪʀᴇ ᴜɴ ᴅᴏɴ •', callback_data='donate')],
                             [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ •', callback_data='premiumx')],
+                            [InlineKeyboardButton(f'• Extraire depuis : {src_txt}', callback_data='toogle_src')],
+                            [InlineKeyboardButton('• ᴀᴄᴄᴜᴇɪʟ', callback_data='home')]
+                        ])
+            caption =Txt.HELP_TXT.format(client.mention)
+            
+        elif data == "toogle_src":
+            await hyoshcoder.toogle_src_info(user_id)
+            secanticel = await hyoshcoder.get_sequential_mode(user_id)
+            if secanticel:
+                btn_sec_text = "Secantiel ✅"
+            else:
+                btn_sec_text = "Secantiel ❌"
+            src_info = await hyoshcoder.get_src_info(user_id)
+            if src_info == "file_name":
+                        src_txt = "Nom du fichier"
+            else:
+                src_txt = "Caption du fichier"
+            btn = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("• ғᴏʀᴍᴀᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ •", callback_data='file_names')],
+                            [InlineKeyboardButton('• ᴠɪɢɴᴇᴛᴛᴇ', callback_data='thumbnail'), InlineKeyboardButton('ʟᴇ́ɢᴇɴᴅᴇ •', callback_data='caption')],
+                            [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴏɴɴᴇ́ᴇs', callback_data='meta'), InlineKeyboardButton('ғᴀɪʀᴇ ᴜɴ ᴅᴏɴ •', callback_data='donate')],
+                            [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ •', callback_data='premiumx')],
+                            [InlineKeyboardButton(f'• Extraire depuis : {src_txt}', callback_data='toogle_src')],
                             [InlineKeyboardButton('• ᴀᴄᴄᴜᴇɪʟ', callback_data='home')]
                         ])
             caption =Txt.HELP_TXT.format(client.mention)
