@@ -331,6 +331,17 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting scr_info for user {id}: {e}")
             return None
+    
+    async def clear_all_user_channels(self):
+
+        try:
+            await self.col.update_many(
+                {},  
+                {"$unset": {"user_channel": None}} 
+            )
+            logging.info("Tous les user_channel ont été supprimés avec succès.")
+        except Exception as e:
+            logging.error(f"Erreur lors de la suppression des user_channel : {e}")
 
 
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)

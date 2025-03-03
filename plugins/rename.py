@@ -32,7 +32,7 @@ async def auto_rename_files(client, message):
 
     user_data = await hyoshcoder.read_user(user_id)
     if not user_data:
-        return await message.reply_text("❌ Impossible de charger vos informations. Veuillez vous inscrire /start.")
+        return await message.reply_text("❌ ɪᴍᴘᴏssɪʙʟᴇ ᴅᴇ ᴄʜᴀʀɢᴇʀ ᴠᴏs ɪɴꜰᴏʀᴍᴀᴛɪᴏɴs. ᴠᴇᴜɪʟʟᴇᴢ ᴠᴏᴜs ɪɴsᴄʀɪʀᴇ /start.")
 
     user_points = user_data.get("points", 0)
     format_template = user_data.get("format_template", "")
@@ -41,7 +41,7 @@ async def auto_rename_files(client, message):
     src_info = await hyoshcoder.get_src_info(user_id)  
 
     if user_points < 1:
-        return await message.reply_text("❌ Vous n'avez pas assez de points pour renommer un fichier. Rechargez vos points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
+        return await message.reply_text("❌ ᴠᴏᴜs ɴ'ᴀᴠᴇᴢ ᴘᴀs ᴀssᴇᴢ ᴅᴇ ᴘᴏɪɴᴛs ᴘᴏᴜʀ ʀᴇɴᴏᴍᴍᴇʀ ᴜɴ ꜰɪᴄʜɪᴇʀ. ʀᴇᴄʜᴀʀɢᴇᴢ ᴠᴏs ᴘᴏɪɴᴛs.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
 
     if not format_template:
         return await message.reply_text(
@@ -61,7 +61,7 @@ async def auto_rename_files(client, message):
         file_name = f"{message.audio.file_name}.mp3"
         media_type = media_preference or "audio"
     else:
-        return await message.reply_text("Unsupported File Type")
+        return await message.reply_text("ᴜɴsᴜᴘᴘᴏʀᴛᴇᴅ ꜰɪʟᴇ ᴛʏᴘᴇ")
 
     if file_id in renaming_operations:
         elapsed_time = (datetime.now() - renaming_operations[file_id]).seconds
@@ -85,11 +85,12 @@ async def auto_rename_files(client, message):
         extracted_qualities = await extract_quality(file_name)
 
     assurance_message = (
-        "**Fichier ajouté à la file d'attente**\n"
-        f"➲ **Nom :** `{file_name}`\n"
-        f"➲ **Saison :** `{saison if saison else 'N/A'}`\n"
-        f"➲ **Episode :** `{episode_number if episode_number else 'N/A'}`\n"
-        f"➲ **Qualité :** `{extracted_qualities if extracted_qualities else 'N/A'}`"
+        "**ꜰɪᴄʜɪᴇʀ ᴀᴊᴏᴜᴛᴇ́ ᴀ̀ ʟᴀ ꜰɪʟᴇ ᴅ'ᴀᴛᴛᴇɴᴛᴇ ✅**\n"
+        f"➲ **ɴᴏᴍ :** `{file_name}`\n"
+        f"➲ **sᴀɪsᴏɴ :** `{saison if saison else 'N/A'}`\n"
+        f"➲ **ᴇᴘɪsᴏᴅᴇ :** `{episode_number if episode_number else 'N/A'}`\n"
+        f"➲ **ǫᴜᴀʟɪᴛᴇ́ :** `{extracted_qualities if extracted_qualities else 'N/A'}`"
+
     )
 
     queue_message = await message.reply_text(assurance_message)
@@ -103,7 +104,7 @@ async def auto_rename_files(client, message):
 
     try:
         if user_id in user_queue_messages and user_queue_messages[user_id]:
-            await user_queue_messages[user_id][0].edit_text(f"🔄 **Traitement du fichier :**\n➲**Filename**: `{file_name}`")
+            await user_queue_messages[user_id][0].edit_text(f"🔄 **ᴛʀᴀɪᴛᴇᴍᴇɴᴛ ᴅᴜ ғɪᴄʜɪᴇʀ :**\n➲ **ғɪʟᴇɴᴀᴍᴇ :** `{file_name}`")
             user_queue_messages[user_id].pop(0)
             
         if user_id not in secantial_operations:
@@ -142,7 +143,7 @@ async def auto_rename_files(client, message):
         file_uuid = str(uuid.uuid4())[:8]
         renamed_file_path_with_uuid = f"{renamed_file_path}_{file_uuid}"
 
-        await queue_message.edit_text(f"📥 **Téléchargement en cours :** `{file_name}`")
+        await queue_message.edit_text(f"📥 **ᴛᴇ́ʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
 
         try:
             path = await client.download_media(
@@ -155,7 +156,7 @@ async def auto_rename_files(client, message):
             del renaming_operations[file_id]
             return await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
-        await queue_message.edit_text(f"🔄 **Renommage et ajout de métadonnées en cours :** `{file_name}`")
+        await queue_message.edit_text(f"🔄 **ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇᴛ ᴀᴊᴏᴜᴛ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
 
         try:
             os.rename(path, renamed_file_path)
@@ -195,7 +196,7 @@ async def auto_rename_files(client, message):
                 )
                 path = renamed_file_path
 
-            await queue_message.edit_text(f"📤 **Téléversement en cours :** `{file_name}`")
+            await queue_message.edit_text(f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
             await asyncio.sleep(5)  
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
@@ -257,18 +258,33 @@ async def auto_rename_files(client, message):
                         user_channel = await hyoshcoder.get_user_channel(user_id)
                         if not user_channel:
                             user_channel = user_id  
+
                         try:
-                            await client.get_chat(user_channel)  
+                            await client.get_chat(user_channel)
                             for file_info in sorted_files:
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(3)  # Pause pour éviter le flood
                                 await client.copy_message(
                                     user_channel,
                                     settings.LOG_CHANNEL,
                                     file_info["message_id"]
                                 )
-                            await queue_message.reply_text(f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`\nSi des fichiers n'ont pas été complètement envoyés, ce problème est dû au flood de requêtes par Telegram. Veuillez m'envoyer individuellement ces fichiers.")
+                            await queue_message.reply_text(
+                                f"✅ **Tous les fichiers ont été envoyés dans le canal :** `{user_channel}`\n"
+                                "Si des fichiers n'ont pas été complètement envoyés, ce problème est dû au flood de requêtes par Telegram. "
+                                "Veuillez m'envoyer individuellement ces fichiers."
+                            )
                         except Exception as e:
-                            await queue_message.reply_text(f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}**")
+                            await queue_message.reply_text(
+                                f"❌ **Erreur : Le canal {user_channel} n'est pas accessible. {e}\n"
+                            )
+                            for file_info in sorted_files:
+                                await asyncio.sleep(3)  # Pause pour éviter le flood
+                                await client.copy_message(
+                                    user_id,  
+                                    settings.LOG_CHANNEL,
+                                    file_info["message_id"]
+                                )
+                            await queue_message.reply_text("✅ **Tous les fichiers ont été envoyés à votre ID utilisateur.**")
 
                         del secantial_operations[user_id]
                 else:

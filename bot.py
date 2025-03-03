@@ -4,6 +4,7 @@ from pytz import timezone
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
 from config import settings
+from database.data import hyoshcoder
 from aiohttp import web
 from route import web_server
 import pyrogram.utils
@@ -46,6 +47,7 @@ class Bot(Client):
 
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
+        await hyoshcoder.clear_all_user_channels()
 
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:

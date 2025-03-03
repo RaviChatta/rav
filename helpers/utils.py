@@ -27,6 +27,7 @@ EPISODE_PATTERNS = [
     re.compile(r'S\d+(?:E|EP)(\d+)', re.IGNORECASE),
     re.compile(r'S\d+\s*-\s*E(\d+)', re.IGNORECASE),
     re.compile(r'EP?(\d{2})\b', re.IGNORECASE),
+    re.compile(r'\b(\d{1,4})\b(?!\s*[pP])', re.IGNORECASE),
 ]
 
 # Patterns for extracting quality
@@ -53,7 +54,7 @@ async def extract_season(filename: str) -> Optional[str]:
     for pattern in SEASON_PATTERNS:
         match = pattern.search(filename)
         if match:
-            return match.group(1)  # Retourne la chaîne telle quelle
+            return match.group(1)
     return None
 
 async def extract_episode(filename: str) -> Optional[str]:
@@ -64,7 +65,7 @@ async def extract_episode(filename: str) -> Optional[str]:
     for pattern in EPISODE_PATTERNS:
         match = pattern.search(filename)
         if match:
-            return match.group(1)  # Retourne la chaîne telle quelle
+            return match.group(1)  
     return None
 
 async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
