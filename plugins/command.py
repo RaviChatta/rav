@@ -77,6 +77,9 @@ async def command(client, message: Message):
                 if args and args[0].startswith("refer_"):
                     referrer_id = int(args[0].replace("refer_", "")) 
                     reward = 10
+                    ref = await hyoshcoder.is_refferer(user_id)
+                    if ref :
+                        return
                     if referrer_id != user_id:
                         referrer = await hyoshcoder.read_user(referrer_id)
                         

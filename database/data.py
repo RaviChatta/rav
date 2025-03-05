@@ -342,6 +342,14 @@ class Database:
             logging.info("Tous les user_channel ont été supprimés avec succès.")
         except Exception as e:
             logging.error(f"Erreur lors de la suppression des user_channel : {e}")
+    
+    async def is_refferer(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("reffer", None)
+        except Exception as e:
+            logging.error(f"Error getting reffer for user {id}: {e}")
+            return None
 
 
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
