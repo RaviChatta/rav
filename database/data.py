@@ -346,7 +346,7 @@ class Database:
     async def is_refferer(self, id):
         try:
             user = await self.col.find_one({"_id": int(id)})
-            return user.get("reffer", None)
+            return user.get("referrer_id", None)
         except Exception as e:
             logging.error(f"Error getting reffer for user {id}: {e}")
             return None
