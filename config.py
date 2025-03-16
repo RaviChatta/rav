@@ -23,6 +23,11 @@ class Settings():
     BOT_UPTIME  = time.time()
     ADMIN = [int(admin) if id_pattern.search(admin) else admin for admin in os.getenv('ADMIN', '').split()]
     FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '').split(',')
+    
+    # Ajout de LOG_CHANNEL
+    LOG_CHANNEL = os.getenv("LOG_CHANNEL", None)
+    LOG_CHANNEL = int(LOG_CHANNEL) if LOG_CHANNEL and LOG_CHANNEL.lstrip("-").isdigit() else None
+    
     CHANNEL_LOG = os.getenv("CHANNEL_LOG", None)
     CHANNEL_LOG = int(CHANNEL_LOG) if CHANNEL_LOG and CHANNEL_LOG.lstrip("-").isdigit() else None
     DUMP_CHANNEL = os.getenv("DUMP_CHANNEL", None)
