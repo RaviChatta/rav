@@ -24,8 +24,8 @@ class Settings():
     BOT_UPTIME  = time.time()
     ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN').split()]
     FORCE_SUB_CHANNELS = os.environ.get('sineur_x_bot', '').split(',')
-    CHANNEL_LOG = int(os.environ.get("-1002059540600"))
-    LOG_CHANNEL = CHANNEL_LOG
+    CHANNEL_LOG = os.environ.get("-1002059540600", None)
+    CHANNEL_LOG = int(CHANNEL_LOG) if CHANNEL_LOG and CHANNEL_LOG.lstrip("-").isdigit() else None
     DUMP_CHANNEL = int(os.environ.get("-1002203058630"))
     UPDATE_CHANNEL = os.environ.get("@sineur_x_bot")
     SUPPORT_GROUP = os.environ.get("https://t.me/REQUETE_ANIME_30sbot")
