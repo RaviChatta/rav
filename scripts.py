@@ -11,9 +11,9 @@ class Scripts():
     START_TXT = """
 <b>ꜱᴀʟᴜᴛ! {}  
 
-ᴊᴇ ꜱᴜɪꜱ ʜɪɴᴀᴛᴀ ʜʏᴜɢᴀ, ᴋᴜɴᴏɪᴄʜɪ ᴅᴜ ᴄʟᴀɴ ʜʏᴜɢᴀ ᴇᴛ, ᴀᴜᴊᴏᴜʀᴅ'ʜᴜɪ, ᴠᴏᴛʀᴇ ᴀꜱꜱɪꜱᴛᴀɴᴛᴇ ᴅéᴠᴏᴜéᴇ. 🌀
+ᴊᴇ ꜱᴜɪꜱ bug,et je suis la pour vous aide à faire votre travail en ca de défaites je te tue
 
-» ᴛᴏᴜᴛ ᴄᴏᴍᴍᴇ ᴊᴇ ᴘʀᴏᴛèɢᴇ ᴄᴇᴜx ǫᴜɪ ᴍᴇ ꜱᴏɴᴛ ᴄʜᴇʀꜱ ᴀᴠᴇᴄ ᴍᴏɴ ʙʏᴀᴋᴜɢᴀɴ, ᴊᴇ ᴠᴀɪꜱ ᴍ'ᴀꜱꜱᴜʀᴇʀ ǫᴜᴇ ᴠᴏꜱ ꜰɪᴄʜɪᴇʀꜱ ꜱᴏɪᴇɴᴛ ʀᴇɴᴏᴍᴍéꜱ ᴀᴠᴇᴄ ᴘʀéᴄɪꜱɪᴏɴ ᴇᴛ ꜱᴛʏʟᴇ.  
+» j'ai des techniques de torture pour mais ennemis ᴊᴇ ᴠᴀɪꜱ ᴍ'ᴀꜱꜱᴜʀᴇʀ ǫᴜᴇ ᴠᴏꜱ ꜰɪᴄʜɪᴇʀꜱ ꜱᴏɪᴇɴᴛ ʀᴇɴᴏᴍᴍéꜱ ᴀᴠᴇᴄ ᴘʀéᴄɪꜱɪᴏɴ ᴇᴛ ꜱᴛʏʟᴇ.  
 » ᴀᴊᴏᴜᴛᴇᴢ ᴜɴᴇ ʟéɢᴇɴᴅᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ, ᴜɴᴇ ᴍɪɴɪᴀᴛᴜʀᴇ éʟéɢᴀɴᴛᴇ ᴇᴛ ʟᴀɪꜱꜱᴇᴢ-ᴍᴏɪ ꜱéǫᴜᴇɴᴄᴇʀ ᴠᴏꜱ ꜰɪᴄʜɪᴇʀꜱ à ʟᴀ ᴘᴇʀꜰᴇᴄᴛɪᴏɴ.  
 </b>
 """
@@ -24,18 +24,18 @@ class Scripts():
 ➲ saison - ᴘᴏᴜʀ ʀᴇᴍᴘʟᴀᴄᴇʀ ʟᴇ ɴᴜᴍᴇ́ʀᴏ ᴅᴇ ʟa saison
 ➲ quality - ᴘᴏᴜʀ ʀᴇᴍᴘʟᴀᴄᴇʀ ʟᴀ ǫᴜᴀʟɪᴛᴇ́  
 
-<b>‣ ᴘᴀʀ ᴇxᴀᴍᴘʟᴇ :- </b> <code> /autorename Suicide Squad [Ssaison - EPepisode - [Quality] [Dual] @hyoshmangavf </code>
+<b>‣ ᴘᴀʀ ᴇxᴀᴍᴘʟᴇ :- </b> <code> /autorename one punch man [Ssaison - EPepisode - [Quality] [Dual]  </code>
 
 <b>‣ /autorename : ʀᴇɴᴏᴍᴍᴇᴢ ᴠᴏs ꜰɪʟᴇs ᴍᴜʟᴛɪᴍᴇᴅɪᴀ ᴇɴ ɪɴᴄʟᴜᴀɴᴛ ʟᴇs ᴠᴀʀɪᴀʙʟᴇs 'ᴇᴘɪsᴏᴅᴇ' ᴇᴛ 'ǫᴜᴀʟɪᴛᴇ́' ᴅᴀɴs vᴏᴛʀᴇ ᴛᴇxᴛᴇ, ᴘᴏᴇᴜʀ ᴇxᴛʀᴀɪʀᴇʀ l'ᴇᴘɪsᴏᴅᴇ ᴇᴛ ʟa ǫᴜᴀʟɪᴛᴇ́ ᴘʀᴇ́sᴇɴᴛs ᴅᴀɴs lᴇ ɴᴏᴍ ᴅᴇ ꜰɪʟᴇ ᴏʀɪɢɪɴᴀʟ.</b>"""
 
 
     ABOUT_TXT = f"""<b>❍ ᴍᴏɴ ɴᴏᴍ : <a href="https://t.me/hyoshassistantbot">ɢᴇ ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ</a>  
-❍ ᴅᴇ́ᴠᴇʟᴏᴘᴘᴇᴜʀ : <a href="https://t.me/hyoshassistantBot">ᴘʀᴏᴘʀɪᴇ́ᴛᴀɪʀᴇ</a>  
-❍ ɢɪᴛʜᴜʙ : <a href="https://github.com/ hyoshassistantBot">ᴘʀᴏᴘʀɪᴇ́ᴛᴀɪʀᴇ</a>  
-❍ ʟᴀɴɢᴀɢᴇ : <a href="https://www.python.org/">ᴘʏᴛʜᴏɴ</a>  
-❍ ʙᴀsᴇ ᴅᴇ ᴅᴏɴɴᴇ́ᴇs : <a href="https://www.mongodb.com/">ᴍᴏɴɢᴏᴅʙ</a>  
-❍ ʜᴇ́ʙᴇʀɢᴇ́ sᴜʀ : <a href="https://t.me/hyoshassistantbot">ᴠᴘs</a>  
-❍ ᴄᴀɴᴀʟ ᴘʀɪɴᴄɪᴘᴀʟ : <a href="https://t.me/hyoshmangavf">ᴀɴɪᴍᴇ ᴄʀᴜɪsᴇ</a>  
+🧑‍💼ᴅᴇ́ᴠᴇʟᴏᴘᴘᴇᴜʀ : <a href="https://t.me/hyoshassistantBot">ᴘʀᴏᴘʀɪᴇ́ᴛᴀɪʀᴇ</a>  
+💫 ɢɪᴛʜᴜʙ : <a href="https://github.com/ hyoshassistantBot">ᴘʀᴏᴘʀɪᴇ́ᴛᴀɪʀᴇ</a>  
+⚡️ ʟᴀɴɢᴀɢᴇ : <a href="https://www.python.org/">ᴘʏᴛʜᴏɴ</a>  
+📁 ʙᴀsᴇ ᴅᴇ ᴅᴏɴɴᴇ́ᴇs : <a href="https://t.me/REQUETE_ANIME_30sbot/">sineur_clood</a>  
+🔺 ʜᴇ́ʙᴇʀɢᴇ́ sᴜʀ : <a href="https://t.me/REQUETE_ANIME_30sbot">box_clood</a>  
+🎞️ ᴄᴀɴᴀʟ du bot : <a href="https://t.me/sineur_x_bot">bug canal</a>  
 
 ➻ ᴄʟɪǫᴜᴇᴢ sᴜʀ ʟᴇs ʙᴏᴜᴛᴏɴs ᴄɪ-ᴅᴇssᴏᴜs ᴘᴏᴜʀ ᴏʙᴛᴇɴɪʀ ᴅᴇ ʟ'ᴀɪᴅᴇ ᴇᴛ ᴅᴇs ɪɴғᴏʀᴍᴀᴛɪᴏɴs ʙᴀsɪǫᴜᴇs sᴜʀ ᴍᴏɪ.</b>"""
 
@@ -71,16 +71,16 @@ class Scripts():
 
     DONATE_TXT = """<blockquote>ᴍᴇʀᴄɪ ᴅᴇ mᴏɴᴛʀᴇʀ ᴅᴇ ʟ'ɪɴtéʀêt pᴏᴜʀ lᴇs dᴏɴs</blockquote>
 
-<b><i>💞 Sɪ vᴏᴜs ᴀᴍᴇᴢ ɴᴏᴛʀᴇ bᴏᴛ, n'ʜéᴄɪtᴇz pᴀs à fᴀɪʀᴇ ᴜɴ dᴏɴ dᴇ n'iᴍᴘᴏʀᴛᴇ qᴜᴇl mᴏɴᴛᴀɴᴛ $10, $20, $50, $100, ᴇᴛᴄ.</i></b>
+<b><i>💞 Sɪ vᴏᴜs ᴀᴍᴇᴢ ɴᴏᴛʀᴇ bᴏᴛ, n'ʜéᴄɪtᴇz pᴀs à fᴀɪʀᴇ ᴜɴ dᴏɴ dᴇ n'iᴍᴘᴏʀᴛᴇ qᴜᴇl mᴏɴᴛᴀɴᴛ 10⭐️, $20⭐️, $50, $100, ᴇᴛᴄ.</i></b>
 
 Lᴇs dᴏɴs sᴏɴt vʀᴀɪᴍᴇɴᴛ ᴀpᴘʀéᴄɪéᴇs ᴇᴛ ᴀɪᴅᴇɴᴛ ᴀᴜ dᴇᴠᴇʟᴏᴘᴘᴇᴍᴇɴᴛ dᴜ bᴏᴛ.
 
 <u>Vᴏᴜs pᴏᴜᴠᴇz ᴀʟᴇʀᴛᴇᴢ ᴜɴ ᴅᴏɴ </u>
 
-Pᴀʏᴇʀ ɪᴄɪ - <code> @hyoshassistantBot </code>
+Pᴀʏᴇʀ ɪᴄɪ - <code> @altof2 </code>
 
 Sɪ vᴏᴜs lᴇ sᴏʏᴇz, vᴏᴜs pᴏᴜᴠᴇz nᴏᴜs ᴇɴᴠᴏʏᴇʀ dᴇs cᴀᴘᴛᴜʀᴇs d'écrᴀɴs
-à - @hyoshassistantBot"""
+à - @REQUETE_ANIME_30sbot"""
 
 
     PREMIUM_TXT = """<b>ᴀᴍéʟɪᴏʀᴇᴢ nᴏᴛʀᴇ sᴇʀᴠɪᴄᴇ ᴘʀᴇᴍɪᴜᴍ et prᴏfɪᴛᴇᴢ de fᴜɴᴄᴛɪᴏɴɴᴀʟɪᴛés ᴇxᴄʟᴜsɪᴠᴇs :
@@ -105,9 +105,9 @@ Vᴏᴛʀᴇ pʟᴀɴ pʀᴇᴍɪᴜᴍ sᴇʀᴀ ᴀᴄᴛɪᴠé ᴀᴘʀès v
 Tᴀʀɪғɪᴄᴀᴛɪᴏɴ :
 ➜ Pʀᴇᴍɪᴜᴍ mᴇɴsᴜᴇʟ : 3.99$/mᴏɪs
 ➜ Pʀᴇᴍɪᴜᴍ qᴜᴏᴛɪᴅɪᴇɴ : 0.99/jᴏᴜʀ
-➜ Pᴏᴜʀ l'ʜéʙᴇʀɢᴇᴍᴇɴᴛ ᴅᴇ bᴏᴛ : cᴏɴᴛᴀᴄᴛᴇᴢ @hyoshassistantBot
+➜ Pᴏᴜʀ l'ʜéʙᴇʀɢᴇᴍᴇɴᴛ ᴅᴇ bᴏᴛ : cᴏɴᴛᴀᴄᴛᴇᴢ @altof2
 
-➲ Pᴀʏeʀ ɪᴄɪ - <code> @hyoshassistantBot </code>
+➲ Pᴀʏeʀ ɪᴄɪ - <code> @REQUETE_ANIME_30sbot </code>
 
 ‼️Tᴇ́ʟᴇᴄʜargᴇʀ ʟᴀ cᴀᴘᴛᴜʀᴇ ᴅᴇ ʟ'ecrᴀn ᴅᴜ ᴘᴀʏᴇᴍᴇɴᴛ ɪᴄɪ ᴇᴛ ʀᴇᴘᴏɴᴅᴇᴢ ᴀᴠᴇᴄ lᴀ cᴏᴍᴍᴀɴᴅᴇ /bought.</b>"""
 
@@ -139,15 +139,6 @@ Nb: Assurer vous d'activer le mode sequentiel pour que le bot puisse trier et en
   Jᴇ sᴜɪs ᴜɴ bᴏᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ,
 ᴜɴ bᴏᴛ ᴛᴇʟᴇɢʀᴀᴍ ᴏᴘᴇɴ sᴏᴜʀᴄᴇ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ.</b>
 
-ᴇᴄʀɪᴛ ᴇɴ ᴘʏᴛʜᴏɴ ᴀᴠᴇᴄ ʟ'ᴀɪᴅᴇ ᴅᴇ :
-[Pyrogram](https://github.com/pyrogram/pyrogram)
-[Python-Telegram-Bot](https://github.com/python-telegram-bot/python-telegram-bot)
-ᴇᴛ ᴜᴛɪʟɪsᴀɴᴛ [Mongo](https://cloud.mongodb.com) cᴏᴍᴇ ʙᴀsᴇ ᴅᴇ ᴅᴏɴᴎᴇᴇᴇᴏᴠᴇᴇ
-
-<b>Voici mon cᴏᴅᴇ sᴏᴜʀᴄᴇ :</b> [GitHub](https://github.com/kalebavincent/autorenamebot)
-
-ʟᴇ bᴏᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ ᴇsᴛ sᴏᴜʀ ʟɪᴄᴇɴᴄᴇ [MIT](https://github.com/kalebavincent/autorenamebot/blob/main/LICENSE).
-© 2025 | [Support Chat](https://t.me/tout_manga_confondu), ᴛᴏᴜs ᴅʀᴏɪᴛs ʀéserᴠéᴇᴇᴇ
 """ 
 
 
