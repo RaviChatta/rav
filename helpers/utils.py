@@ -161,7 +161,7 @@ def convert(seconds):
 
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
-        curr = datetime.now(timezone("Africa/Lubumbashi"))
+        curr = datetime.now(timezone("Africa/togo"))
         date = curr.strftime('%d %B, %Y')
         time = curr.strftime('%I:%M:%S %p')
         await b.send_message(
