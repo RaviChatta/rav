@@ -16,11 +16,11 @@ from dotenv import load_dotenv
 load_dotenv()  # Chargement des variables d'environnement
 
 # Définition de l'ID minimum d'un canal (pour éviter certains bugs)
-pyrogram.utils.MIN_CHANNEL_ID = -1002175858655
+pyrogram.utils.MIN_CHANNEL_ID = -1002163050017
 
 # Chargement de la configuration
 Config = settings
-SUPPORT_CHAT = -1002229122792  # ID du chat de support
+SUPPORT_CHAT = -1002203058630  # ID du chat de support
 
 class Bot(Client):
 
