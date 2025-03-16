@@ -25,7 +25,7 @@ async def auto_rename_files(client, message):
     media_preference = await hyoshcoder.get_media_preference(user_id)
     
     if user_points < 1:
-        return await message.reply_text("❌ Vous n'avez pas assez de points pour renommer un fichier. Rechargez vos points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
+        return await message.reply_text("❌ Vous n'avez pas assez de solde pour renommer un fichier. Rechargez vos points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
 
     if not format_template:
         return await message.reply_text(
