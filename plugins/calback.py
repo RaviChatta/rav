@@ -29,14 +29,14 @@ async def cb_handler(client, query: CallbackQuery):
         if data == "home":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("•  ᴍᴇs ᴄᴏᴍᴍᴀɴᴅᴇs  •", callback_data='help')],
-                [InlineKeyboardButton('• ᴍɪsᴇs à ᴊᴏᴜʀ', url='https://t.me/hyoshassistantbot'), InlineKeyboardButton('sᴜᴘᴘᴏʀᴛ •', url='https://t.me/tout_manga_confondu')],
+                [InlineKeyboardButton('• ᴍɪsᴇs à ᴊᴏᴜʀ', url='https://t.me/sineur_x_bot'), InlineKeyboardButton('sᴜᴘᴘᴏʀᴛ •', url='https://t.me/sineur_x_bot')],
                 [InlineKeyboardButton('• ᴀ ᴘʀᴏᴘᴏs', callback_data='about'), InlineKeyboardButton('sᴏᴜʀᴄᴇ •', callback_data='source')]
             ])
             caption =Txt.START_TXT.format(query.from_user.mention)
         
         elif data == "caption":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("• sᴜᴘᴘᴏʀᴛ", url='https://t.me/tout_manga_confondu'), InlineKeyboardButton("ʀᴇᴛᴏᴜʀ •", callback_data="help")]
+                [InlineKeyboardButton("• sᴜᴘᴘᴏʀᴛ", url='https://t.me/REQUETE_ANIME_30sbot'), InlineKeyboardButton("ʀᴇᴛᴏᴜʀ •", callback_data="help")]
             ])
             caption = Txt.CAPTION_TXT
         
