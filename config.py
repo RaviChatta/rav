@@ -22,7 +22,7 @@ class Settings():
     WEBHOOK = bool(os.environ.get("WEBHOOK", "True"))
     
     BOT_UPTIME  = time.time()
-    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('5116530698').split()]
+    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN').split()]
     FORCE_SUB_CHANNELS = os.environ.get('sineur_x_bot').split(',')
     CHANNEL_LOG = int(os.environ.get("-1002059540600"))
     LOG_CHANNEL = CHANNEL_LOG
