@@ -23,7 +23,7 @@ class Database:
             file_id=None,
             caption=None,
             metadata=True,
-            metadata_code="Telegram : @hyoshassistantbot",
+            metadata_code="Telegram : @REQUETE_ANIME_30sbot",
             format_template=None,
             ban_status=dict(
                 is_banned=False,
