@@ -8,12 +8,12 @@ load_dotenv()
 
 class Settings():
     
-    API_HASH = os.getenv("API_HASH")
-    API_ID = os.getenv("API_ID")
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    API_HASH = os.getenv("bf5a6381d07f045af4faeb46d7de36e5")
+    API_ID = os.getenv("24777493")
+    BOT_TOKEN = os.getenv("7683456107:AAH3y7X7fe6XtTjfYlv5v27wIGgsgcGHL70")
     
-    DATA_URI =  os.getenv("DATA_URI")
-    DATA_NAME = os.getenv("DATA_NAME")
+    DATA_URI =  os.getenv("mongodb+srv://altof2:123Bonjoure@cluster0.s1suq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+    DATA_NAME = os.getenv("Altof2")
     
     TEMP_DIR = os.environ.get("TEMP_DIR", "temp/")
     DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "downloads/")
@@ -22,17 +22,17 @@ class Settings():
     WEBHOOK = bool(os.environ.get("WEBHOOK", "True"))
     
     BOT_UPTIME  = time.time()
-    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN').split()]
-    FORCE_SUB_CHANNELS = os.environ.get('FORCE_SUB_CHANNELS').split(',')
-    CHANNEL_LOG = int(os.environ.get("CHANNEL_LOG"))
+    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('5116530698').split()]
+    FORCE_SUB_CHANNELS = os.environ.get('sineur_x_bot').split(',')
+    CHANNEL_LOG = int(os.environ.get("-1002059540600"))
     LOG_CHANNEL = CHANNEL_LOG
-    DUMP_CHANNEL = int(os.environ.get("DUMP_CHANNEL"))
-    UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL")
-    SUPPORT_GROUP = os.environ.get("SUPPORT_GROUP")
+    DUMP_CHANNEL = int(os.environ.get("-1002203058630"))
+    UPDATE_CHANNEL = os.environ.get("@sineur_x_bot")
+    SUPPORT_GROUP = os.environ.get("https://t.me/REQUETE_ANIME_30sbot")
     SHORTED_LINK = os.environ.get("SHORTED_LINK")
     SHORTED_LINK_API = os.environ.get("SHORTED_LINK_API")
     
-    IMAGES = os.environ.get("IMAGES")
+    IMAGES = os.environ.get("https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg")
     
     
     
