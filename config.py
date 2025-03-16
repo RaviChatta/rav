@@ -26,9 +26,10 @@ class Settings():
     FORCE_SUB_CHANNELS = os.environ.get('sineur_x_bot', '').split(',')
     CHANNEL_LOG = os.environ.get("-1002059540600", None)
     CHANNEL_LOG = int(CHANNEL_LOG) if CHANNEL_LOG and CHANNEL_LOG.lstrip("-").isdigit() else None
-    DUMP_CHANNEL = int(os.environ.get("-1002203058630"))
-    UPDATE_CHANNEL = os.environ.get("@sineur_x_bot")
-    SUPPORT_GROUP = os.environ.get("https://t.me/REQUETE_ANIME_30sbot")
+    DUMP_CHANNEL = int(os.environ.get("-1002203058630", None)
+    DUMP_CHANNEL = int(DUMP_CHANNEL) if DUMP_CHANNEL and DUMP_CHANNEL.lstrip("-").isdigit() else None
+    UPDATE_CHANNEL = os.environ.get("@sineur_x_bot", None)
+    SUPPORT_GROUP = os.environ.get("https://t.me/REQUETE_ANIME_30sbot", None)
     SHORTED_LINK = os.environ.get("SHORTED_LINK")
     SHORTED_LINK_API = os.environ.get("SHORTED_LINK_API")
     
