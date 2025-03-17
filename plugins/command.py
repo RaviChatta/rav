@@ -68,8 +68,8 @@ async def command(client, message: Message):
 
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("• ᴍᴇs ᴄᴏᴍᴍᴀɴᴅᴇs •", callback_data='help')],
-                    [InlineKeyboardButton('• ᴍɪsᴇs à ᴊᴏᴜʀ', url='https://t.me/hyoshassistantbot'),
-                     InlineKeyboardButton('sᴜᴘᴘᴏʀᴛ •', url='https://t.me/tout_manga_confondu')],
+                    [InlineKeyboardButton('• ᴍɪsᴇs à ᴊᴏᴜʀ', url='https://t.me/sineur_x_bot'),
+                     InlineKeyboardButton('sᴜᴘᴘᴏʀᴛ •', url='https://t.me/REQUETE_ANIME_30sbot')],
                     [InlineKeyboardButton('• ᴀ ᴘʀᴏᴘᴏs', callback_data='about'),
                      InlineKeyboardButton('sᴏᴜʀᴄᴇ •', callback_data='source')]
                 ])
