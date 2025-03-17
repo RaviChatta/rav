@@ -29,9 +29,9 @@ class Scripts():
 <b>‣ /autorename : ʀᴇɴᴏᴍᴍᴇᴢ ᴠᴏs ꜰɪʟᴇs ᴍᴜʟᴛɪᴍᴇᴅɪᴀ ᴇɴ ɪɴᴄʟᴜᴀɴᴛ ʟᴇs ᴠᴀʀɪᴀʙʟᴇs 'ᴇᴘɪsᴏᴅᴇ' ᴇᴛ 'ǫᴜᴀʟɪᴛᴇ́' ᴅᴀɴs vᴏᴛʀᴇ ᴛᴇxᴛᴇ, ᴘᴏᴇᴜʀ ᴇxᴛʀᴀɪʀᴇʀ l'ᴇᴘɪsᴏᴅᴇ ᴇᴛ ʟa ǫᴜᴀʟɪᴛᴇ́ ᴘʀᴇ́sᴇɴᴛs ᴅᴀɴs lᴇ ɴᴏᴍ ᴅᴇ ꜰɪʟᴇ ᴏʀɪɢɪɴᴀʟ.</b>"""
 
 
-    ABOUT_TXT = f"""<b>❍ ᴍᴏɴ ɴᴏᴍ : <a href="https://t.me/hyoshassistantbot">ɢᴇ ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ</a>  
-🧑‍💼ᴅᴇ́ᴠᴇʟᴏᴘᴘᴇᴜʀ : <a href="https://t.me/hyoshassistantBot">ᴘʀᴏᴘʀɪᴇ́ᴛᴀɪʀᴇ</a>  
-💫 ɢɪᴛʜᴜʙ : <a href="https://github.com/ hyoshassistantBot">ᴘʀᴏᴘʀɪᴇ́ᴛᴀɪʀᴇ</a>  
+    ABOUT_TXT = f"""<b>❍ ᴍᴏɴ ɴᴏᴍ : <a href="https://t.me/REQUETE_ANIME_30sbot">ɢᴇ ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ</a>  
+🧑‍💼ᴅᴇ́ᴠᴇʟᴏᴘᴘᴇᴜʀ : <a href="https://t.me/altof2">partenaire</a>  
+💫 ɢɪᴛʜᴜʙ : <a href="https://github.com/sineur_x_bot ">bot poprio</a>  
 ⚡️ ʟᴀɴɢᴀɢᴇ : <a href="https://www.python.org/">ᴘʏᴛʜᴏɴ</a>  
 📁 ʙᴀsᴇ ᴅᴇ ᴅᴏɴɴᴇ́ᴇs : <a href="https://t.me/REQUETE_ANIME_30sbot/">sineur_clood</a>  
 🔺 ʜᴇ́ʙᴇʀɢᴇ́ sᴜʀ : <a href="https://t.me/REQUETE_ANIME_30sbot">box_clood</a>  
@@ -91,7 +91,7 @@ Sɪ vᴏᴜs lᴇ sᴏʏᴇz, vᴏᴜs pᴏᴜᴠᴇz nᴏᴜs ᴇɴᴠᴏʏᴇ�
 
 ➲ Pʀɪᴇʀᴇ ᴇᴛᴀᴘᴇ : pᴀʏᴇʀ ʟᴇ mᴏɴᴛᴀɴᴛ cᴏʀʀᴇspᴏɴᴅᴀɴᴛ à vᴏᴛʀᴇ pʟᴀɴ pʀéfᴇré à 
 
-➲ Dᴇᴜxɪèmᴇ ᴇᴛᴀᴘᴇ : prᴇɴᴇᴢ ᴜɴᴇ cᴀᴘᴛᴜʀᴇ d'écran de vᴏᴛʀᴇ pᴀʏᴇᴍᴇɴᴛ et ᴘᴀʀᴀɢᴇᴢ-ʟᴀ ᴅɪʀᴇᴄᴛᴇᴍᴇɴᴛ ɪᴄɪ : @hyoshassistantBot 
+➲ Dᴇᴜxɪèmᴇ ᴇᴛᴀᴘᴇ : prᴇɴᴇᴢ ᴜɴᴇ cᴀᴘᴛᴜʀᴇ d'écran de vᴏᴛʀᴇ pᴀʏᴇᴍᴇɴᴛ et ᴘᴀʀᴀɢᴇᴢ-ʟᴀ ᴅɪʀᴇᴄᴛᴇᴍᴇɴᴛ ɪᴄɪ : @REQUETE_ANIME_30sbot 
 
 ➲ ᴀʟᴛᴇʀɴᴀᴛɪᴠᴇ : ᴏᴜ tᴇ́ʟᴇᴄʜᴇʀ ʟᴀ cᴀᴘᴛᴜʀᴇ d'écran ɪᴄɪ et rᴇᴘᴏɴᴅᴇᴢ ᴀᴠᴇᴄ lᴀ cᴏᴍᴍᴀɴᴅᴇ /bought.
 
@@ -137,7 +137,7 @@ Nb: Assurer vous d'activer le mode sequentiel pour que le bot puisse trier et en
     SOURCE_TXT = """
 <b>Salut,
   Jᴇ sᴜɪs ᴜɴ bᴏᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ,
-ᴜɴ bᴏᴛ ᴛᴇʟᴇɢʀᴀᴍ ᴏᴘᴇɴ sᴏᴜʀᴄᴇ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ.</b>
+ᴜɴ bᴏᴛ ᴛᴇʟᴇɢʀᴀᴍ  ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ.</b>
 
 """ 
 
