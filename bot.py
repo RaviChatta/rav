@@ -64,7 +64,7 @@ class Bot(Client):
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
                 # Définition du fuseau horaire
-                curr = datetime.now(timezone("Africa/togo"))
+                curr = datetime.now(timezone("Africa/lome"))
                 date = curr.strftime('%d %B, %Y')
                 time_str = curr.strftime('%I:%M:%S %p')
 
