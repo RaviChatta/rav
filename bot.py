@@ -1,25 +1,17 @@
 import aiohttp
 import asyncio
-import warnings
 import pytz
 from datetime import datetime, timedelta
 from pytz import timezone
-from pyrogram import Client, __version__
-from pyrogram.raw.all import layer
-from config import settings  # Importation des paramètres de configuration
-from database.data import hyoshcoder  # Importation de la base de données
+from pyrogram import Client
 from aiohttp import web
 from route import web_server  # Importation du serveur web
-import pyrogram.utils
-import pyromod
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os
+from config import settings  # Paramètres de configuration
+from database.data import hyoshcoder  # Base de données
 import time
 from dotenv import load_dotenv
-load_dotenv()  # Chargement des variables d'environnement
 
-# Définition de l'ID minimum d'un canal (pour éviter certains bugs)
-pyrogram.utils.MIN_CHANNEL_ID = -1002163050017
+load_dotenv()  # Chargement des variables d'environnement
 
 # Chargement de la configuration
 Config = settings
@@ -48,14 +40,6 @@ class Bot(Client):
         self.username = me.username  # Nom d'utilisateur du bot
         self.uptime = Config.BOT_UPTIME  # Temps de fonctionnement du bot
 
-        # Lancement du serveur web si nécessaire
-        if Config.WEBHOOK:
-            from aiohttp import web
-            app = web.AppRunner(await web_server())  # Assurez-vous que web_server() renvoie une instance valide
-            await app.setup()
-            site = web.TCPSite(app, "0.0.0.0", 8080)
-            await site.start()  # Démarrage du serveur
-
         print(f"{me.first_name} a démarré.....✨️")
 
         # Calcul du temps de fonctionnement
@@ -80,22 +64,29 @@ class Bot(Client):
                     caption=(
                         "**bug est bot a redémarré !**\n\n"
                         f"Je n'ai pas dormi depuis​ : `{uptime_string}`"
-                    ),
-                    reply_markup=InlineKeyboardMarkup(
-                        [[
-                            InlineKeyboardButton("Mises à jour", url="https://t.me/sineur_x_bot")
-                        ]]
                     )
                 )
 
             except Exception as e:
                 print(f"Échec de l'envoi du message dans le chat {chat_id} : {e}")
 
+# Fonction pour démarrer les services : Pyrogram + Serveur Web
+async def start_services():
+    bot = Bot()
+    
+    # Démarrage du client Pyrogram
+    await bot.start()
+    
+    # Lancer le serveur web si configuré
+    if Config.WEBHOOK:
+        app = web.AppRunner(await web_server())  # Assurez-vous que `web_server()` retourne une instance valide de serveur
+        await app.setup()
+        site = web.TCPSite(app, "0.0.0.0", 8080)
+        await site.start()  # Démarrage du serveur web
 
 # Fonction principale pour exécuter le bot
 async def main():
-    bot = Bot()
-    await bot.start()
+    await start_services()  # Appel de la fonction start_services()
 
 if __name__ == "__main__":
     asyncio.run(main())
