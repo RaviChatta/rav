@@ -1,4 +1,7 @@
-import aiohttp, asyncio, warnings, pytz
+import aiohttp
+import asyncio
+import warnings
+import pytz
 from datetime import datetime, timedelta
 from pytz import timezone
 from pyrogram import Client, __version__
@@ -47,9 +50,11 @@ class Bot(Client):
 
         # Lancement du serveur web si nécessaire
         if Config.WEBHOOK:
-            app = web.AppRunner(await web_server())
+            from aiohttp import web
+            app = web.AppRunner(await web_server())  # Assurez-vous que web_server() renvoie une instance valide
             await app.setup()
-            await web.TCPSite(app, "0.0.0.0", 8080).start()
+            site = web.TCPSite(app, "0.0.0.0", 8080)
+            await site.start()  # Démarrage du serveur
 
         print(f"{me.first_name} a démarré.....✨️")
 
@@ -85,6 +90,7 @@ class Bot(Client):
 
             except Exception as e:
                 print(f"Échec de l'envoi du message dans le chat {chat_id} : {e}")
+
 
 # Fonction principale pour exécuter le bot
 async def main():
