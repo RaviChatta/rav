@@ -86,5 +86,10 @@ class Bot(Client):
             except Exception as e:
                 print(f"Échec de l'envoi du message dans le chat {chat_id} : {e}")
 
-# Exécution du bot
-Bot().run()
+# Fonction principale pour exécuter le bot
+async def main():
+    bot = Bot()
+    await bot.start()
+
+if __name__ == "__main__":
+    asyncio.run(main())
