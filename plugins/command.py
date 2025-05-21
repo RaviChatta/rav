@@ -265,105 +265,103 @@ async def command(client, message: Message):
 
                 if not replied:
                     await msg.edit("<b>Please reply with a screenshot of your payment for the premium purchase so I can check...</b>")
-       #indetionfix
-               elif replied.photo:
-                  await client.send_photo(
-                      chat_id=settings.LOG_CHANNEL,
-                      photo=replied.photo.file_id,
-                      caption=(
-                          f"<b>User - {message.from_user.mention}\n"
-                          f"User ID - <code>{message.from_user.id}</code>\n"
-                          f"Username - <code>{message.from_user.username}</code>\n"
-                          f"First Name - <code>{message.from_user.first_name}</code></b>"
-                      ),
-                      reply_markup=InlineKeyboardMarkup([
-                          [InlineKeyboardButton("Close", callback_data="close_data")]
-                      ])
-                  )
-                  await msg.edit_text("<b>Your screenshot has been sent to the admins.</b>")
-              
-              elif command == "help":
-                  bot = await client.get_me()
-                  mention = bot.mention
-                  caption = Txt.HELP_TXT.format(mention=mention) 
-                  sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-                  src_info = await hyoshcoder.get_src_info(user_id)
-              
-                  btn_seq_text = "Sequential ✅" if sequential_status else "Sequential ❌"
-                  src_txt = "File name" if src_info == "file_name" else "File caption"
-              
-                  buttons = InlineKeyboardMarkup([
-                      [InlineKeyboardButton("• Automatic renaming format •", callback_data='file_names')],
-                      [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), InlineKeyboardButton('Caption •', callback_data='caption')],
-                      [InlineKeyboardButton('• Metadata', callback_data='meta'), InlineKeyboardButton('Make a donation •', callback_data='donate')],
-                      [InlineKeyboardButton(f'• {btn_seq_text}', callback_data='secanciel'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                      [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toogle_src')],
-                      [InlineKeyboardButton('• Home', callback_data='home')]
-                  ])
-                  caption = Txt.HELP_TXT.format(client.mention)
-                  if img:
-                      await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-                  else:
-                      await message.reply_text(text=caption, disable_web_page_preview=True, reply_markup=buttons)
-              
-              elif command == "set_dump":
-                  if len(message.command) == 1:
-                      caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
-                      await message.reply_text(caption)
-                  else:
-                      channel_id = message.command[1]
-                      if not channel_id:
-                          await message.reply_text("Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
-                      else:
-                          try:
-                              channel_info = await client.get_chat(channel_id)
-                              if channel_info:
-                                  await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
-                                  await message.reply_text(f"Channel {channel_id} has been set as the dump channel.")
-                              else:
-                                  await message.reply_text("The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel.")
-                          except Exception as e:
-                              await message.reply_text(f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
-              
-              elif command in ["view_dump", "viewdump"]:
-                  channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
-                  if channel_id:
-                      caption = f"Channel {channel_id} is currently set as the dump channel."
-                      await message.reply_text(caption)
-                  else:
-                      await message.reply_text("No dump channel is currently set.")
-              
-              elif command in ["del_dump", "deldump"]:
-                  channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
-                  if channel_id:
-                      await hyoshcoder.set_user_channel(message.from_user.id, None)
-                      caption = f"Channel {channel_id} has been removed from the dump list."
-                      await message.reply_text(caption)
-                  else:
-                      await message.reply_text("No dump channel is currently set.")
-              
-              elif command == "profile":
-                  user = await hyoshcoder.read_user(message.from_user.id)
-                  caption = (
-                      f"Username: {message.from_user.username}\n"
-                      f"First Name: {message.from_user.first_name}\n"
-                      f"Last Name: {message.from_user.last_name}\n"
-                      f"User ID: {message.from_user.id}\n"
-                      f"Points: {user['points']}\n"
-                  )
-                  await message.reply_photo(img, caption=caption)
-              
-              except FloodWait as e:
-                  print(f"FloodWait: {e}")
-                  await asyncio.sleep(e.value)
-              
-              except Exception as e:
-                  print(f"Unexpected error: {e}")
-                  await message.reply_text("An error occurred. Please try again later.")
-              
-              @Client.on_message(filters.private & filters.photo)
-              async def addthumbs(client, message):
-                  mkn = await message.reply_text("Please wait...")
-                  await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
-                  await mkn.edit("**Thumbnail saved successfully ✅️**")
-
+                elif replied.photo:
+                    await client.send_photo(
+                        chat_id=settings.LOG_CHANNEL,
+                        photo=replied.photo.file_id,
+                        caption=(
+                            f"<b>User - {message.from_user.mention}\n"
+                            f"User ID - <code>{message.from_user.id}</code>\n"
+                            f"Username - <code>{message.from_user.username}</code>\n"
+                            f"First Name - <code>{message.from_user.first_name}</code></b>"
+                        ),
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Close", callback_data="close_data")]
+                        ])
+                    )
+                    await msg.edit_text("<b>Your screenshot has been sent to the admins.</b>")
+            
+            elif command == "help":
+                bot = await client.get_me()
+                mention = bot.mention
+                caption = Txt.HELP_TXT.format(mention=mention) 
+                sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+                src_info = await hyoshcoder.get_src_info(user_id)
+            
+                btn_seq_text = "Sequential ✅" if sequential_status else "Sequential ❌"
+                src_txt = "File name" if src_info == "file_name" else "File caption"
+            
+                buttons = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("• Automatic renaming format •", callback_data='file_names')],
+                    [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), InlineKeyboardButton('Caption •', callback_data='caption')],
+                    [InlineKeyboardButton('• Metadata', callback_data='meta'), InlineKeyboardButton('Make a donation •', callback_data='donate')],
+                    [InlineKeyboardButton(f'• {btn_seq_text}', callback_data='secanciel'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
+                    [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toogle_src')],
+                    [InlineKeyboardButton('• Home', callback_data='home')]
+                ])
+                caption = Txt.HELP_TXT.format(client.mention)
+                if img:
+                    await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
+                else:
+                    await message.reply_text(text=caption, disable_web_page_preview=True, reply_markup=buttons)
+            
+            elif command == "set_dump":
+                if len(message.command) == 1:
+                    caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
+                    await message.reply_text(caption)
+                else:
+                    channel_id = message.command[1]
+                    if not channel_id:
+                        await message.reply_text("Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
+                    else:
+                        try:
+                            channel_info = await client.get_chat(channel_id)
+                            if channel_info:
+                                await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
+                                await message.reply_text(f"Channel {channel_id} has been set as the dump channel.")
+                            else:
+                                await message.reply_text("The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel.")
+                        except Exception as e:
+                            await message.reply_text(f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
+            
+            elif command in ["view_dump", "viewdump"]:
+                channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
+                if channel_id:
+                    caption = f"Channel {channel_id} is currently set as the dump channel."
+                    await message.reply_text(caption)
+                else:
+                    await message.reply_text("No dump channel is currently set.")
+            
+            elif command in ["del_dump", "deldump"]:
+                channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
+                if channel_id:
+                    await hyoshcoder.set_user_channel(message.from_user.id, None)
+                    caption = f"Channel {channel_id} has been removed from the dump list."
+                    await message.reply_text(caption)
+                else:
+                    await message.reply_text("No dump channel is currently set.")
+            
+            elif command == "profile":
+                user = await hyoshcoder.read_user(message.from_user.id)
+                caption = (
+                    f"Username: {message.from_user.username}\n"
+                    f"First Name: {message.from_user.first_name}\n"
+                    f"Last Name: {message.from_user.last_name}\n"
+                    f"User ID: {message.from_user.id}\n"
+                    f"Points: {user['points']}\n"
+                )
+                await message.reply_photo(img, caption=caption)
+            
+        except FloodWait as e:
+            print(f"FloodWait: {e}")
+            await asyncio.sleep(e.value)
+        
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            await message.reply_text("An error occurred. Please try again later.")
+        
+@Client.on_message(filters.private & filters.photo)
+async def addthumbs(client, message):
+    mkn = await message.reply_text("Please wait...")
+    await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
+    await mkn.edit("**Thumbnail saved successfully ✅️**")
