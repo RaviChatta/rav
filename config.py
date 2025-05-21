@@ -40,10 +40,10 @@ class Settings():
         return default
 
     # LOG_CHANNEL : Peut servir de canal de log
-    LOG_CHANNEL = safe_int("LOG_CHANNEL",-1002072871676)
+    LOG_CHANNEL = safe_int("LOG_CHANNEL",-1001333766434)
     
     # CHANNEL_LOG : Autre canal de log si nécessaire
-    CHANNEL_LOG = safe_int("CHANNEL_LOG", -1002072871676)
+    CHANNEL_LOG = safe_int("CHANNEL_LOG", -1001333766434)
     
     # DUMP_CHANNEL : Canal pour l'envoi des fichiers renommer
     DUMP_CHANNEL = safe_int("DUMP_CHANNEL", None)
