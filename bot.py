@@ -59,6 +59,7 @@ class Bot(Client):
 
                 # Envoi d'une image avec un message de redémarrage
                 # Sending an image with a restart message
+                # Sending an image with a restart message
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg",
@@ -67,9 +68,8 @@ class Bot(Client):
                         f"I haven't slept since: `{uptime_string}`"
                     )
                 )
-                
-                except Exception as e:
-                    print(f"Failed to send message in chat {chat_id}: {e}")
+            except Exception as e:
+                print(f"Failed to send message in chat {chat_id}: {e}")
 
 
 # Fonction pour démarrer les services : Pyrogram + Serveur Web
