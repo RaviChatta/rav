@@ -7,7 +7,6 @@ from helpers.utils import get_random_photo
 
 FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS
 
-
 async def not_subscribed(_, __, message):
     for channel in FORCE_SUB_CHANNELS:
         try:
@@ -22,6 +21,7 @@ async def not_subscribed(_, __, message):
 async def forces_sub(client, message):
     IMAGE_URL = await get_random_photo()
     not_joined_channels = []
+
     for channel in FORCE_SUB_CHANNELS:
         try:
             user = await client.get_chat_member(channel, message.from_user.id)
@@ -33,7 +33,8 @@ async def forces_sub(client, message):
     buttons = [
         [
             InlineKeyboardButton(
-                text=f"• ʀᴇᴊᴏɪɴᴅʀᴇ {channel.capitalize()} •", url=f"https://t.me/{channel}"
+                text=f"• Join {channel.capitalize()} •",
+                url=f"https://t.me/{channel}"
             )
         ]
         for channel in not_joined_channels
@@ -41,12 +42,13 @@ async def forces_sub(client, message):
     buttons.append(
         [
             InlineKeyboardButton(
-                text="• ᴊ'ᴀɪ ʀᴇᴊᴏɪɴᴛ •", callback_data="check_subscription"
+                text="• I've Joined •",
+                callback_data="check_subscription"
             )
         ]
     )
 
-    text = "**ʙᴀᴋᴀᴋᴀ !!, ᴠᴏᴜs ɴ'ᴇ̂ᴛᴇs ᴘᴀs ᴀʙᴏɴɴᴇ́ ᴀ̀ ᴛᴏᴜs ʟᴇs ᴄᴀɴᴀᴜx ʀᴇǫᴜɪs, ʀᴇᴊᴏɪɢɴᴇᴢ ʟᴇs ᴄᴀɴᴀᴜx ᴅᴇ ᴍɪsᴇ ᴀ̀ ᴊᴏᴜʀ ᴘᴏᴜʀ ᴄᴏɴᴛɪɴᴜᴇʀ.**"
+    text = "**Hey baka!! You are not subscribed to all the required channels. Please join the update channels to continue.**"
     await message.reply_photo(
         photo=IMAGE_URL,
         caption=text,
@@ -67,20 +69,20 @@ async def check_subscription(client, callback_query: CallbackQuery):
             not_joined_channels.append(channel)
 
     if not not_joined_channels:
-        new_text = "**ᴠᴏᴜs ᴇ̂ᴛᴇs ᴀʙᴏɴɴᴇ́ ᴀ̀ ᴛᴏᴜs ʟᴇs ᴄᴀɴᴀᴜx ʀᴇǫᴜɪs. ᴍᴇʀᴄɪ ! 😊 /start ᴍᴀɪɴᴛᴇɴᴀɴᴛ.**"
+        new_text = "**You are subscribed to all required channels. Thank you! 😊 Type /start now.**"
         if callback_query.message.caption != new_text:
             await callback_query.message.edit_caption(
                 caption=new_text,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("• ᴄʟɪǫᴜᴇᴢ ɪᴄɪ ᴍᴀɪɴᴛᴇɴᴀɴᴛ •", callback_data='help')]
+                    [InlineKeyboardButton("• Click Here to Continue •", callback_data='help')]
                 ])
             )
     else:
         buttons = [
             [
                 InlineKeyboardButton(
-                    text=f"• ʀᴇᴊᴏɪɴᴅʀᴇ {channel.capitalize()} •",
-                    url=f"https://t.me/{channel}",
+                    text=f"• Join {channel.capitalize()} •",
+                    url=f"https://t.me/{channel}"
                 )
             ]
             for channel in not_joined_channels
@@ -88,12 +90,13 @@ async def check_subscription(client, callback_query: CallbackQuery):
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text="• ᴊ'ᴀɪ ʀᴇᴊᴏɪɴᴛ •", callback_data="check_subscription"
+                    text="• I've Joined •",
+                    callback_data="check_subscription"
                 )
             ]
         )
 
-        text = "**ᴠᴏᴜs ᴇ̂ᴛᴇs ᴀʙᴏɴɴᴇ́ ᴀ̀ ᴛᴏᴜs ʟᴇs ᴄᴀɴᴀᴜx ʀᴇǫᴜɪs. ᴠᴇᴜɪʟʟᴇᴢ ʀᴇᴊᴏɪɴᴅʀᴇ ʟᴇs ᴄᴀɴᴀᴜx ᴅᴇ ᴍɪsᴇ ᴀ̀ ᴊᴏᴜʀ ᴘᴏᴜʀ ᴄᴏɴᴛɪɴᴜᴇʀ.**"
+        text = "**You are not subscribed to all required channels. Please join the update channels to continue.**"
         if callback_query.message.caption != text:
             await callback_query.message.edit_caption(
                 caption=text,
