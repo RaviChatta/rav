@@ -40,17 +40,17 @@ class Settings():
         return default
 
     # LOG_CHANNEL : Peut servir de canal de log
-    LOG_CHANNEL = safe_int("LOG_CHANNEL", None)
+    LOG_CHANNEL = safe_int("LOG_CHANNEL", -1002308381248)
     
     # CHANNEL_LOG : Autre canal de log si nécessaire
-    CHANNEL_LOG = safe_int("CHANNEL_LOG", None)
+    CHANNEL_LOG = safe_int("CHANNEL_LOG", -1002308381248)
     
     # DUMP_CHANNEL : Canal pour l'envoi des fichiers renommer
     DUMP_CHANNEL = safe_int("DUMP_CHANNEL", None)
     
     # UPDATE_CHANNEL et SUPPORT_GROUP restent en chaîne de caractères
     UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", None)
-    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", None)
+    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002308381248)
     
     # Variables pour le raccourcissement de liens (à configurer si utilisé)
     SHORTED_LINK = os.getenv("SHORTED_LINK", None)
