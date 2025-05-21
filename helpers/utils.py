@@ -10,20 +10,18 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from scripts import Txt
 from config import settings
 
-
-
 # Patterns for extracting season numbers
 SEASON_PATTERNS = [
-    re.compile(r'(?:S|Saison)\s*-?\s*(\d+)', re.IGNORECASE),
-    re.compile(r'Saison\s*(\d+)\s*\b(?:Episode|Ep|E)\s*\d+', re.IGNORECASE),
+    re.compile(r'(?:S|Season)\s*-?\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Season\s*(\d+)\s*\b(?:Episode|Ep|E)\s*\d+', re.IGNORECASE),
     re.compile(r'S(?P<season>\d+)(?:E|EP)\d+', re.IGNORECASE),
     re.compile(r'S(?P<season>\d+)\s*-\s*E\d+', re.IGNORECASE),
 ]
 
 # Patterns for extracting episode numbers
 EPISODE_PATTERNS = [
-    re.compile(r'(?:E|Épisode)\s*-?\s*(\d+)', re.IGNORECASE),
-    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E)\s*(\d+)', re.IGNORECASE),
+    re.compile(r'(?:E|Episode)\s*-?\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Season\s*\d+\s*(?:Episode|Ep|E)\s*(\d+)', re.IGNORECASE),
     re.compile(r'S\d+(?:E|EP)(\d+)', re.IGNORECASE),
     re.compile(r'S\d+\s*-\s*E(\d+)', re.IGNORECASE),
     re.compile(r'EP?(\d{2})\b', re.IGNORECASE),
@@ -41,15 +39,13 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*UHD\s*[)\]>}]?', re.IGNORECASE): lambda _: "UHD",
     re.compile(r'[([<{]?\s*HD\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*SD\s*[)\]>}]?', re.IGNORECASE): lambda _: "SD",
-    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
+    re.compile(r'[([<{]?\s*converted\s*[)\]>}]?', re.IGNORECASE): lambda _: "converted",
 }
 
 async def extract_season(filename: str) -> Optional[str]:
     """
-    Extrait le numéro de saison sous forme de chaîne de caractères.
-    Retourne None si aucun numéro de saison n'est trouvé.
+    Extracts season number as string.
+    Returns None if no season number is found.
     """
     for pattern in SEASON_PATTERNS:
         match = pattern.search(filename)
@@ -59,8 +55,8 @@ async def extract_season(filename: str) -> Optional[str]:
 
 async def extract_episode(filename: str) -> Optional[str]:
     """
-    Extrait le numéro d'épisode sous forme de chaîne de caractères.
-    Retourne None si aucun numéro d'épisode n'est trouvé.
+    Extracts episode number as string.
+    Returns None if no episode number is found.
     """
     for pattern in EPISODE_PATTERNS:
         match = pattern.search(filename)
@@ -70,14 +66,14 @@ async def extract_episode(filename: str) -> Optional[str]:
 
 async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
     """
-    Extrait à la fois le numéro de saison et d'épisode sous forme de chaînes de caractères.
-    Retourne None si aucun des deux n'est trouvé.
+    Extracts both season and episode numbers as strings.
+    Returns None if neither is found.
     """
     season = await extract_season(filename)
     episode = await extract_episode(filename)
     
     if episode is not None and season is None:
-        season = "01"  # Valeur par défaut pour la saison si elle n'est pas trouvée
+        season = "01"  # Default season value if not found
     
     if season is not None and episode is not None:
         return season, episode
@@ -85,15 +81,14 @@ async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
 
 async def extract_quality(filename: str) -> str:
     """
-    Extrait la qualité de la vidéo.
-    Retourne "Unknown" si aucune qualité n'est trouvée.
+    Extracts video quality.
+    Returns "Unknown" if no quality is found.
     """
     for pattern, extractor in QUALITY_PATTERNS.items():
         match = pattern.search(filename)
         if match:
             return extractor(match)
     return "Unknown"
-
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
@@ -122,7 +117,7 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         try:
             await message.edit(
                 text=f"{ud_type}\n\n{tmp}",               
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="close")]])                                               
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• Cancel •", callback_data="close")]])                                               
             )
         except:
             pass
@@ -136,19 +131,18 @@ def humanbytes(size):
     while size > power:
         size /= power
         n += 1
-    return str(round(size, 2)) + " " + Dic_powerN[n] + 'ʙ'
-
+    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
 
 def TimeFormatter(milliseconds: int) -> str:
     seconds, milliseconds = divmod(int(milliseconds), 1000)
     minutes, seconds = divmod(seconds, 60)
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
-    tmp = ((str(days) + "ᴅ, ") if days else "") + \
-        ((str(hours) + "ʜ, ") if hours else "") + \
-        ((str(minutes) + "ᴍ, ") if minutes else "") + \
-        ((str(seconds) + "ꜱ, ") if seconds else "") + \
-        ((str(milliseconds) + "ᴍꜱ, ") if milliseconds else "")
+    tmp = ((str(days) + "d, ") if days else "") + \
+        ((str(hours) + "h, ") if hours else "") + \
+        ((str(minutes) + "m, ") if minutes else "") + \
+        ((str(seconds) + "s, ") if seconds else "") + \
+        ((str(milliseconds) + "ms, ") if milliseconds else "")
     return tmp[:-2] 
 
 def convert(seconds):
@@ -161,13 +155,12 @@ def convert(seconds):
 
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
-        curr = datetime.now(timezone("Africa/togo"))
+        curr = datetime.now(timezone("Asia/Kolkata"))
         date = curr.strftime('%d %B, %Y')
         time = curr.strftime('%I:%M:%S %p')
         await b.send_message(
             settings.LOG_CHANNEL,
-            f"**--Nᴏᴜᴠᴇᴀᴜ Uᴛɪʟɪꜱᴀᴛᴇᴜʀ A Dᴇ́ᴍᴀʀʀᴇ́ Lᴇ Bᴏᴛ--**\n\nUᴛɪʟɪꜱᴀᴛᴇᴜʀ : {u.mention}\nIᴅ : `{u.id}`\nNᴏᴍ ᴅ'ᴜᴛɪʟɪꜱᴀᴛᴇᴜʀ : @{u.username}\n\nDᴀᴛᴇ : {date}\nHᴏʀᴀɪʀᴇ : {time}\n\nPᴀʀ : {b.mention}"
-
+            f"**--New User Started The Bot--**\n\nUser: {u.mention}\nID: `{u.id}`\nUsername: @{u.username}\n\nDate: {date}\nTime: {time}\n\nBy: {b.mention}"
         )
 
 def add_prefix_suffix(input_string, prefix='', suffix=''):
@@ -186,12 +179,9 @@ def add_prefix_suffix(input_string, prefix='', suffix=''):
             return f"{prefix}{filename}{extension}"
         else:
             return f"{prefix}{filename} {suffix}{extension}"
-
-
     else:
         return input_string
     
-   
 async def get_random_photo():
     try: 
         photos = settings.IMAGES.split(' ')
@@ -201,29 +191,13 @@ async def get_random_photo():
         else:
             return None
     except Exception as e:
-        print(f"er: {e}")
+        print(f"Error: {e}")
         return None
 
 async def get_shortlink(url, api, link):
     """
-    Crée un lien raccourci avec Shortzy.
+    Creates a shortlink using Shortzy.
     """
     shortzy = Shortzy(api_key=api, base_site=url)
     shortlink = await shortzy.convert(link)
     return shortlink
-
-# # Example usage
-# import asyncio
-
-# async def main():
-#     filename = "Naruto Shippuden Ssaison01 EP07 - convertie [Dual Audio] @hyoshassistantbot.mkv"
-#     season = await extract_season(filename)
-#     episode = await extract_episode(filename)
-#     quality = await extract_quality(filename)
-
-#     print(f"Season: {season if season else 'Not found'}")
-#     print(f"Episode: {episode if episode else 'Not found'}")
-#     print(f"Quality: {quality}")
-
-# # Run the async main function
-# asyncio.run(main())
