@@ -8,13 +8,13 @@ id_pattern = re.compile(r'^-?\d+$')
 
 class Settings():
     # API et authentification du bot
-    API_HASH = os.getenv("API_HASH", "bf5a6381d07f045af4faeb46d7de36e5")
-    API_ID = os.getenv("API_ID", "24777493")
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "7683456107:AAH3y7X7fe6XtTjfYlv5v27wIGgsgcGHL70")
+    API_HASH = os.getenv("API_HASH", "449da69cf4081dc2cc74eea828d0c490")
+    API_ID = os.getenv("API_ID", "24500584")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "1599848664:AAHc75il2BECWK39tiPv4pVf-gZdPt4MFcw")
     
     # Configuration de la base de données
-    DATA_URI = os.getenv("DATA_URI", "mongodb+srv://altof2:123Bonjoure@cluster0.s1suq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-    DATA_NAME = os.getenv("DATA_NAME", "Altof2")
+    DATA_URI = os.getenv("DATA_URI", "mongodb+srv://erenyeagermikasa84:pkbOXb3ulzi9cEFd@cluster0.ingt8mt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+    DATA_NAME = os.getenv("DATA_NAME", "erenyeagermikasa84")
     
     # Répertoires temporaires et de téléchargement
     TEMP_DIR = os.getenv("TEMP_DIR", "temp/")
