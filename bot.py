@@ -15,7 +15,7 @@ load_dotenv()  # Chargement des variables d'environnement
 
 # Chargement de la configuration
 Config = settings
-SUPPORT_CHAT = -1002203058630  # ID du chat de support
+SUPPORT_CHAT = -1002308381248  # ID du chat de support
 
 class Bot(Client):
 
@@ -40,7 +40,7 @@ class Bot(Client):
         self.username = me.username  # Nom d'utilisateur du bot
         self.uptime = Config.BOT_UPTIME  # Temps de fonctionnement du bot
 
-        print(f"{me.first_name} a démarré.....✨️")
+        print(f"{me.first_name} a Started.....✨️")
 
         # Calcul du temps de fonctionnement
         uptime_seconds = int(time.time() - self.start_time)
@@ -53,22 +53,24 @@ class Bot(Client):
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
                 # Définition du fuseau horaire
-                curr = datetime.now(timezone("Africa/lome"))
+                curr = datetime.now(timezone("Asia/Kolkata"))
                 date = curr.strftime('%d %B, %Y')
                 time_str = curr.strftime('%I:%M:%S %p')
 
                 # Envoi d'une image avec un message de redémarrage
+                # Sending an image with a restart message
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg",
                     caption=(
-                        "**bug est bot a redémarré !**\n\n"
-                        f"Je n'ai pas dormi depuis​ : `{uptime_string}`"
+                        "**Oops! The bot has restarted.**\n\n"
+                        f"I haven't slept since: `{uptime_string}`"
                     )
                 )
+                
+                except Exception as e:
+                    print(f"Failed to send message in chat {chat_id}: {e}")
 
-            except Exception as e:
-                print(f"Échec de l'envoi du message dans le chat {chat_id} : {e}")
 
 # Fonction pour démarrer les services : Pyrogram + Serveur Web
 async def start_services():
