@@ -48,8 +48,8 @@ async def command(client, message: Message):
 
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("• My Commands •", callback_data='help')],
-                    [InlineKeyboardButton('• Updates', url=''),
-                     InlineKeyboardButton('Support •', url='')],
+                    [InlineKeyboardButton('• Updates', url='https://t.me/CulturedTeluguweeb'),
+                     InlineKeyboardButton('Support •', url='https://t.me/OngoingCTW')],
                     [InlineKeyboardButton('• About', callback_data='about'),
                      InlineKeyboardButton('Source •', callback_data='source')]
                 ])
