@@ -27,7 +27,7 @@ class Settings():
     BOT_UPTIME  = time.time()
     
     # Liste des administrateurs (IDs séparés par espace)
-    ADMIN = [int(admin) for admin in os.getenv('ADMIN', '').split() if admin.isdigit()]
+    ADMIN = [int(admin) for admin in os.getenv('ADMIN', '1047253913').split() if admin.isdigit()]
     
     # Liste des canaux pour le force subscribe (séparés par une virgule)
     FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '').split(',')
