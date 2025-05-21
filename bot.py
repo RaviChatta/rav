@@ -1,65 +1,60 @@
 import aiohttp
 import asyncio
 import pytz
+import time
 from datetime import datetime, timedelta
 from pytz import timezone
 from pyrogram import Client
 from aiohttp import web
-from route import web_server  # Importation du serveur web
-from config import settings  # Paramètres de configuration
-from database.data import hyoshcoder  # Base de données
-import time
+from route import web_server  # Import web server
+from config import settings  # Configuration settings
+from database.data import hyoshcoder  # Database functions
 from dotenv import load_dotenv
 
-load_dotenv()  # Chargement des variables d'environnement
+load_dotenv()  # Load environment variables
 
-# Chargement de la configuration
+# Load configuration
 Config = settings
-SUPPORT_CHAT = -1002308381248  # ID du chat de support
+SUPPORT_CHAT = -1002308381248  # Support chat ID
 
 class Bot(Client):
-
     def __init__(self):
-        """Initialisation du bot avec ses paramètres."""
+        """Initialize the bot with Pyrogram settings."""
         super().__init__(
             name="autorename",
             api_id=Config.API_ID,
             api_hash=Config.API_HASH,
             bot_token=Config.BOT_TOKEN,
-            workers=200,  # Nombre de threads simultanés
-            plugins={"root": "plugins"},  # Dossier contenant les plugins
-            sleep_threshold=15,  # Seuil de sommeil du bot
+            workers=20,
+            plugins={"root": "plugins"},
+            sleep_threshold=15,
         )
-        self.start_time = time.time()  # Enregistrement du temps de démarrage
+        self.start_time = time.time()
 
     async def start(self):
-        """Démarrage du bot."""
+        """Start the bot and send restart notifications."""
         await super().start()
-        me = await self.get_me()  # Récupération des informations du bot
-        self.mention = me.mention  # Mention du bot
-        self.username = me.username  # Nom d'utilisateur du bot
-        self.uptime = Config.BOT_UPTIME  # Temps de fonctionnement du bot
+        me = await self.get_me()
+        self.mention = me.mention
+        self.username = me.username
+        self.uptime = Config.BOT_UPTIME
 
-        print(f"{me.first_name} a Started.....✨️")
+        print(f"{me.first_name} has started... ✨️")
 
-        # Calcul du temps de fonctionnement
+        # Uptime calculation
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
 
-        # Nettoyage de la base de données
+        # Clear old user channel data
         await hyoshcoder.clear_all_user_channels()
 
-        # Envoi d'un message aux canaux de logs et de support
+        # Send restart message to log and support channels
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
-                # Définition du fuseau horaire
                 curr = datetime.now(timezone("Asia/Kolkata"))
                 date = curr.strftime('%d %B, %Y')
                 time_str = curr.strftime('%I:%M:%S %p')
 
-                # Envoi d'une image avec un message de redémarrage
-                # Sending an image with a restart message
-                # Sending an image with a restart message
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg",
@@ -71,24 +66,20 @@ class Bot(Client):
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
 
-
-# Fonction pour démarrer les services : Pyrogram + Serveur Web
+# Function to start services
 async def start_services():
     bot = Bot()
-    
-    # Démarrage du client Pyrogram
     await bot.start()
-    
-    # Lancer le serveur web si configuré
+
     if Config.WEBHOOK:
-        app = web.AppRunner(await web_server())  # Assurez-vous que `web_server()` retourne une instance valide de serveur
+        app = web.AppRunner(await web_server())
         await app.setup()
         site = web.TCPSite(app, "0.0.0.0", 8080)
-        await site.start()  # Démarrage du serveur web
+        await site.start()
 
-# Fonction principale pour exécuter le bot
+# Entry point
 async def main():
-    await start_services()  # Appel de la fonction start_services()
+    await start_services()
 
 if __name__ == "__main__":
     asyncio.run(main())
