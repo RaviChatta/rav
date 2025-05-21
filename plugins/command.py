@@ -19,13 +19,14 @@ ADMIN_USER_ID = settings.ADMIN
 is_restarting = False
 
 
-ON = [[InlineKeyboardButton('mᴇ́tᴀᴅᴏɴᴇᴇs ᴀᴄᴛɪᴠᴇ́ᴇs', callback_data='metadata_1'),
+ON = [[InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
        InlineKeyboardButton('✅', callback_data='metadata_1')],
-      [InlineKeyboardButton('Dᴇ́fɪɴɪʀ ᴅᴇs mᴇ́tᴀᴅᴏɴᴇᴇs ᴘᴇʀsᴏɴɴᴀʟɪsᴇ́ᴇs', callback_data='custom_metadata')]]
+      [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]]
 
-OFF = [[InlineKeyboardButton('mᴇ́tᴀᴅᴏɴᴇᴇs ᴅᴇ́sᴀᴄᴛɪᴠᴇ́ᴇs', callback_data='metadata_0'),
+OFF = [[InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
         InlineKeyboardButton('❌', callback_data='metadata_0')],
-       [InlineKeyboardButton('Dᴇ́fɪɴɪʀ ᴅᴇs mᴇ́tᴀᴅᴏɴᴇᴇs ᴘᴇʀsᴏɴɴᴀʟɪsᴇ́ᴇs', callback_data='custom_metadata')]]
+       [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]]
+
 
 
 @Client.on_message(filters.private & filters.command(["start", 
