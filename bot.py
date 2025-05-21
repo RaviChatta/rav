@@ -15,7 +15,7 @@ load_dotenv()  # Load environment variables
 
 # Load configuration
 Config = settings
-SUPPORT_CHAT = -1002308381248  # Support chat ID
+SUPPORT_CHAT = -1002072871676  # Support chat ID
 
 class Bot(Client):
     def __init__(self):
