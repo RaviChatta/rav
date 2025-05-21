@@ -1,148 +1,127 @@
-
-
 class Scripts():
     
     PROGRESS_BAR = """\n
-<b>» ᴛᴀɪʟʟᴇ</b> : {1} | {2}  
-<b>» ꜰᴀɪᴛ</b> : {0}%  
-<b>» ᴠɪᴛᴇssᴇ</b> : {3}/s  
-<b>» ᴇᴛᴀ</b> : {4}"""
+<b>» Size</b> : {1} | {2}  
+<b>» Done</b> : {0}%  
+<b>» Speed</b> : {3}/s  
+<b>» ETA</b> : {4}"""
 
     START_TXT = """
-<b>ꜱᴀʟᴜᴛ! {}  
+<b>Hello! {}  
 
-ᴊᴇ ꜱᴜɪꜱ bug,et je suis la pour vous aide à faire votre travail en ca de défaites je te tue
+I am a bot designed to help you automate your file renaming tasks with precision.
 
-» j'ai des techniques de torture pour mais ennemis ᴊᴇ ᴠᴀɪꜱ ᴍ'ᴀꜱꜱᴜʀᴇʀ ǫᴜᴇ ᴠᴏꜱ ꜰɪᴄʜɪᴇʀꜱ ꜱᴏɪᴇɴᴛ ʀᴇɴᴏᴍᴍéꜱ ᴀᴠᴇᴄ ᴘʀéᴄɪꜱɪᴏɴ ᴇᴛ ꜱᴛʏʟᴇ.  
-» ᴀᴊᴏᴜᴛᴇᴢ ᴜɴᴇ ʟéɢᴇɴᴅᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ, ᴜɴᴇ ᴍɪɴɪᴀᴛᴜʀᴇ éʟéɢᴀɴᴛᴇ ᴇᴛ ʟᴀɪꜱꜱᴇᴢ-ᴍᴏɪ ꜱéǫᴜᴇɴᴄᴇʀ ᴠᴏꜱ ꜰɪᴄʜɪᴇʀꜱ à ʟᴀ ᴘᴇʀꜰᴇᴄᴛɪᴏɴ.  
+» I ensure your files are renamed accurately and stylishly.  
+» Add a personalized caption, an elegant thumbnail, and let me sequence your files perfectly.  
 </b>
 """
-    FILE_NAME_TXT = """<b>» <u>ᴄᴏɴꜰɪɢᴜʀᴇʀ ʟᴇ ꜰᴏʀᴍᴀᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ</u></b>
 
-<b>ᴠᴀʀɪᴀʙʟᴇs :</b>
-➲ episode - ᴘᴏᴜʀ ʀᴇᴍᴘʟᴀᴄᴇʀ ʟᴇ ɴᴜᴍᴇ́ʀᴏ ᴅᴇ ʟ'ᴇᴘɪsᴏᴅᴇ  
-➲ saison - ᴘᴏᴜʀ ʀᴇᴍᴘʟᴀᴄᴇʀ ʟᴇ ɴᴜᴍᴇ́ʀᴏ ᴅᴇ ʟa saison
-➲ quality - ᴘᴏᴜʀ ʀᴇᴍᴘʟᴀᴄᴇʀ ʟᴀ ǫᴜᴀʟɪᴛᴇ́  
+    FILE_NAME_TXT = """<b>» <u>Configure Auto-Rename Format</u></b>
 
-<b>‣ ᴘᴀʀ ᴇxᴀᴍᴘʟᴇ :- </b> <code> /autorename one punch man [Ssaison - EPepisode - [Quality] [Dual]  </code>
+<b>Variables:</b>
+➲ episode - To replace the episode number  
+➲ season - To replace the season number
+➲ quality - To replace the quality  
 
-<b>‣ /autorename : ʀᴇɴᴏᴍᴍᴇᴢ ᴠᴏs ꜰɪʟᴇs ᴍᴜʟᴛɪᴍᴇᴅɪᴀ ᴇɴ ɪɴᴄʟᴜᴀɴᴛ ʟᴇs ᴠᴀʀɪᴀʙʟᴇs 'ᴇᴘɪsᴏᴅᴇ' ᴇᴛ 'ǫᴜᴀʟɪᴛᴇ́' ᴅᴀɴs vᴏᴛʀᴇ ᴛᴇxᴛᴇ, ᴘᴏᴇᴜʀ ᴇxᴛʀᴀɪʀᴇʀ l'ᴇᴘɪsᴏᴅᴇ ᴇᴛ ʟa ǫᴜᴀʟɪᴛᴇ́ ᴘʀᴇ́sᴇɴᴛs ᴅᴀɴs lᴇ ɴᴏᴍ ᴅᴇ ꜰɪʟᴇ ᴏʀɪɢɪɴᴀʟ.</b>"""
+<b>‣ Example :- </b> <code> /autorename one punch man [Sseason - EPepisode - [Quality] [Dual]  </code>
 
+<b>‣ /autorename : Rename your multimedia files including 'episode' and 'quality' variables in your text, to extract the episode and quality present in the original filename.</b>"""
 
-    ABOUT_TXT = f"""<b>❍ ᴍᴏɴ ɴᴏᴍ : <a href="https://t.me/REQUETE_ANIME_30sbot">ɢᴇ ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ</a>  
-🧑‍💼ᴅᴇ́ᴠᴇʟᴏᴘᴘᴇᴜʀ : <a href="https://t.me/altof2">partenaire</a>  
-💫 ɢɪᴛʜᴜʙ : <a href="https://github.com/sineur_x_bot ">bot poprio</a>  
-⚡️ ʟᴀɴɢᴀɢᴇ : <a href="https://www.python.org/">ᴘʏᴛʜᴏɴ</a>  
-📁 ʙᴀsᴇ ᴅᴇ ᴅᴏɴɴᴇ́ᴇs : <a href="https://t.me/REQUETE_ANIME_30sbot/">sineur_clood</a>  
-🔺 ʜᴇ́ʙᴇʀɢᴇ́ sᴜʀ : <a href="https://t.me/REQUETE_ANIME_30sbot">box_clood</a>  
-🎞️ ᴄᴀɴᴀʟ du bot : <a href="https://t.me/sineur_x_bot">bug canal</a>  
+    ABOUT_TXT = f"""<b>❍ My Name : <a href="https://t.me/REQUETE_ANIME_30sbot">Auto Rename Bot</a>  
+🧑‍💼Developer : <a href="https://t.me/altof2">Partner</a>  
+💫 GitHub : <a href="https://github.com/sineur_x_bot">Private Bot</a>  
+⚡️ Language : <a href="https://www.python.org/">Python</a>  
+📁 Database : <a href="https://t.me/REQUETE_ANIME_30sbot/">Sineur Cloud</a>  
+🔺 Hosted On : <a href="https://t.me/REQUETE_ANIME_30sbot">Box Cloud</a>  
+🎞️ Bot Channel : <a href="https://t.me/sineur_x_bot">Bug Channel</a>  
 
-➻ ᴄʟɪǫᴜᴇᴢ sᴜʀ ʟᴇs ʙᴏᴜᴛᴏɴs ᴄɪ-ᴅᴇssᴏᴜs ᴘᴏᴜʀ ᴏʙᴛᴇɴɪʀ ᴅᴇ ʟ'ᴀɪᴅᴇ ᴇᴛ ᴅᴇs ɪɴғᴏʀᴍᴀᴛɪᴏɴs ʙᴀsɪǫᴜᴇs sᴜʀ ᴍᴏɪ.</b>"""
+➻ Click on the buttons below to get help and basic information about me.</b>"""
 
-
-    THUMBNAIL_TXT = """<b><u>» ᴘᴏᴜʀ ᴅéꜰɪɴɪʀ ᴜɴᴇ ᴍɪɴɪᴀᴛᴜʀᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ</u></b>
+    THUMBNAIL_TXT = """<b><u>» To Set a Custom Thumbnail</u></b>
     
-➲ /start : ᴇɴᴠᴏʏᴇᴢ ɴ'ɪᴍᴘᴏʀᴛᴇ ǫᴜᴇʟʟᴇ ᴘʜᴏᴛᴏ ᴘᴏᴜʀ ʟᴀ ᴅéꜰɪɴɪʀ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇᴍᴇɴᴛ ᴄᴏᴍᴍᴇ ᴍɪɴɪᴀᴛᴜʀᴇ.
-➲ /del_thumb : ᴜᴛɪʟɪꜱᴇᴢ ᴄᴇᴛᴛᴇ ᴄᴏᴍᴍᴀɴᴅᴇ ᴘᴏᴜʀ ꜱᴜᴘᴘʀɪᴍᴇʀ ᴠᴏᴛʀᴇ ᴀɴᴄɪᴇɴɴᴇ ᴍɪɴɪᴀᴛᴜʀᴇ.
-➲ /view_thumb : ᴜᴛɪʟɪꜱᴇᴢ ᴄᴇᴛᴛᴇ ᴄᴏᴍᴍᴀɴᴅᴇ ᴘᴏᴜʀ ᴠᴏɪʀ ᴠᴏᴛʀᴇ ᴍɪɴɪᴀᴛᴜʀᴇ ᴀᴄᴛᴜᴇʟʟᴇ.
+➲ /start : Send any photo to automatically set it as your thumbnail.
+➲ /del_thumb : Use this command to delete your old thumbnail.
+➲ /view_thumb : Use this command to view your current thumbnail.
 
-ɴᴏᴛᴇ : ꜱɪ ᴀᴜᴄᴜɴᴇ ᴍɪɴɪᴀᴛᴜʀᴇ ɴ'ᴇꜱᴛ ᴇɴʀᴇɢɪꜱᴛʀéᴇ ᴅᴀɴꜱ ʟᴇ ʙᴏᴛ, ʟᴀ ᴍɪɴɪᴀᴛᴜʀᴇ ᴅᴜ ꜰɪᴄʜɪᴇʀ ᴏʀɪɢɪɴᴀʟ ꜱᴇʀᴀ ᴜᴛɪʟɪꜱéᴇ ᴘᴏᴜʀ ʟᴇ ꜰɪᴄʜɪᴇʀ ʀᴇɴᴏᴍᴍé."""
+Note: If no thumbnail is registered in the bot, the original file's thumbnail will be used for the renamed file."""
 
-    CAPTION_TXT = """<b><u>» ᴘᴏᴜʀ ᴅéꜰɪɴɪʀ ᴜɴᴇ ʟéɢᴇɴᴅᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ ᴇᴛ ʟᴇ ᴛʏᴘᴇ ᴅᴇ ᴍéᴅɪᴀ</u></b>
+    CAPTION_TXT = """<b><u>» To Set a Custom Caption and Media Type</u></b>
     
-<b>ᴠᴀʀɪᴀʙʟᴇs :</b>         
-ᴛᴀɪʟʟᴇ: <code>{filesize}</code>  
-ᴅᴜʀéᴇ: <code>{duration}</code>  
-ɴᴏᴍ_ꜰɪʟᴇ: <code>{filename}</code>
+<b>Variables:</b>         
+Size: <code>{filesize}</code>  
+Duration: <code>{duration}</code>  
+Filename: <code>{filename}</code>
 
-➲ /set_caption : ᴘᴏᴜʀ ᴅéꜰɪɴɪʀ ᴜɴᴇ ʟéɢᴇɴᴅᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ.  
-➲ /see_caption : ᴘᴏᴜʀ ᴠᴏɪʀ ᴠᴏᴛʀᴇ ʟéɢᴇɴᴅᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ.  
-➲ /del_caption : ᴘᴏᴜʀ sᴜᴘᴘʀɪᴍᴇʀ ᴠᴏᴛʀᴇ ʟéɢᴇɴᴅᴇ ᴘᴇʀꜱᴏɴɴᴀʟɪꜱéᴇ.
+➲ /set_caption : To set a custom caption.  
+➲ /see_caption : To view your custom caption.  
+➲ /del_caption : To delete your custom caption.
 
-» ᴘᴀʀ ᴇxᴀᴍᴘʟᴇ :- /set_caption ɴᴏᴍ ᴅᴇ ꜰɪʟᴇ: {filename}"""
+» Example :- /set_caption File Name: {filename}"""
 
+    DONATE_TXT = """<blockquote>Thank you for showing interest in donations</blockquote>
 
-    PROGRESS_BAR = """\n
-<b>» ᴛᴀɪʟʟᴇ</b> : {1} | {2}  
-<b>» ꜰᴀɪᴛ</b> : {0}%  
-<b>» ᴠɪᴛᴇssᴇ</b> : {3}/s  
-<b>» ᴇᴛᴀ</b> : {4}"""
+<b><i>💞 If you love our bot, don't hesitate to make a donation of any amount 10⭐️, $20⭐️, $50, $100, etc.</i></b>
 
+Donations are truly appreciated and help with bot development.
 
-    DONATE_TXT = """<blockquote>ᴍᴇʀᴄɪ ᴅᴇ mᴏɴᴛʀᴇʀ ᴅᴇ ʟ'ɪɴtéʀêt pᴏᴜʀ lᴇs dᴏɴs</blockquote>
+<u>You can make a donation </u>
 
-<b><i>💞 Sɪ vᴏᴜs ᴀᴍᴇᴢ ɴᴏᴛʀᴇ bᴏᴛ, n'ʜéᴄɪtᴇz pᴀs à fᴀɪʀᴇ ᴜɴ dᴏɴ dᴇ n'iᴍᴘᴏʀᴛᴇ qᴜᴇl mᴏɴᴛᴀɴᴛ 10⭐️, $20⭐️, $50, $100, ᴇᴛᴄ.</i></b>
+Pay here - <code> @altof2 </code>
 
-Lᴇs dᴏɴs sᴏɴt vʀᴀɪᴍᴇɴᴛ ᴀpᴘʀéᴄɪéᴇs ᴇᴛ ᴀɪᴅᴇɴᴛ ᴀᴜ dᴇᴠᴇʟᴏᴘᴘᴇᴍᴇɴᴛ dᴜ bᴏᴛ.
+If you do, you can send us screenshots
+to - @REQUETE_ANIME_30sbot"""
 
-<u>Vᴏᴜs pᴏᴜᴠᴇz ᴀʟᴇʀᴛᴇᴢ ᴜɴ ᴅᴏɴ </u>
+    PREMIUM_TXT = """<b>Upgrade to our Premium service and enjoy exclusive features:
+○ Unlimited Renaming: Rename as many files as you want without restrictions.
+○ Early Access: Be the first to test and use our advanced features before everyone else.
 
-Pᴀʏᴇʀ ɪᴄɪ - <code> @altof2 </code>
+• Use /plan to see all our plans at a glance.
 
-Sɪ vᴏᴜs lᴇ sᴏʏᴇz, vᴏᴜs pᴏᴜᴠᴇz nᴏᴜs ᴇɴᴠᴏʏᴇʀ dᴇs cᴀᴘᴛᴜʀᴇs d'écrᴀɴs
-à - @REQUETE_ANIME_30sbot"""
+➲ First Step: Pay the amount corresponding to your preferred plan to 
 
+➲ Second Step: Take a screenshot of your payment and share it directly here: @REQUETE_ANIME_30sbot 
 
-    PREMIUM_TXT = """<b>ᴀᴍéʟɪᴏʀᴇᴢ nᴏᴛʀᴇ sᴇʀᴠɪᴄᴇ ᴘʀᴇᴍɪᴜᴍ et prᴏfɪᴛᴇᴢ de fᴜɴᴄᴛɪᴏɴɴᴀʟɪᴛés ᴇxᴄʟᴜsɪᴠᴇs :
-○ Rᴇɴᴏᴍᴍᴀɢᴇ ɪʟʟɪᴍɪᴛé : rᴇɴᴏᴍᴍᴇᴢ ᴀᴜᴛᴀɴᴛ de fɪʟᴇs qᴜᴇ vᴏᴜs lᴇ sᴏʜᴀɪᴛᴇs sᴀɪɴs ᴀᴜcᴜɴᴇ rᴇsᴛʀɪᴄtɪᴏɴ.
-○ ᴀᴄᴄèss ᴀɴᴛɪᴄɪᴘé : sᴏʏᴇᴢ le prɪᴍɪᴇʀ à tᴇsᴛᴇʀ et ᴜsᴀɢᴇʀ nᴏᴛʀᴇs dᴇʟᴀᴛᴇs fᴜɴᴄᴛɪᴏɴɴᴀʟɪᴛéᴇs ᴀᴠᴀɴᴄᴇᴇs ᴀᴠᴀɴᴛ tᴏᴜᴛ ʟᴇ mᴏɴᴅᴇ.
+➲ Alternative: Or upload the screenshot here and reply with the command /bought.
 
-• Uᴛɪʟɪsᴇᴢ /plan pᴏᴜʀ vᴏɪʀ tᴏᴜs nᴏᴛʀᴇs pʟᴀɴs ᴇɴ ᴜɴᴇ fᴏɴᴄᴛɪᴏɴ ᴇᴄʜᴇᴍᴇ.
+Your premium plan will be activated after verification.</b>"""
 
-➲ Pʀɪᴇʀᴇ ᴇᴛᴀᴘᴇ : pᴀʏᴇʀ ʟᴇ mᴏɴᴛᴀɴᴛ cᴏʀʀᴇspᴏɴᴅᴀɴᴛ à vᴏᴛʀᴇ pʟᴀɴ pʀéfᴇré à 
+    PREPLANS_TXT = """<b>👋 Hello,
 
-➲ Dᴇᴜxɪèmᴇ ᴇᴛᴀᴘᴇ : prᴇɴᴇᴢ ᴜɴᴇ cᴀᴘᴛᴜʀᴇ d'écran de vᴏᴛʀᴇ pᴀʏᴇᴍᴇɴᴛ et ᴘᴀʀᴀɢᴇᴢ-ʟᴀ ᴅɪʀᴇᴄᴛᴇᴍᴇɴᴛ ɪᴄɪ : @REQUETE_ANIME_30sbot 
+🎖️ <u>Available Plans</u> :
 
-➲ ᴀʟᴛᴇʀɴᴀᴛɪᴠᴇ : ᴏᴜ tᴇ́ʟᴇᴄʜᴇʀ ʟᴀ cᴀᴘᴛᴜʀᴇ d'écran ɪᴄɪ et rᴇᴘᴏɴᴅᴇᴢ ᴀᴠᴇᴄ lᴀ cᴏᴍᴍᴀɴᴅᴇ /bought.
+Pricing:
+➜ Monthly Premium: $3.99/month
+➜ Daily Premium: $0.99/day
+➜ For bot hosting: contact @altof2
 
-Vᴏᴛʀᴇ pʟᴀɴ pʀᴇᴍɪᴜᴍ sᴇʀᴀ ᴀᴄᴛɪᴠé ᴀᴘʀès véʀɪꜰɪᴄᴀᴛɪᴏɴ.</b>"""
+➲ Pay here - <code> @REQUETE_ANIME_30sbot </code>
 
+‼️Upload the payment screenshot here and reply with the command /bought.</b>"""
 
-    PREPLANS_TXT = """<b>👋 Sᴀʟᴜᴛ,
+    HELP_TXT = """<b>Here is the help menu with important commands:
 
-🎖️ <u>ᴘʟᴀɴs ᴅɪsᴘᴏɴɪʙʟᴇs</u> :
+Impressive Features🫧
 
-Tᴀʀɪғɪᴄᴀᴛɪᴏɴ :
-➜ Pʀᴇᴍɪᴜᴍ mᴇɴsᴜᴇʟ : 3.99$/mᴏɪs
-➜ Pʀᴇᴍɪᴜᴍ qᴜᴏᴛɪᴅɪᴇɴ : 0.99/jᴏᴜʀ
-➜ Pᴏᴜʀ l'ʜéʙᴇʀɢᴇᴍᴇɴᴛ ᴅᴇ bᴏᴛ : cᴏɴᴛᴀᴄᴛᴇᴢ @altof2
+The rename bot is a practical tool that helps you easily rename and manage your files.
 
-➲ Pᴀʏeʀ ɪᴄɪ - <code> @REQUETE_ANIME_30sbot </code>
+➲ /autorename : Automatically rename your files.
+➲ /metadata : Commands to enable/disable metadata.
+➲ /help : Get quick help.
+➲ /set_dump : To set the dump channel (where your files will be sent once renamed)
 
-‼️Tᴇ́ʟᴇᴄʜargᴇʀ ʟᴀ cᴀᴘᴛᴜʀᴇ ᴅᴇ ʟ'ecrᴀn ᴅᴜ ᴘᴀʏᴇᴍᴇɴᴛ ɪᴄɪ ᴇᴛ ʀᴇᴘᴏɴᴅᴇᴢ ᴀᴠᴇᴄ lᴀ cᴏᴍᴍᴀɴᴅᴇ /bought.</b>"""
-
-
-    HELP_TXT = """<b>Vᴇᴏɪᴄɪ ʟᴇ ᴍᴇɴᴜ ᴅ'ᴀɪᴅᴇ ᴀᴠᴇᴄ ʟᴇs cᴏᴍᴍᴀɴᴅᴇs ɪᴍᴘᴏʀᴛᴀɴᴛᴇs :
-
-Fᴏɴᴄᴛɪᴏɴɴᴀʟɪᴛᴇs ɪᴍᴘʀᴇssɪᴏɴɴᴀɴᴛᴇs🫧
-
-Lᴇ bᴏᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇsᴛ ᴜɴ ᴏᴜᴛɪʟ ᴘʀᴀᴛɪqᴜᴇ qᴜɪ vᴏᴜs ᴀɪᴅᴇ ᴀ ʀᴇɴᴏᴍᴍᴇʀ ᴇᴛ ɢᴇʀᴇʀ vᴏᴛʀᴇs fɪʟᴇs ᴇᴀsɪʟʟᴇᴍᴇɴᴛ.
-
-➲ /autorename : ʀᴇɴᴏᴍᴍᴇʀ ᴀᴜᴛᴏᴍᴀᴛɪqᴜᴇᴍᴇɴᴛ vᴏᴛʀᴇs fɪʟᴇs.
-➲ /metadata : cᴏᴍᴍᴀɴᴅᴇs pᴏᴜʀ ᴀᴄᴛɪᴠᴇʀ/ᴅᴇsᴀᴄᴛɪᴠᴇʀ ʟᴇs métᴀᴅᴀᴛᴀs.
-➲ /help : ᴏʙᴛᴇɴɪʀ ᴅᴇ ʟ'ᴀɪᴅᴇ ʀᴀᴘɪᴅᴇ.
-➲ /set_dump : Pour definir le channel à dumper(ou vos fichiers seront envoyés une foit renommeer)
-
-Nb: Assurer vous d'activer le mode sequentiel pour que le bot puisse trier et envoyer les fichiers dans le bon ordre."""
-
+Note: Make sure to activate sequential mode so the bot can sort and send files in the correct order."""
 
     SEND_METADATA = """
-<b>--ᴘᴀʀᴀᴍéᴛʀᴇs ᴅᴇs ᴍéᴛᴀᴅᴀᴛᴀ--</b>
+<b>--Metadata Parameters--</b>
 
-➜ /metadata : ᴀᴄᴛɪᴠᴇʀ ᴏᴜ supprimer ʟᴇs ᴍéᴛᴀᴅᴀᴛᴀᴛᴀ.
+➜ /metadata : Enable or remove metadata.
 
-<b>ᴅéꜱᴄʀɪᴘᴛɪᴏɴ</b> : ʟᴇs ᴍéᴛᴀᴅᴀᴛᴀᴛᴀ ᴠᴏɴᴛ ᴍᴏᴅɪғɪᴇʀ ʟᴇs ꜰɪʟᴇs ᴠɪᴅéᴏ ᴍᴋᴠ, y ᴄᴏᴜᴍᴘʀᴇ ᴛᴏᴜᴛs ʟᴇs ᴛɪᴛʀᴇs ᴀᴜᴅɪᴏ, sᴛʀᴇᴀᴍs ᴇᴛ sᴜʙᴛɪᴛʀᴇs.""" 
-
+<b>Description</b>: Metadata will modify MKV video files, including all audio titles, streams and subtitles.""" 
 
     SOURCE_TXT = """
-<b>Salut,
-  Jᴇ sᴜɪs ᴜɴ bᴏᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ,
-ᴜɴ bᴏᴛ ᴛᴇʟᴇɢʀᴀᴍ  ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ.</b>
-
+<b>Hello,
+  I am an automatic rename bot,
+a Telegram bot for automatic renaming.</b>
 """ 
-
-
-
-
 
 Txt = Scripts()
