@@ -6,20 +6,18 @@ from datetime import datetime, timedelta
 from pytz import timezone
 from pyrogram import Client
 from aiohttp import web
-from route import web_server  # Import web server
-from config import settings  # Configuration settings
-from database.data import hyoshcoder  # Database functions
+from route import web_server
+from config import settings
+from database.data import hyoshcoder
 from dotenv import load_dotenv
 
-load_dotenv()  # Load environment variables
+load_dotenv()
 
-# Load configuration
 Config = settings
-SUPPORT_CHAT = -1002072871676  # Support chat ID
+SUPPORT_CHAT = -1002072871676
 
 class Bot(Client):
     def __init__(self):
-        """Initialize the bot with Pyrogram settings."""
         super().__init__(
             name="autorename",
             api_id=Config.API_ID,
@@ -32,7 +30,6 @@ class Bot(Client):
         self.start_time = time.time()
 
     async def start(self):
-        """Start the bot and send restart notifications."""
         await super().start()
         me = await self.get_me()
         self.mention = me.mention
@@ -41,14 +38,11 @@ class Bot(Client):
 
         print(f"{me.first_name} has started... ✨️")
 
-        # Uptime calculation
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
 
-        # Clear old user channel data
         await hyoshcoder.clear_all_user_channels()
 
-        # Send restart message to log and support channels
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
                 curr = datetime.now(timezone("Asia/Kolkata"))
@@ -66,7 +60,6 @@ class Bot(Client):
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
 
-# Function to start services
 async def start_services():
     bot = Bot()
     await bot.start()
@@ -76,11 +69,15 @@ async def start_services():
         await app.setup()
         site = web.TCPSite(app, "0.0.0.0", 8080)
         await site.start()
+    
+    # Keep the bot running
+    await asyncio.Event().wait()
 
-# Entry point
-async def main():
-    await start_services()
-# Don't use asyncio.run() here
 if __name__ == "__main__":
-    bot = Bot()
-    bot.run()  # Pyrogram's built-in method to run the bot with an event loop
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(start_services())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
