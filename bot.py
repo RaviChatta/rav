@@ -80,6 +80,7 @@ async def start_services():
 # Entry point
 async def main():
     await start_services()
-
+# Don't use asyncio.run() here
 if __name__ == "__main__":
-    asyncio.run(main())
+    bot = Bot()
+    bot.run()  # Pyrogram's built-in method to run the bot with an event loop
