@@ -1043,36 +1043,28 @@ class Database:
             except Exception as e:
                 logging.error(f"Error toggling sequential mode for {user_id}: {e}")
                 return False
-    
-        async def get_user_channel(self, user_id: int) -> Optional[str]:
-            """Get user's dump channel ID."""
-            try:
-                user = await self.users.find_one({"_id": user_id})
-                return user.get("settings", {}).get("user_channel") if user else None
-            except Exception as e:
-                logging.error(f"Error getting user channel for {user_id}: {e}")
-                return None
-    
-        async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
-            """Set user's dump channel ID."""
-            try:
-                await self.users.update_one(
-                    {"_id": user_id},
-                    {"$set": {"settings.user_channel": channel_id}}
-                )
-                return True
-            except Exception as e:
-                logging.error(f"Error setting user channel for {user_id}: {e}")
-                return False
-    
-        async def get_all_banned_users(self):
-            """Get all banned users with pagination support."""
-            try:
-                return self.users.find({"ban_status.is_banned": True})
-            except Exception as e:
-                logging.error(f"Error getting banned users: {e}")
-                return []
-    
+     async def get_user_channel(self, user_id: int) -> Optional[str]:
+              """Get user's dump channel ID."""
+              try:
+                  user = await self.users.find_one({"_id": user_id})
+                  return user.get("settings", {}).get("user_channel") if user else None
+              except Exception as e:
+                  logging.error(f"Error getting user channel for {user_id}: {e}")
+                  return None
+
+
+     async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
+                """Set user's dump channel ID."""
+                try:
+                    await self.users.update_one(
+                        {"_id": user_id},
+                        {"$set": {"settings.user_channel": channel_id}}
+                    )
+                    return True
+                except Exception as e:
+                    logging.error(f"Error setting user channel for {user_id}: {e}")
+                    return False
+                  
         async def get_metadata(self, user_id: int) -> bool:
             """Get user's metadata setting."""
             try:
