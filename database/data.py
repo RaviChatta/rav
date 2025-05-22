@@ -3,10 +3,11 @@ import datetime
 import pytz
 import secrets
 from config import settings
-import logging
 from typing import Optional, Dict, List, Union, Tuple
 from bson.objectid import ObjectId
 from urllib.parse import urlencode
+import logging
+logger = logging.getLogger(__name__)
 
 Config = settings
 
