@@ -1,4 +1,4 @@
-from database.data import hyoshcoder
+from database.data import get_database
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
@@ -91,12 +91,12 @@ class AdminCommands:
             ban_reason = ' '.join(message.command[3:])
             
             # Check if user exists
-            user = await hyoshcoder.read_user(user_id)
+            user = await get_database.read_user(user_id)
             if not user:
                 return await AdminCommands._send_response(message, f"❌ User {user_id} not found in database")
 
             # Ban the user in database
-            await hyoshcoder.ban_user(user_id, ban_duration, ban_reason)
+            await get_database.ban_user(user_id, ban_duration, ban_reason)
             
             # Notify the banned user
             try:
@@ -142,12 +142,12 @@ class AdminCommands:
             user_id = int(message.command[1])
             
             # Check if user is actually banned
-            user = await hyoshcoder.read_user(user_id)
+            user = await get_database.read_user(user_id)
             if not user or not user.get('ban_status', {}).get('is_banned'):
                 return await AdminCommands._send_response(message, f"ℹ️ User {user_id} is not currently banned")
 
             # Unban the user
-            await hyoshcoder.remove_ban(user_id)
+            await get_database.remove_ban(user_id)
             
             # Notify the unbanned user
             try:
@@ -174,7 +174,7 @@ class AdminCommands:
         """List all currently banned users"""
         try:
             banned_users = []
-            async for user in await hyoshcoder.get_all_banned_users():
+            async for user in await get_database.get_all_banned_users():
                 banned_users.append(
                     f"👤 **User ID:** `{user['id']}`\n"
                     f"⏳ **Duration:** {user['ban_status']['ban_duration']} days\n"
@@ -226,7 +226,7 @@ class AdminCommands:
     async def execute_broadcast(client: Client, message: Message):
         """Actually execute the broadcast after confirmation"""
         broadcast_msg = message.reply_to_message
-        total_users = await hyoshcoder.total_users_count()
+        total_users = await get_database.total_users_count()
         start_time = time.time()
 
         # Log broadcast start
@@ -246,12 +246,12 @@ class AdminCommands:
         )
         
         success = failed = 0
-        async for user in await hyoshcoder.get_all_users():
+        async for user in await get_database.get_all_users():
             try:
                 await broadcast_msg.copy(user['_id'])
                 success += 1
             except (InputUserDeactivated, UserIsBlocked):
-                await hyoshcoder.delete_user(user['_id'])
+                await get_database.delete_user(user['_id'])
                 failed += 1
             except Exception as e:
                 failed += 1
@@ -293,10 +293,10 @@ class AdminCommands:
         status_msg = await AdminCommands._send_response(message, "🔄 Gathering bot statistics...")
         
         # Get all stats
-        total_users = await hyoshcoder.total_users_count()
-        banned_users = await hyoshcoder.total_banned_users_count()
-        premium_users = await hyoshcoder.total_premium_users_count()
-        daily_active = await hyoshcoder.get_daily_active_users()
+        total_users = await get_database.total_users_count()
+        banned_users = await get_database.total_banned_users_count()
+        premium_users = await get_database.total_premium_users_count()
+        daily_active = await get_database.get_daily_active_users()
         ping_time = (time.time() - start_time) * 1000
         
         await status_msg.edit_text(
@@ -313,7 +313,7 @@ class AdminCommands:
         """List all bot users"""
         try:
             users = []
-            async for user in await hyoshcoder.get_all_users():
+            async for user in await get_database.get_all_users():
                 premium_status = "⭐" if user.get('is_premium') else ""
                 users.append(f"👤 User ID: `{user['_id']}` {premium_status}")
             
