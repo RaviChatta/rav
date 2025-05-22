@@ -1,6 +1,7 @@
 import re, os, time
 from dotenv import load_dotenv
-
+import logging
+logger = logging.getLogger(__name__)
 load_dotenv()  # Charge les variables d'environnement depuis un fichier .env si présent
 
 # On accepte désormais les IDs négatifs (pour les chats/canaux Telegram)
