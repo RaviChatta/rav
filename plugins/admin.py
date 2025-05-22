@@ -299,27 +299,7 @@ class AdminCommands:
             f"❌ Failed: {failed}"
         )
 
-    @staticmethod
-    async def bot_stats(client: Client, message: Message):
-        """Show bot statistics (admin version)"""
-        start_time = time.time()
-        status_msg = await AdminCommands._send_response(message, "🔄 Gathering bot statistics...")
-        
-        # Get all stats
-        total_users = await hyoshcoder.total_users_count()
-        banned_users = await hyoshcoder.total_banned_users_count()
-        premium_users = await hyoshcoder.total_premium_users_count()
-        daily_active = await hyoshcoder.get_daily_active_users()
-        ping_time = (time.time() - start_time) * 1000
-        
-        await status_msg.edit_text(
-            "📊 **Bot Statistics (Admin)**\n\n"
-            f"👥 Total Users: {total_users}\n"
-            f"🚫 Banned Users: {banned_users}\n"
-            f"⭐ Premium Users: {premium_users}\n"
-            f"📈 Daily Active Users: {daily_active}\n"
-            f"🏓 Ping: {ping_time:.2f} ms"
-        )
+
 
     @staticmethod
     async def list_users(message: Message):
@@ -346,8 +326,86 @@ class AdminCommands:
             await AdminCommands._send_response(message, error_msg)
             logger.error(error_msg, exc_info=True)
 
+# Add these new methods to the AdminCommands class
+
+@staticmethod
+async def admin_commands_panel(client: Client, message: Message):
+    """Show admin commands panel"""
+    try:
+        points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
+        new_user_points = await hyoshcoder.get_config("new_user_points", 50)
+        referral_reward = await hyoshcoder.get_config("referral_reward", 15)
+        
+        text = (
+            f"🛠️ <b>Admin Commands Panel</b>\n\n"
+            f"Current Configuration:\n"
+            f"• Points per rename: {points_per_rename}\n"
+            f"• New user points: {new_user_points}\n"
+            f"• Referral reward: {referral_reward}\n\n"
+            "Manage the bot with these commands:"
+        )
+        
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ Configure Points", callback_data="admin_config_points")],
+            [InlineKeyboardButton(f"✨ Generate Points Link", callback_data="admin_genpoints")],
+            [InlineKeyboardButton(f"📊 Points Statistics", callback_data="admin_pointstats")],
+            [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
+        ])
+        
+        img = await get_random_photo()
+        msg = await message.reply_photo(
+            photo=img,
+            caption=text,
+            reply_markup=buttons
+        )
+        asyncio.create_task(AdminCommands._auto_delete_message(msg, delay=60))
+    except Exception as e:
+        logger.error(f"Error showing admin panel: {e}")
+        await message.reply_text("❌ Failed to show admin panel")
+
+@staticmethod
+async def bot_stats(client: Client, message: Message):
+    """Show detailed bot statistics (admin version)"""
+    try:
+        start_time = time.time()
+        status_msg = await AdminCommands._send_response(message, "🔄 Gathering bot statistics...")
+        
+        # Get all stats
+        total_users = await hyoshcoder.total_users_count()
+        banned_users = await hyoshcoder.total_banned_users_count()
+        premium_users = await hyoshcoder.total_premium_users_count()
+        daily_active = await hyoshcoder.get_daily_active_users()
+        total_renamed = await hyoshcoder.total_renamed_files()
+        points_distributed = await hyoshcoder.total_points_distributed()
+        ping_time = (time.time() - start_time) * 1000
+        
+        img = await get_random_photo()
+        await status_msg.edit_media(
+            media=InputMediaPhoto(
+                media=img,
+                caption=(
+                    "🤖 <b>Bot Statistics (Admin)</b>\n\n"
+                    f"👥 Total Users: {total_users}\n"
+                    f"🚫 Banned Users: {banned_users}\n"
+                    f"⭐ Premium Users: {premium_users}\n"
+                    f"📈 Daily Active Users: {daily_active}\n"
+                    f"📝 Total Files Renamed: {total_renamed}\n"
+                    f"✨ Total Points Distributed: {points_distributed}\n"
+                    f"🏓 Ping: {ping_time:.2f} ms"
+                )
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")],
+                [InlineKeyboardButton("❌ Close", callback_data="close")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Error in bot_stats: {e}")
+        await message.reply_text("❌ Failed to get stats")
+
+# Update the admin_commands_handler to include the new commands
 @Client.on_message(filters.private & filters.command(
-    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users"]
+    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users", "admin_cmds"]
 ) & filters.user(ADMIN_USER_ID))
 async def admin_commands_handler(client: Client, message: Message):
     """Handle all admin commands"""
@@ -368,6 +426,8 @@ async def admin_commands_handler(client: Client, message: Message):
             await AdminCommands.bot_stats(client, message)
         elif command == "users":
             await AdminCommands.list_users(message)
+        elif command == "admin_cmds":
+            await AdminCommands.admin_commands_panel(client, message)
             
     except FloodWait as e:
         await asyncio.sleep(e.value)
@@ -398,3 +458,7 @@ async def broadcast_confirmation(client: Client, callback_query: CallbackQuery):
     except Exception as e:
         logger.error(f"Broadcast confirmation error: {e}", exc_info=True)
         await callback_query.answer("An error occurred", show_alert=True)
+@Client.on_callback_query(filters.regex(r"^refresh_botstats$") & filters.user(ADMIN_USER_ID))
+async def refresh_botstats(client: Client, callback_query: CallbackQuery):
+    await AdminCommands.bot_stats(client, callback_query.message)
+    await callback_query.answer("Stats refreshed")
