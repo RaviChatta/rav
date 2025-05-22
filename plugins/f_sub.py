@@ -1,9 +1,9 @@
 import os
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from pyrogram.errors import UserNotParticipant, FloodWait
 from config import settings
-from helpers.utils import get_random_photo
+from helpers.utils import get_random_photo, get_random_animation
 import asyncio
 import time
 
@@ -21,7 +21,7 @@ async def not_subscribed(_, client, message):
 
 @Client.on_message(filters.private & filters.create(not_subscribed))
 async def forces_sub(client, message):
-    IMAGE_URL = await get_random_photo()
+    media = await get_random_animation() or await get_random_photo()
     not_joined_channels = []
 
     for channel in FORCE_SUB_CHANNELS:
@@ -46,7 +46,7 @@ async def forces_sub(client, message):
         except:
             buttons.append([
                 InlineKeyboardButton(
-                    text=f"• Join Channel •",
+                    text=f"• Join Channel •", 
                     url=f"https://t.me/{channel}"
                 )
             ])
@@ -58,14 +58,21 @@ async def forces_sub(client, message):
         )
     ])
 
-    text = "**Hey! You need to join our channels to use this bot.**\n\nPlease join all required channels below and then click 'I've Joined' to verify."
+    text = "**Please join our channels to use this bot**\n\nJoin all channels below then click 'I've Joined' to verify."
     
     try:
-        await message.reply_photo(
-            photo=IMAGE_URL,
-            caption=text,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        if media.endswith(('.mp4', '.gif')):
+            await message.reply_animation(
+                animation=media,
+                caption=text,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        else:
+            await message.reply_photo(
+                photo=media,
+                caption=text,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
     except:
         await message.reply_text(
             text=text,
@@ -78,7 +85,6 @@ async def check_subscription(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     not_joined_channels = []
 
-    # Check subscription with retries
     for _ in range(5):  # Max 5 retries
         not_joined_channels = []
         for channel in FORCE_SUB_CHANNELS:
@@ -91,26 +97,23 @@ async def check_subscription(client, callback_query: CallbackQuery):
         
         if not not_joined_channels:
             break
-        await asyncio.sleep(2)  # Wait 2 seconds between retries
+        await asyncio.sleep(2)
 
     if not not_joined_channels:
-        # Success - delete previous messages
         try:
             await callback_query.message.delete()
         except:
             pass
         
-        # Send success message
-        success_text = "**✅ Successfully verified! You can now use the bot.**\n\nType /start to begin."
+        success_text = "**✅ Verified! You can now use the bot.**\n\nType /start to begin."
         await client.send_message(
             chat_id=user_id,
             text=success_text,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("• Click Here •", callback_data='help')]
+                [InlineKeyboardButton("• Start •", callback_data='start')]
             ])
         )
     else:
-        # Still not subscribed to some channels
         buttons = []
         for channel in not_joined_channels:
             try:
@@ -125,7 +128,7 @@ async def check_subscription(client, callback_query: CallbackQuery):
             except:
                 buttons.append([
                     InlineKeyboardButton(
-                        text=f"• Join Channel •",
+                        text=f"• Join Channel •", 
                         url=f"https://t.me/{channel}"
                     )
                 ])
@@ -137,7 +140,7 @@ async def check_subscription(client, callback_query: CallbackQuery):
             )
         ])
 
-        text = "**You're still not subscribed to all required channels.**\n\nPlease join these channels and try again:"
+        text = "**You're still not subscribed to all channels.**\n\nPlease join these:"
         
         try:
             await callback_query.message.edit_caption(
