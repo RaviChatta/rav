@@ -177,7 +177,7 @@ async def send_effect_message(
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "view_dump", "viewdump",
-    "del_dump", "deldump", "profile", "leaderboard", "lb", "stats", "mystats", "admin_cmds", "botstats"
+    "del_dump", "deldump", "profile", "leaderboard", "lb", "stats", "mystats"
 ]))
 async def command(client, message: Message):
     user_id = message.from_user.id
@@ -333,62 +333,7 @@ async def command(client, message: Message):
             )
             asyncio.create_task(auto_delete_message(msg, delay=90))
 
-        elif command == "botstats" and is_admin:
-            # Admin-only bot statistics
-            total_users = await hyoshcoder.total_users_count()
-            total_premium = await hyoshcoder.total_premium_users_count()
-            total_renamed = await hyoshcoder.total_renamed_files()
-            points_distributed = await hyoshcoder.total_points_distributed()
-            
-            text = (
-                f"🤖 <b>Bot Statistics</b>\n\n"
-                f"👥 <b>Total Users:</b> {total_users}\n"
-                f"⭐ <b>Premium Users:</b> {total_premium}\n"
-                f"📝 <b>Total Files Renamed:</b> {total_renamed}\n"
-                f"✨ <b>Total Points Distributed:</b> {points_distributed}\n\n"
-                f"<i>Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
-            )
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")],
-                [InlineKeyboardButton("❌ Close", callback_data="close")]
-            ])
-            
-            msg = await message.reply_photo(
-                photo=img,
-                caption=text,
-                reply_markup=buttons
-            )
-            asyncio.create_task(auto_delete_message(msg, delay=120))
-
-        elif command == "admin_cmds" and is_admin:
-            # Admin command panel
-            points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
-            new_user_points = await hyoshcoder.get_config("new_user_points", 50)
-            referral_reward = await hyoshcoder.get_config("referral_reward", 15)
-            
-            text = (
-                f"{EMOJI_ADMIN} <b>Admin Commands Panel</b>\n\n"
-                f"Current Configuration:\n"
-                f"• Points per rename: {points_per_rename}\n"
-                f"• New user points: {new_user_points}\n"
-                f"• Referral reward: {referral_reward}\n\n"
-                "Manage the bot with these commands:"
-            )
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚙️ Configure Points", callback_data="admin_config_points")],
-                [InlineKeyboardButton(f"{EMOJI_POINTS} Generate Points Link", callback_data="admin_genpoints")],
-                [InlineKeyboardButton(f"{EMOJI_STATS} Points Statistics", callback_data="admin_pointstats")],
-                [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
-            ])
-            
-            msg = await message.reply_photo(
-                photo=img,
-                caption=text,
-                reply_markup=buttons
-            )
-            asyncio.create_task(auto_delete_message(msg, delay=60))
+   
 
         elif command == "autorename":
             points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
