@@ -25,6 +25,7 @@ from pyrogram.errors import (
 )
 from config import settings
 from scripts import Txt
+from typing import Union, List, Optional, Dict
 from helpers.utils import get_random_photo, get_random_animation
 from database.data import hyoshcoder
 import logging
