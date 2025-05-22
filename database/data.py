@@ -165,7 +165,34 @@ class Database:
         except Exception as e:
             logging.error(f"Error checking if user {id} exists: {e}")
             return False
+async def total_banned_users_count(self) -> int:
+    """Get total number of banned users."""
+    try:
+        return await self.users.count_documents({"ban_status.is_banned": True})
+    except Exception as e:
+        logging.error(f"Error counting banned users: {e}")
+        return 0
 
+async def total_premium_users_count(self) -> int:
+    """Get total number of premium users."""
+    try:
+        return await self.users.count_documents({"premium.is_premium": True})
+    except Exception as e:
+        logging.error(f"Error counting premium users: {e}")
+        return 0
+
+async def get_daily_active_users(self) -> int:
+    """Get count of daily active users."""
+    try:
+        today = datetime.datetime.now().date()
+        return await self.users.count_documents({
+            "activity.last_active": {
+                "$gte": today.isoformat()
+            }
+        })
+    except Exception as e:
+        logging.error(f"Error counting daily active users: {e}")
+        return 0
     async def total_users_count(self) -> int:
         """Get total number of users."""
         try:
@@ -822,4 +849,5 @@ class Database:
         }
 
 # Initialize database instance
-hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
+async def initialize_database():
+    await hyoshcoder.connect()
