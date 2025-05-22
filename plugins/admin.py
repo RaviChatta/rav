@@ -221,7 +221,18 @@ class AdminCommands:
             [InlineKeyboardButton("❌ Cancel", callback_data="broadcast_cancel")]
         ])
         await confirm.edit_reply_markup(confirm_keyboard)
+    @staticmethod  
+    async def bot_stats(client: Client, message: Message):
+        try:
+            if not hyoshcoder or not hyoshcoder.db:
+                await message.reply_text("⚠️ Database not initialized")
+                return
 
+            total_users = await hyoshcoder.total_users_count()
+            await message.reply_text(f"Total users: {total_users}")
+        except Exception as e:
+            logger.error(f"Error in bot_stats: {e}")
+            await message.reply_text("❌ Failed to get stats")
     @staticmethod
     async def execute_broadcast(client: Client, message: Message):
         """Actually execute the broadcast after confirmation"""
