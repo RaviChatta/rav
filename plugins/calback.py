@@ -14,7 +14,8 @@ from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
-
+import logging
+logger = logging.getLogger(__name__)
 # Constants
 METADATA_TIMEOUT = 60  # seconds
 POINT_RANGE = range(5, 21)  # 5-20 points
