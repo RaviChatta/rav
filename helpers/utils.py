@@ -167,7 +167,17 @@ async def get_random_photo() -> Optional[str]:
     except Exception as e:
         print(f"Error getting random photo: {e}")
         return None
-
+async def get_random_animation() -> Optional[str]:
+    """Get a random animation from configured animations"""
+    try:
+        if not settings.ANIMATIONS:
+            return None
+            
+        animations = [a.strip() for a in settings.ANIMATIONS.split() if a.strip()]
+        return random.choice(animations) if animations else None
+    except Exception as e:
+        print(f"Error getting random animation: {e}")
+        return None
 async def get_shortlink(url: str, api: str, link: str) -> str:
     """Get shortlink with retry logic"""
     shortzy = Shortzy(api_key=api, base_site=url)
