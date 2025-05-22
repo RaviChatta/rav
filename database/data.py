@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 Config = settings
 
 class Database:
-    def __init__(self, uri: str, database_name: str):
+    async def __init__(self, uri: str, database_name: str):
         """Initialize database connection with enhanced error handling."""
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(
@@ -20,7 +20,7 @@ class Database:
                 connectTimeoutMS=30000,
                 socketTimeoutMS=30000
             )
-            self._client.admin.command('ping')
+            await self._client.admin.command('ping')
             logging.info("Successfully connected to MongoDB")
         except Exception as e:
             logging.error(f"Failed to connect to MongoDB: {e}")
@@ -35,7 +35,7 @@ class Database:
         self.leaderboards = self.db.leaderboards
         self.file_stats = self.db.file_stats
         
-        self._create_indexes()
+        await self._create_indexes()
 
     async def _create_indexes(self):
         """Create necessary indexes for performance optimization."""
