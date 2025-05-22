@@ -174,9 +174,9 @@ class AdminCommands:
         """List all currently banned users"""
         try:
             banned_users = []
-            async for user in await hyoshcoder.get_all_banned_users():
+            async for user in hyoshcoder.get_all_banned_users():
                 banned_users.append(
-                    f"👤 **User ID:** `{user['id']}`\n"
+                    f"👤 **User ID:** `{user['_id']}`\n"
                     f"⏳ **Duration:** {user['ban_status']['ban_duration']} days\n"
                     f"📅 **Banned On:** {user['ban_status']['banned_on']}\n"
                     f"📝 **Reason:** {user['ban_status']['ban_reason']}\n"
@@ -221,6 +221,7 @@ class AdminCommands:
             [InlineKeyboardButton("❌ Cancel", callback_data="broadcast_cancel")]
         ])
         await confirm.edit_reply_markup(confirm_keyboard)
+
     @staticmethod  
     async def bot_stats(client: Client, message: Message):
         try:
@@ -233,6 +234,7 @@ class AdminCommands:
         except Exception as e:
             logger.error(f"Error in bot_stats: {e}")
             await message.reply_text("❌ Failed to get stats")
+
     @staticmethod
     async def execute_broadcast(client: Client, message: Message):
         """Actually execute the broadcast after confirmation"""
@@ -257,7 +259,7 @@ class AdminCommands:
         )
         
         success = failed = 0
-        async for user in await hyoshcoder.get_all_users():
+        async for user in hyoshcoder.get_all_users():
             try:
                 await broadcast_msg.copy(user['_id'])
                 success += 1
@@ -324,8 +326,8 @@ class AdminCommands:
         """List all bot users"""
         try:
             users = []
-            async for user in await hyoshcoder.get_all_users():
-                premium_status = "⭐" if user.get('is_premium') else ""
+            async for user in hyoshcoder.get_all_users():
+                premium_status = "⭐" if user.get('premium', {}).get('is_premium') else ""
                 users.append(f"👤 User ID: `{user['_id']}` {premium_status}")
             
             response = f"👥 **Total Users: {len(users)}**\n\n" + "\n".join(users)
