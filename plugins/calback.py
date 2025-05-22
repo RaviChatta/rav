@@ -35,6 +35,8 @@ class CallbackActions:
     @staticmethod
     async def handle_home(client, query):
         buttons = [
+            [InlineKeyboardButton("• My Stats •", callback_data='mystats'),
+             InlineKeyboardButton("• Leaderboard •", callback_data='leaderboard')],
             [InlineKeyboardButton("• My Commands •", callback_data='help')],
             [
                 InlineKeyboardButton('• Updates', url='https://t.me/sineur_x_bot'), 
@@ -75,6 +77,69 @@ class CallbackActions:
         return {
             'caption': Txt.HELP_TXT.format(client.mention),
             'reply_markup': InlineKeyboardMarkup(buttons)
+        }
+
+    @staticmethod
+    async def handle_stats(client, query, user_id):
+        stats = await hyoshcoder.get_user_file_stats(user_id)
+        points = await hyoshcoder.get_points(user_id)
+        premium_status = await hyoshcoder.check_premium_status(user_id)
+        referral_stats = await hyoshcoder.users.find_one(
+            {"_id": user_id},
+            {"referral.referred_count": 1, "referral.referral_earnings": 1}
+        )
+        
+        text = (
+            f"📊 <b>Your Statistics</b>\n\n"
+            f"✨ <b>Points Balance:</b> {points}\n"
+            f"⭐ <b>Premium Status:</b> {'Active ✅' if premium_status['is_premium'] else 'Inactive ❌'}\n"
+            f"👥 <b>Referrals:</b> {referral_stats.get('referral', {}).get('referred_count', 0)} "
+            f"(Earned {referral_stats.get('referral', {}).get('referral_earnings', 0)} ✨)\n\n"
+            f"📝 <b>Files Renamed</b>\n"
+            f"• Total: {stats['total_renamed']}\n"
+            f"• Today: {stats['today']}\n"
+            f"• This Week: {stats['this_week']}\n"
+            f"• This Month: {stats['this_month']}\n"
+        )
+        
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard")],
+            [InlineKeyboardButton("👥 Invite Friends", callback_data="invite")],
+            [InlineKeyboardButton("🔙 Back", callback_data="help")]
+        ])
+        
+        return {
+            'caption': text,
+            'reply_markup': buttons
+        }
+
+    @staticmethod
+    async def handle_leaderboard(client, query, period="weekly", type="points"):
+        leaders = await hyoshcoder.get_leaderboard(period, type)
+        type_display = {
+            "points": "Points",
+            "renames": "Files Renamed",
+            "referrals": "Referrals"
+        }.get(type, "Points")
+        
+        period_display = {
+            "daily": "Daily",
+            "weekly": "Weekly",
+            "monthly": "Monthly",
+            "alltime": "All-Time"
+        }.get(period, "Weekly")
+        
+        text = f"🏆 {period_display} {type_display} Leaderboard:\n\n"
+        for i, user in enumerate(leaders[:10], 1):
+            text += (
+                f"{i}. {user['username'] or user['_id']} - "
+                f"{user['value']} {type_display} "
+                f"{'⭐' if user.get('is_premium') else ''}\n"
+            )
+        
+        return {
+            'caption': text,
+            'reply_markup': get_leaderboard_keyboard(period, type)
         }
 
     @staticmethod
@@ -185,8 +250,6 @@ async def cb_handler(client, query: CallbackQuery):
         # Get common resources
         img = await get_random_photo()
         thumb = await hyoshcoder.get_thumbnail(user_id)
-        src_info = await hyoshcoder.get_src_info(user_id)
-        src_txt = "File name" if src_info == "file_name" else "File caption"
         
         # Handle different callback actions
         if data == "home":
@@ -194,6 +257,27 @@ async def cb_handler(client, query: CallbackQuery):
         
         elif data == "help":
             response = await CallbackActions.handle_help(client, query, user_id)
+        
+        elif data == "mystats":
+            response = await CallbackActions.handle_stats(client, query, user_id)
+        
+        elif data == "leaderboard":
+            response = await CallbackActions.handle_leaderboard(client, query)
+        
+        elif data.startswith("lb_"):
+            parts = data.split("_")
+            if len(parts) == 3:
+                period = await hyoshcoder.get_leaderboard_period(user_id)
+                type = await hyoshcoder.get_leaderboard_type(user_id)
+                
+                if parts[1] == "period":
+                    period = parts[2]
+                    await hyoshcoder.set_leaderboard_period(user_id, period)
+                elif parts[1] == "type":
+                    type = parts[2]
+                    await hyoshcoder.set_leaderboard_type(user_id, type)
+                
+                response = await CallbackActions.handle_leaderboard(client, query, period, type)
         
         elif data in ["metadata_1", "metadata_0", "custom_metadata"]:
             response = await CallbackActions.handle_metadata_toggle(client, query, user_id, data)
