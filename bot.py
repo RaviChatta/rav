@@ -10,7 +10,8 @@ from route import web_server
 from config import settings
 from database.data import get_database
 from dotenv import load_dotenv
-
+import logging
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 Config = settings
