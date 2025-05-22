@@ -27,7 +27,7 @@ from config import settings
 from scripts import Txt
 from typing import Union, List, Optional, Dict
 from helpers.utils import get_random_photo, get_random_animation
-from database.data import hyoshcoder
+from database.data import get_database
 import logging
 
 logger = logging.getLogger(__name__)
@@ -195,7 +195,7 @@ async def command(client, message: Message):
         
         if command == 'start':
             user = message.from_user
-            await hyoshcoder.add_user(client, message)
+            await get_database.add_user(client, message)
             
             # Welcome effect with auto-delete
             welcome_msg = await send_effect_message(
@@ -221,12 +221,12 @@ async def command(client, message: Message):
             # Handle referral links
             if args and args[0].startswith("refer_"):
                 referrer_id = int(args[0].replace("refer_", ""))
-                reward = await hyoshcoder.get_config("referral_reward", 15)
+                reward = await get_database.get_config("referral_reward", 15)
                 if referrer_id != user_id:
-                    referrer = await hyoshcoder.read_user(referrer_id)
+                    referrer = await get_database.read_user(referrer_id)
                     if referrer:
-                        await hyoshcoder.set_referrer(user_id, referrer_id)
-                        await hyoshcoder.add_points(referrer_id, reward, "referral", 
+                        await get_database.set_referrer(user_id, referrer_id)
+                        await get_database.add_points(referrer_id, reward, "referral", 
                                                   f"Referral from {user_id}")
                         
                         # Notify referrer with effect
@@ -244,7 +244,7 @@ async def command(client, message: Message):
             # Handle points links
             if args and args[0].startswith("points_"):
                 code = args[0][7:]
-                result = await hyoshcoder.claim_points_link(user_id, code)
+                result = await get_database.claim_points_link(user_id, code)
                 if result["success"]:
                     claim_msg = await send_effect_message(
                         client,
@@ -273,7 +273,7 @@ async def command(client, message: Message):
         elif command in ["leaderboard", "lb"]:
             # Show leaderboard with interactive buttons
             keyboard = get_leaderboard_keyboard()
-            leaders = await hyoshcoder.get_leaderboard()
+            leaders = await get_database.get_leaderboard()
             
             text = f"{EMOJI_LEADERBOARD} Weekly Points Leaderboard:\n\n"
             for i, user in enumerate(leaders[:10], 1):
@@ -299,10 +299,10 @@ async def command(client, message: Message):
 
         elif command in ["stats", "mystats"]:
             # Show user statistics including file rename counts
-            stats = await hyoshcoder.get_user_file_stats(user_id)
-            points = await hyoshcoder.get_points(user_id)
-            premium_status = await hyoshcoder.check_premium_status(user_id)
-            referral_stats = await hyoshcoder.users.find_one(
+            stats = await get_database.get_user_file_stats(user_id)
+            points = await get_database.get_points(user_id)
+            premium_status = await get_database.check_premium_status(user_id)
+            referral_stats = await get_database.users.find_one(
                 {"_id": user_id},
                 {"referral.referred_count": 1, "referral.referral_earnings": 1}
             )
@@ -335,10 +335,10 @@ async def command(client, message: Message):
 
         elif command == "botstats" and is_admin:
             # Admin-only bot statistics
-            total_users = await hyoshcoder.total_users_count()
-            total_premium = await hyoshcoder.total_premium_users_count()
-            total_renamed = await hyoshcoder.total_renamed_files()
-            points_distributed = await hyoshcoder.total_points_distributed()
+            total_users = await get_database.total_users_count()
+            total_premium = await get_database.total_premium_users_count()
+            total_renamed = await get_database.total_renamed_files()
+            points_distributed = await get_database.total_points_distributed()
             
             text = (
                 f"🤖 <b>Bot Statistics</b>\n\n"
@@ -363,9 +363,9 @@ async def command(client, message: Message):
 
         elif command == "admin_cmds" and is_admin:
             # Admin command panel
-            points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
-            new_user_points = await hyoshcoder.get_config("new_user_points", 50)
-            referral_reward = await hyoshcoder.get_config("referral_reward", 15)
+            points_per_rename = await get_database.get_config("points_per_rename", 2)
+            new_user_points = await get_database.get_config("new_user_points", 50)
+            referral_reward = await get_database.get_config("referral_reward", 15)
             
             text = (
                 f"{EMOJI_ADMIN} <b>Admin Commands Panel</b>\n\n"
@@ -391,8 +391,8 @@ async def command(client, message: Message):
             asyncio.create_task(auto_delete_message(msg, delay=60))
 
         elif command == "autorename":
-            points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
-            current_points = await hyoshcoder.get_points(user_id)
+            points_per_rename = await get_database.get_config("points_per_rename", 2)
+            current_points = await get_database.get_points(user_id)
             
             command_parts = message.text.split("/autorename", 1)
             if len(command_parts) < 2 or not command_parts[1].strip():
@@ -408,7 +408,7 @@ async def command(client, message: Message):
                 return
 
             format_template = command_parts[1].strip()
-            await hyoshcoder.set_format_template(user_id, format_template)
+            await get_database.set_format_template(user_id, format_template)
             
             caption = (
                 f"{EMOJI_SUCCESS} <b>Auto-rename template set!</b>\n\n"
@@ -443,7 +443,7 @@ async def command(client, message: Message):
                 await message.reply_text(caption)
                 return
             new_caption = message.text.split(" ", 1)[1]
-            await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
+            await get_database.set_caption(message.from_user.id, caption=new_caption)
             caption = ("**Your caption has been saved successfully ✅**")
             if img:
                 await message.reply_photo(photo=img, caption=caption)
@@ -451,12 +451,12 @@ async def command(client, message: Message):
                 await message.reply_text(text=caption)
 
         elif command == "del_caption":
-            old_caption = await hyoshcoder.get_caption(message.from_user.id)
+            old_caption = await get_database.get_caption(message.from_user.id)
             if not old_caption:
                 caption = ("**You don't have any caption ❌**")
                 await message.reply_text(caption)
                 return
-            await hyoshcoder.set_caption(message.from_user.id, caption=None)
+            await get_database.set_caption(message.from_user.id, caption=None)
             caption = ("**Your caption has been successfully deleted 🗑️**")
             if img:
                 await message.reply_photo(photo=img, caption=caption)
@@ -464,7 +464,7 @@ async def command(client, message: Message):
                 await message.reply_text(text=caption)
 
         elif command in ['see_caption', 'view_caption']:
-            old_caption = await hyoshcoder.get_caption(message.from_user.id)
+            old_caption = await get_database.get_caption(message.from_user.id)
             if old_caption:
                 caption = (f"**Your caption:**\n\n`{old_caption}`")
             else:
@@ -475,7 +475,7 @@ async def command(client, message: Message):
                 await message.reply_text(text=caption)
 
         elif command in ['view_thumb', 'viewthumb']:
-            thumb = await hyoshcoder.get_thumbnail(message.from_user.id)
+            thumb = await get_database.get_thumbnail(message.from_user.id)
             if thumb:
                 await client.send_photo(chat_id=message.chat.id, photo=thumb)
             else:
@@ -486,13 +486,13 @@ async def command(client, message: Message):
                     await message.reply_text(text=caption)
 
         elif command in ['del_thumb', 'delthumb']:
-            old_thumb = await hyoshcoder.get_thumbnail(user_id)
+            old_thumb = await get_database.get_thumbnail(user_id)
             if not old_thumb:
                 caption = "No thumbnail is currently set."
                 await message.reply_photo(photo=img, caption=caption)
                 return
 
-            await hyoshcoder.set_thumbnail(message.from_user.id, file_id=None)
+            await get_database.set_thumbnail(message.from_user.id, file_id=None)
             caption = ("**Thumbnail successfully deleted 🗑️**")
             if img:
                 await message.reply_photo(photo=img, caption=caption)
@@ -501,8 +501,8 @@ async def command(client, message: Message):
 
         elif command == "metadata":
             ms = await message.reply_text("**Please wait...**", reply_to_message_id=message.id)
-            bool_metadata = await hyoshcoder.get_metadata(message.from_user.id)
-            user_metadata = await hyoshcoder.get_metadata_code(message.from_user.id)
+            bool_metadata = await get_database.get_metadata(message.from_user.id)
+            user_metadata = await get_database.get_metadata_code(message.from_user.id)
             await ms.delete()
             if bool_metadata:
                 await message.reply_text(
@@ -584,8 +584,8 @@ async def command(client, message: Message):
             bot = await client.get_me()
             mention = bot.mention
             caption = Txt.HELP_TXT.format(mention=mention) 
-            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-            src_info = await hyoshcoder.get_src_info(user_id)
+            sequential_status = await get_database.get_sequential_mode(user_id)
+            src_info = await get_database.get_src_info(user_id)
         
             btn_seq_text = "Sequential ✅" if sequential_status else "Sequential ❌"
             src_txt = "File name" if src_info == "file_name" else "File caption"
@@ -616,7 +616,7 @@ async def command(client, message: Message):
                     try:
                         channel_info = await client.get_chat(channel_id)
                         if channel_info:
-                            await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
+                            await get_database.set_user_channel(message.from_user.id, channel_id)
                             await message.reply_text(f"Channel {channel_id} has been set as the dump channel.")
                         else:
                             await message.reply_text("The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel.")
@@ -624,7 +624,7 @@ async def command(client, message: Message):
                         await message.reply_text(f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
         
         elif command in ["view_dump", "viewdump"]:
-            channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
+            channel_id = await get_database.get_user_channel(message.from_user.id)
             if channel_id:
                 caption = f"Channel {channel_id} is currently set as the dump channel."
                 await message.reply_text(caption)
@@ -632,16 +632,16 @@ async def command(client, message: Message):
                 await message.reply_text("No dump channel is currently set.")
         
         elif command in ["del_dump", "deldump"]:
-            channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
+            channel_id = await get_database.get_user_channel(message.from_user.id)
             if channel_id:
-                await hyoshcoder.set_user_channel(message.from_user.id, None)
+                await get_database.set_user_channel(message.from_user.id, None)
                 caption = f"Channel {channel_id} has been removed from the dump list."
                 await message.reply_text(caption)
             else:
                 await message.reply_text("No dump channel is currently set.")
         
         elif command == "profile":
-            user = await hyoshcoder.read_user(message.from_user.id)
+            user = await get_database.read_user(message.from_user.id)
             caption = (
                 f"Username: {message.from_user.username}\n"
                 f"First Name: {message.from_user.first_name}\n"
@@ -663,7 +663,7 @@ async def addthumbs(client, message):
     """Handle thumbnail setting without points cost"""
     try:
         mkn = await message.reply_text("Please wait...")
-        await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
+        await get_database.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
         await mkn.edit("**Thumbnail saved successfully ✅️**")
         asyncio.create_task(auto_delete_message(mkn, delay=30))
     except Exception as e:
@@ -676,8 +676,8 @@ async def handle_file_rename(client, message: Message):
     """Handle file renaming with points deduction"""
     try:
         user_id = message.from_user.id
-        points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
-        current_points = await hyoshcoder.get_points(user_id)
+        points_per_rename = await get_database.get_config("points_per_rename", 2)
+        current_points = await get_database.get_points(user_id)
         
         if current_points < points_per_rename:
             msg = await message.reply(
@@ -690,13 +690,13 @@ async def handle_file_rename(client, message: Message):
             return
         
         # Deduct points first
-        await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
+        await get_database.deduct_points(user_id, points_per_rename, "file_rename")
         
         # Get user's rename template
-        template = await hyoshcoder.get_format_template(user_id)
+        template = await get_database.get_format_template(user_id)
         if not template:
             # Refund points if no template set
-            await hyoshcoder.add_points(user_id, points_per_rename, "refund", "No rename template set")
+            await get_database.add_points(user_id, points_per_rename, "refund", "No rename template set")
             msg = await message.reply(
                 f"{EMOJI_ERROR} No rename template set!\n"
                 "Use /autorename to set your template first\n\n"
@@ -710,7 +710,7 @@ async def handle_file_rename(client, message: Message):
         original_name = message.document.file_name if message.document else message.video.file_name
         new_name = "generated_new_name.ext"  # Replace with actual generated name
         
-        await hyoshcoder.track_file_rename(user_id, original_name, new_name)
+        await get_database.track_file_rename(user_id, original_name, new_name)
         
         # Send success message with effect
         success_msg = await send_effect_message(
