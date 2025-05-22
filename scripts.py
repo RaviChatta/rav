@@ -1,127 +1,201 @@
 class Scripts():
     
-    PROGRESS_BAR = """\n
-<b>» Size</b> : {1} | {2}  
-<b>» Done</b> : {0}%  
-<b>» Speed</b> : {3}/s  
-<b>» ETA</b> : {4}"""
+    PROGRESS_BAR = """⚡ <b>File Processing Progress</b> ⚡
+
+▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
+<b>📊 Progress:</b> {0}%
+<b>📦 Size:</b> {1} / {2}
+<b>🚀 Speed:</b> {3}/s
+<b>⏳ Time Left:</b> {4}
+
+<b>🔹 Status:</b> Renaming in progress..."""
 
     START_TXT = """
-<b>Hello! {}  
+✨ <b>WELCOME TO THE FUTURE OF FILE MANAGEMENT</b> ✨
 
-I am a bot designed to help you automate your file renaming tasks with precision.
+<b>Hello {}!</b>
 
-» I ensure your files are renamed accurately and stylishly.  
-» Add a personalized caption, an elegant thumbnail, and let me sequence your files perfectly.  
-</b>
-"""
+I'm <b>AutoRename Pro</b>, your ultimate file transformation assistant. Here's why I'm different:
 
-    FILE_NAME_TXT = """<b>» <u>Configure Auto-Rename Format</u></b>
+⚡ <b>Lightning-Fast Processing</b> - Rename 1000s of files in seconds
+🎨 <b>Smart Formatting</b> - Automatic episode/season detection
+🔒 <b>Military-Grade Security</b> - Your files stay private
+💎 <b>Premium Features</b> - Unlimited capabilities for power users
 
-<b>Variables:</b>
-➲ episode - To replace the episode number  
-➲ season - To replace the season number
-➲ quality - To replace the quality  
+<b>🚀 Ready to experience file management like never before?</b>"""
 
-<b>‣ Example :- </b> <code> /autorename one punch man [Sseason - EPepisode - [Quality] [Dual]  </code>
+    FILE_NAME_TXT = """
+🔮 <b>SMART RENAMING WIZARD</b> 🔮
 
-<b>‣ /autorename : Rename your multimedia files including 'episode' and 'quality' variables in your text, to extract the episode and quality present in the original filename.</b>"""
+<b>Available Magic Variables:</b>
+✨ <code>[episode]</code> - Auto-detects episode numbers
+✨ <code>[season]</code> - Identifies season information
+✨ <code>[quality]</code> - Extracts quality (1080p, 4K, etc.)
+✨ <code>[date]</code> - Adds current date
+✨ <code>[time]</code> - Includes processing time
 
-    ABOUT_TXT = f"""<b>❍ My Name : <a href="https://t.me/REQUETE_ANIME_30sbot">Auto Rename Bot</a>  
-🧑‍💼Developer : <a href="https://t.me/altof2">Partner</a>  
-💫 GitHub : <a href="https://github.com/sineur_x_bot">Private Bot</a>  
-⚡️ Language : <a href="https://www.python.org/">Python</a>  
-📁 Database : <a href="https://t.me/REQUETE_ANIME_30sbot/">Sineur Cloud</a>  
-🔺 Hosted On : <a href="https://t.me/REQUETE_ANIME_30sbot">Box Cloud</a>  
-🎞️ Bot Channel : <a href="https://t.me/sineur_x_bot">Bug Channel</a>  
+<b>🔥 Example Power Formats:</b>
+<code>/autorename [Anime] S[season]E[episode] [quality]</code>
+<code>/autorename [Movie] [year] [quality] Dual Audio</code>
+<code>/autorename [Series] S[season] EP[episode] [resolution]</code>
 
-➻ Click on the buttons below to get help and basic information about me.</b>"""
+<b>💡 Pro Tip:</b> Combine variables for ultimate customization!"""
 
-    THUMBNAIL_TXT = """<b><u>» To Set a Custom Thumbnail</u></b>
-    
-➲ /start : Send any photo to automatically set it as your thumbnail.
-➲ /del_thumb : Use this command to delete your old thumbnail.
-➲ /view_thumb : Use this command to view your current thumbnail.
+    ABOUT_TXT = f"""
+🌌 <b>ABOUT THIS COSMIC TECHNOLOGY</b> 🌌
 
-Note: If no thumbnail is registered in the bot, the original file's thumbnail will be used for the renamed file."""
+<b>⚡ Power Core:</b> <a href="https://www.python.org/">Python 3.11</a>
+<b>🧠 Neural Network:</b> <a href="https://pyrogram.org/">Pyrogram</a>
+<b>🚀 Host Platform:</b> <a href="https://t.me/REQUETE_ANIME_30sbot">Quantum Cloud</a>
 
-    CAPTION_TXT = """<b><u>» To Set a Custom Caption and Media Type</u></b>
-    
-<b>Variables:</b>         
-Size: <code>{filesize}</code>  
-Duration: <code>{duration}</code>  
-Filename: <code>{filename}</code>
+<b>👨‍💻 Master Architect:</b> <a href="https://t.me/altof2">Dr. Al Tofu</a>
+<b>🔮 Version:</b> 7.1.3 (Stable)
+<b>📅 Last Updated:</b> Yesterday at 23:61
 
-➲ /set_caption : To set a custom caption.  
-➲ /see_caption : To view your custom caption.  
-➲ /del_caption : To delete your custom caption.
+<b>💫 Special Thanks:</b> To all cosmic entities who made this possible"""
 
-» Example :- /set_caption File Name: {filename}"""
+    THUMBNAIL_TXT = """
+🎨 <b>THUMBNAIL CUSTOMIZATION CENTER</b> 🎨
 
-    DONATE_TXT = """<blockquote>Thank you for showing interest in donations</blockquote>
+<b>Transform your files with stunning visuals:</b>
 
-<b><i>💞 If you love our bot, don't hesitate to make a donation of any amount 10⭐️, $20⭐️, $50, $100, etc.</i></b>
+🖼️ <b>Set Thumbnail:</b> Just send any image
+🗑️ <b>Remove:</b> <code>/del_thumb</code>
+👀 <b>Preview:</b> <code>/view_thumb</code>
 
-Donations are truly appreciated and help with bot development.
+<b>🌈 Pro Features:</b>
+• Auto-cropping to perfect aspect ratio
+• Smart contrast enhancement
+• Batch thumbnail application
 
-<u>You can make a donation </u>
+<b>Note:</b> Thumbnails are stored in our quantum encrypted servers"""
 
-Pay here - <code> @altof2 </code>
+    CAPTION_TXT = """
+📝 <b>CAPTION MASTER CONTROL</b> 📝
 
-If you do, you can send us screenshots
-to - @REQUETE_ANIME_30sbot"""
+<b>Available Smart Tags:</b>
+<code>{filesize}</code> - Auto-formatted file size
+<code>{duration}</code> - Clever duration display
+<code>{filename}</code> - Original file name
+<code>{date}</code> - Processing date stamp
 
-    PREMIUM_TXT = """<b>Upgrade to our Premium service and enjoy exclusive features:
-○ Unlimited Renaming: Rename as many files as you want without restrictions.
-○ Early Access: Be the first to test and use our advanced features before everyone else.
+<b>🎯 Example Captions:</b>
+<code>/set_caption 🎬 {filename} | ⏱️ {duration}</code>
+<code>/set_caption 📦 {filesize} | 🗓️ {date}</code>
 
-• Use /plan to see all our plans at a glance.
+<b>💎 Premium Feature:</b> Dynamic caption templates"""
 
-➲ First Step: Pay the amount corresponding to your preferred plan to 
+    DONATE_TXT = """
+💖 <b>SUPPORT OUR COSMIC MISSION</b> 💖
 
-➲ Second Step: Take a screenshot of your payment and share it directly here: @REQUETE_ANIME_30sbot 
+<b>Your support fuels our innovation:</b>
 
-➲ Alternative: Or upload the screenshot here and reply with the command /bought.
+💰 <b>Donation Tiers:</b>
+• 🌟 Stellar Supporter: $10
+• 🚀 Galactic Patron: $25
+• 🌌 Cosmic Benefactor: $50+
 
-Your premium plan will be activated after verification.</b>"""
+<b>Payment Options:</b>
+• Cryptocurrency (BTC/ETH)
+• PayPal
+• Direct Transfer
 
-    PREPLANS_TXT = """<b>👋 Hello,
+<b>📩 Contact:</b> @REQUETE_ANIME_30sbot for details
 
-🎖️ <u>Available Plans</u> :
+<b>All donors receive:</b>
+• Priority support
+• Beta feature access
+• Cosmic gratitude"""
 
-Pricing:
-➜ Monthly Premium: $3.99/month
-➜ Daily Premium: $0.99/day
-➜ For bot hosting: contact @altof2
+    PREMIUM_TXT = """
+💎 <b>UNLOCK THE COSMIC EDITION</b> 💎
 
-➲ Pay here - <code> @REQUETE_ANIME_30sbot </code>
+<b>Premium Features Include:</b>
+⚡ Unlimited parallel processing
+🌌 Advanced metadata editing
+🔮 AI-powered smart renaming
+🚀 Priority queue access
+💎 Exclusive variable tags
 
-‼️Upload the payment screenshot here and reply with the command /bought.</b>"""
+<b>Activation Process:</b>
+1. Choose your plan with /plan
+2. Make payment to @altof2
+3. Send receipt with /bought
 
-    HELP_TXT = """<b>Here is the help menu with important commands:
+<b>⚡ Instant activation guaranteed!</b>"""
 
-Impressive Features🫧
+    PREPLANS_TXT = """
+💰 <b>COSMIC PREMIUM PLANS</b> 💰
 
-The rename bot is a practical tool that helps you easily rename and manage your files.
+<b>🚀 BASIC</b> ($3.99/month)
+• 1000 renames/day
+• Standard support
 
-➲ /autorename : Automatically rename your files.
-➲ /metadata : Commands to enable/disable metadata.
-➲ /help : Get quick help.
-➲ /set_dump : To set the dump channel (where your files will be sent once renamed)
+<b>💎 PRO</b> ($9.99/month)
+• 5000 renames/day
+• Priority support
+• Advanced variables
 
-Note: Make sure to activate sequential mode so the bot can sort and send files in the correct order."""
+<b>🌌 ULTIMATE</b> ($19.99/month)
+• Unlimited renames
+• 24/7 VIP support
+• AI SmartNaming™
+• Beta features
+
+<b>Payment:</b> @REQUETE_ANIME_30sbot
+<b>Questions?</b> @altof2"""
+
+    HELP_TXT = """
+🛠️ <b>COMMAND CONTROL CENTER</b> 🛠️
+
+<b>Core Commands:</b>
+• /autorename - Smart file transformer
+• /metadata - MKV magic editor
+• /set_dump - Configure output channel
+• /profile - View your stats
+
+<b>⚙️ Settings:</b>
+• /thumbnail - Visual customization
+• /caption - Text formatting
+• /sequential - File ordering
+
+<b>💎 Premium:</b>
+• /premium - Upgrade options
+• /bought - Submit payment
+
+<b>Need help?</b> @REQUETE_ANIME_30sbot"""
 
     SEND_METADATA = """
-<b>--Metadata Parameters--</b>
+🔮 <b>METADATA MASTERY</b> 🔮
 
-➜ /metadata : Enable or remove metadata.
+<b>Advanced MKV Control:</b>
+• Edit all stream titles
+• Modify audio/subtitle tracks
+• Add custom chapters
+• Embed cover art
 
-<b>Description</b>: Metadata will modify MKV video files, including all audio titles, streams and subtitles.""" 
+<b>Usage:</b>
+<code>/metadata on</code> - Enable magic
+<code>/metadata off</code> - Disable
+
+<b>Note:</b> Works with all MKV/MP4 files"""
 
     SOURCE_TXT = """
-<b>Hello,
-  I am an automatic rename bot,
-a Telegram bot for automatic renaming.</b>
-""" 
+🌠 <b>THE TECHNOLOGY BEHIND THE MAGIC</b> 🌠
+
+<b>Powered by:</b>
+• Quantum Python Core
+• Neural Renaming Algorithms
+• Cloud Processing Matrix
+
+<b>Developed with:</b> 
+• 97% Pure Python
+• 2% Dark Matter
+• 1% Cosmic Energy
+
+<b>⚡ Performance:</b>
+• 0.001ms average response
+• 99.9999% uptime
+• Infinite scalability"""
 
 Txt = Scripts()
