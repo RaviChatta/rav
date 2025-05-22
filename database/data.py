@@ -51,10 +51,11 @@ class Database:
         except Exception as e:
             logging.error(f"Failed to connect to MongoDB: {e}")
             raise e
+
     async def _create_indexes(self):
         """Create necessary indexes for performance optimization."""
         indexes = [
-            ("users", "_id", True),
+            # Removed ("users", "_id", True) since _id is automatically indexed
             ("users", "referrer_id", False),
             ("users", "ban_status.is_banned", False),
             ("point_links", "code", True),
@@ -70,7 +71,12 @@ class Database:
         ]
         
         for collection, field, unique in indexes:
-            await self.db[collection].create_index(field, unique=unique)
+            try:
+                await self.db[collection].create_index(field, unique=unique)
+                logging.info(f"Created index on {collection}.{field} (unique={unique})")
+            except Exception as e:
+                logging.error(f"Failed to create index on {collection}.{field}: {e}")
+                # Continue with other indexes even if one fails
 
     def new_user(self, id: int) -> Dict:
         """Create a new user document with comprehensive default values."""
@@ -129,6 +135,7 @@ class Database:
             }
         }
 
+    # [Rest of your methods remain exactly the same...]
     # User Management
     async def add_user(self, bot, message) -> bool:
         """Add a new user with comprehensive initialization."""
