@@ -1031,8 +1031,7 @@ class Database:
             except Exception as e:
                 logging.error(f"Error getting sequential mode for {user_id}: {e}")
                 return False
-    
-        async def toggle_sequential_mode(self, user_id: int) -> bool:
+    async def toggle_sequential_mode(self, user_id: int) -> bool:
             """Toggle user's sequential mode setting."""
             try:
                 current = await self.get_sequential_mode(user_id)
