@@ -8,7 +8,7 @@ from pyrogram import Client
 from aiohttp import web
 from route import web_server
 from config import settings
-from database.data import get_database
+from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
 logger = logging.getLogger(__name__)
