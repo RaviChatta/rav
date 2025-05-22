@@ -7,7 +7,6 @@ from typing import Optional, Dict, List, Union, Tuple
 from bson.objectid import ObjectId
 from urllib.parse import urlencode
 import logging
-from config import Config
 
 logger = logging.getLogger(__name__)
 Config = settings
