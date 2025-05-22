@@ -41,7 +41,7 @@ class Bot(Client):
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
 
-        await hyoshcoder.clear_all_user_channels()
+        #await hyoshcoder.clear_all_user_channels()
 
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
