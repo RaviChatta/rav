@@ -6,7 +6,7 @@ from datetime import datetime
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
-from database.data import hyoshcoder
+from database.data import get_database
 from config import settings
 import os
 import time
@@ -30,7 +30,7 @@ async def get_user_semaphore(user_id):
 async def auto_rename_files(client, message):
     user_id = message.from_user.id
 
-    user_data = await hyoshcoder.read_user(user_id)
+    user_data = await get_database.read_user(user_id)
     if not user_data:
         return await message.reply_text("❌ Unable to load your information. Please type /start to register.")
 
@@ -38,7 +38,7 @@ async def auto_rename_files(client, message):
     format_template = user_data.get("format_template", "")
     media_preference = user_data.get("media_preference", "")
     sequential_mode = user_data.get("sequential_mode", False)
-    src_info = await hyoshcoder.get_src_info(user_id)  
+    src_info = await get_database.get_src_info(user_id)  
 
     if user_points < 1:
         return await message.reply_text("❌ You don't have enough balance to rename a file. Please recharge your points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
@@ -162,9 +162,9 @@ async def auto_rename_files(client, message):
             path = renamed_file_path
 
             metadata_added = False
-            _bool_metadata = await hyoshcoder.get_metadata(user_id)
+            _bool_metadata = await get_database.get_metadata(user_id)
             if _bool_metadata:
-                metadata = await hyoshcoder.get_metadata_code(user_id)
+                metadata = await get_database.get_metadata_code(user_id)
                 if metadata:
                     cmd = f'ffmpeg -i "{renamed_file_path}"  -map 0 -c:s copy -c:a copy -c:v copy -metadata title="{metadata}" -metadata author="{metadata}" -metadata:s:s title="{metadata}" -metadata:s:a title="{metadata}" -metadata:s:v title="{metadata}"  "{metadata_file_path}"'
                     try:
@@ -198,8 +198,8 @@ async def auto_rename_files(client, message):
             await queue_message.edit_text(f"📤 **Uploading:** `{file_name}`")
             await asyncio.sleep(5)  
             thumb_path = None
-            custom_caption = await hyoshcoder.get_caption(message.chat.id)
-            custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
+            custom_caption = await get_database.get_caption(message.chat.id)
+            custom_thumb = await get_database.get_thumbnail(message.chat.id)
 
             if message.document:
                 file_size = humanbytes(message.document.file_size)
@@ -254,7 +254,7 @@ async def auto_rename_files(client, message):
                             key=lambda x: (x["season"], x["episode"])
                         )
 
-                        user_channel = await hyoshcoder.get_user_channel(user_id)
+                        user_channel = await get_database.get_user_channel(user_id)
                         if not user_channel:
                             user_channel = user_id  
 
@@ -329,7 +329,7 @@ async def auto_rename_files(client, message):
             await queue_message.delete()
 
         finally:
-            await hyoshcoder.deduct_points(user_id, 1)
+            await get_database.deduct_points(user_id, 1)
             if os.path.exists(renamed_file_path):
                 os.remove(renamed_file_path)
             if os.path.exists(metadata_file_path):
