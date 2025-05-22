@@ -12,7 +12,7 @@ from pyrogram.types import (
 from pyrogram.errors import FloodWait
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
-from database.data import hyoshcoder
+from database.data import get_database
 from config import settings
 
 # Constants
@@ -54,10 +54,10 @@ class CallbackActions:
 
     @staticmethod
     async def handle_help(client, query, user_id):
-        sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+        sequential_status = await get_database.get_sequential_mode(user_id)
         btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
         
-        src_info = await hyoshcoder.get_src_info(user_id)
+        src_info = await get_database.get_src_info(user_id)
         src_txt = "File name" if src_info == "file_name" else "File caption"
 
         buttons = [
@@ -81,10 +81,10 @@ class CallbackActions:
 
     @staticmethod
     async def handle_stats(client, query, user_id):
-        stats = await hyoshcoder.get_user_file_stats(user_id)
-        points = await hyoshcoder.get_points(user_id)
-        premium_status = await hyoshcoder.check_premium_status(user_id)
-        referral_stats = await hyoshcoder.users.find_one(
+        stats = await get_database.get_user_file_stats(user_id)
+        points = await get_database.get_points(user_id)
+        premium_status = await get_database.check_premium_status(user_id)
+        referral_stats = await get_database.users.find_one(
             {"_id": user_id},
             {"referral.referred_count": 1, "referral.referral_earnings": 1}
         )
@@ -115,7 +115,7 @@ class CallbackActions:
 
     @staticmethod
     async def handle_leaderboard(client, query, period="weekly", type="points"):
-        leaders = await hyoshcoder.get_leaderboard(period, type)
+        leaders = await get_database.get_leaderboard(period, type)
         type_display = {
             "points": "Points",
             "renames": "Files Renamed",
@@ -146,9 +146,9 @@ class CallbackActions:
     async def handle_metadata_toggle(client, query, user_id, data):
         if data.startswith("metadata_"):
             is_enabled = data.split("_")[1] == '1'
-            user_metadata = await hyoshcoder.get_metadata_code(user_id)
+            user_metadata = await get_database.get_metadata_code(user_id)
             
-            await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
+            await get_database.set_metadata(user_id, bool_meta=is_enabled)
             
             ON = InlineKeyboardMarkup([
                 [
@@ -174,7 +174,7 @@ class CallbackActions:
         elif data == "custom_metadata":
             await query.message.delete()
             try:
-                user_metadata = await hyoshcoder.get_metadata_code(user_id)
+                user_metadata = await get_database.get_metadata_code(user_id)
                 metadata_message = f"""
 <b>--Metadata Settings--</b>
 
@@ -192,7 +192,7 @@ class CallbackActions:
                     disable_web_page_preview=True,
                 )
                 
-                await hyoshcoder.set_metadata_code(user_id, metadata_code=metadata.text)
+                await get_database.set_metadata_code(user_id, metadata_code=metadata.text)
                 await client.send_message(
                     chat_id=user_id,
                     text="**Your metadata code has been set successfully ✅**"
@@ -218,7 +218,7 @@ class CallbackActions:
         )
         
         points = random.choice(POINT_RANGE)
-        await hyoshcoder.set_expend_points(user_id, points, unique_code)
+        await get_database.set_expend_points(user_id, points, unique_code)
         
         share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
         
@@ -249,7 +249,7 @@ async def cb_handler(client, query: CallbackQuery):
     try:
         # Get common resources
         img = await get_random_photo()
-        thumb = await hyoshcoder.get_thumbnail(user_id)
+        thumb = await get_database.get_thumbnail(user_id)
         
         # Handle different callback actions
         if data == "home":
@@ -267,15 +267,15 @@ async def cb_handler(client, query: CallbackQuery):
         elif data.startswith("lb_"):
             parts = data.split("_")
             if len(parts) == 3:
-                period = await hyoshcoder.get_leaderboard_period(user_id)
-                type = await hyoshcoder.get_leaderboard_type(user_id)
+                period = await get_database.get_leaderboard_period(user_id)
+                type = await get_database.get_leaderboard_type(user_id)
                 
                 if parts[1] == "period":
                     period = parts[2]
-                    await hyoshcoder.set_leaderboard_period(user_id, period)
+                    await get_database.set_leaderboard_period(user_id, period)
                 elif parts[1] == "type":
                     type = parts[2]
-                    await hyoshcoder.set_leaderboard_type(user_id, type)
+                    await get_database.set_leaderboard_type(user_id, type)
                 
                 response = await CallbackActions.handle_leaderboard(client, query, period, type)
         
@@ -308,7 +308,7 @@ async def cb_handler(client, query: CallbackQuery):
             }
         
         elif data == "file_names":
-            format_template = await hyoshcoder.get_format_template(user_id)
+            format_template = await get_database.get_format_template(user_id)
             buttons = [
                 [InlineKeyboardButton("• Close", callback_data="close"), 
                  InlineKeyboardButton("Back •", callback_data="help")]
@@ -390,7 +390,7 @@ async def cb_handler(client, query: CallbackQuery):
         
         elif data.startswith("setmedia_"):
             media_type = data.split("_")[1]
-            await hyoshcoder.set_media_preference(user_id, media_type)
+            await get_database.set_media_preference(user_id, media_type)
             buttons = [
                 [InlineKeyboardButton("Back •", callback_data='help')]
             ]
@@ -400,11 +400,11 @@ async def cb_handler(client, query: CallbackQuery):
             }
         
         elif data == "sequential":
-            await hyoshcoder.toggle_sequential_mode(user_id)
+            await get_database.toggle_sequential_mode(user_id)
             response = await CallbackActions.handle_help(client, query, user_id)
         
         elif data == "toggle_src":
-            await hyoshcoder.toggle_src_info(user_id)
+            await get_database.toggle_src_info(user_id)
             response = await CallbackActions.handle_help(client, query, user_id)
         
         elif data == "close":
