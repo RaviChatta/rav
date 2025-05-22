@@ -19,11 +19,9 @@ async def cb_handler(client, query: CallbackQuery):
     disable_web_page_preview = False
     src_info = await hyoshcoder.get_src_info(user_id)
     if src_info == "file_name":
-        src_txt = "File name"
+                src_txt = "File name"
     else:
         src_txt = "File caption"
-    
-    # print(f"Callback data received: {data}")  
     
     try:
         if data == "home":
@@ -50,9 +48,9 @@ async def cb_handler(client, query: CallbackQuery):
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
                 [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), InlineKeyboardButton('Caption •', callback_data='caption')],
-                [InlineKeyboardButton('• Metadata', callback_data='meta'), InlineKeyboardButton('Donate •', callback_data='donate')],
-                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toogle_src')],
+                [InlineKeyboardButton('• Metadata', callback_data='meta')],
+                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
+                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ])
             caption = Txt.HELP_TXT.format(client.mention)
@@ -62,12 +60,6 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Back •", callback_data="help")]
             ])
             caption = Txt.SEND_METADATA
-        
-        elif data == "donate":
-            btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("• Back", callback_data="help"), InlineKeyboardButton("Owner •", url='https://t.me/hyoshassistantBot')]
-            ])
-            caption = Txt.DONATE_TXT
         
         elif data == "file_names":
             btn = InlineKeyboardMarkup([
@@ -99,13 +91,13 @@ async def cb_handler(client, query: CallbackQuery):
             caption = Txt.PREMIUM_TXT
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Free Points", callback_data="free_points")],
-                [InlineKeyboardButton("• Back", callback_data="help"), InlineKeyboardButton("Buy Premium •", url='https://t.me/hyoshassistantBot')]
+                [InlineKeyboardButton("• Back", callback_data="help")]
             ])
         
         elif data == "plans":
             caption = Txt.PREPLANS_TXT
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Buy Premium •", url='https://t.me/hyoshassistantBot')]
+                [InlineKeyboardButton("• Close", callback_data="close")]
             ])
         
         elif data == "about":
@@ -120,7 +112,7 @@ async def cb_handler(client, query: CallbackQuery):
             if thumb:
                 caption = "Here is your current thumbnail"
             else:
-                caption = "No thumbnail set yet"
+                caption = "No current thumbnail"
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Back •", callback_data="help")]
             ])
@@ -156,7 +148,7 @@ async def cb_handler(client, query: CallbackQuery):
 
         ➜ <b>Current Metadata:</b> {user_metadata}
 
-        <b>Description</b>: Metadata will modify MKV video files, including all audio, streams, and subtitles.
+        <b>Description</b>: Metadata will modify MKV video files, including all audio titles, streams and subtitles.
 
         <b>➲ Send the metadata title. Timeout: 60 sec</b>
         """
@@ -171,7 +163,7 @@ async def cb_handler(client, query: CallbackQuery):
                 except asyncio.TimeoutError:
                     await client.send_message(
                         chat_id=query.from_user.id,
-                        text="⚠️ Error!!\n\n**Request timed out.**\nRestart using /metadata",
+                        text="⚠️ Error!!\n\n**Request has expired.**\nRestart using /metadata",
                     )
                     return
                 
@@ -202,21 +194,20 @@ async def cb_handler(client, query: CallbackQuery):
             shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, telegram_link)
             point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
             share_msg = (
-                "I just discovered this amazing bot! 🚀\n"
+                "I just discovered this awesome bot! 🚀\n"
                 f"Join me using this link: {invite_link}\n"
                 "Automatically rename files with this bot!\n"
                 "FEATURES:\n"
-                "- Auto-rename files\n"
+                "- Automatic file renaming\n"
                 "- Add custom metadata\n"
-                "- Choose your filename\n"
+                "- Choose your file name\n"
                 "- Choose your album name\n"
                 "- Choose your artist name\n"
                 "- Choose your genre\n"
                 "- Choose your movie year\n"
-                "- Add custom thumbnails\n"
+                "- Add custom thumbnail\n"
                 "- Link a channel to send your videos\n"
-                "And much more!\n"
-                "You can earn points by signing up and using the bot!"
+                "And much more!"
             )
             share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(share_msg)}"
             points = random.choice(point_map)
@@ -228,14 +219,12 @@ async def cb_handler(client, query: CallbackQuery):
             ])
             caption = (
                 "**Free Points**\n\n"
-                "You chose to support our bot. You can do this in several ways:\n\n"
-                "1. **Donate**: Support us financially by sending a donation to [Hyoshcoder](https://t.me/hyoshcoder).\n"
-                "2. **Share the Bot**: Invite your friends to use our bot by sharing the link below.\n"
-                "3. **Watch an Ad**: Earn points by watching a short ad.\n\n"
+                "You can support our bot by sharing it with others:\n\n"
+                "1. **Share the bot**: Invite your friends to use our bot by sharing the link below.\n"
+                "2. **Watch an ad**: Earn points by watching a short advertisement.\n\n"
                 "**How it works?**\n"
-                "- Every time you share the bot and a friend signs up, you earn points.\n"
-                "- Points can range between 5 and 20 per action.\n\n"
-                "Thanks for your support! 🙏 [Support](https://t.me/hyoshcoder)"
+                "- Each time you share the bot and a friend signs up, you earn points.\n"
+                "- Points can vary between 5 and 20 points per action.\n"
             )
         
         elif data.startswith("setmedia_"):
@@ -247,7 +236,7 @@ async def cb_handler(client, query: CallbackQuery):
             ])
             
         
-        elif data == "secanciel":
+        elif data == "sequential":
             await hyoshcoder.toggle_sequential_mode(user_id)
             sequential = await hyoshcoder.get_sequential_mode(user_id)
             if sequential:
@@ -257,15 +246,15 @@ async def cb_handler(client, query: CallbackQuery):
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
                 [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), InlineKeyboardButton('Caption •', callback_data='caption')],
-                [InlineKeyboardButton('• Metadata', callback_data='meta'), InlineKeyboardButton('Donate •', callback_data='donate')],
-                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toogle_src')],
+                [InlineKeyboardButton('• Metadata', callback_data='meta')],
+                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
+                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ])
             caption = Txt.HELP_TXT.format(client.mention)
             
-        elif data == "toogle_src":
-            await hyoshcoder.toogle_src_info(user_id)
+        elif data == "toggle_src":
+            await hyoshcoder.toggle_src_info(user_id)
             sequential = await hyoshcoder.get_sequential_mode(user_id)
             if sequential:
                 btn_sec_text = "Sequential ✅"
@@ -279,9 +268,9 @@ async def cb_handler(client, query: CallbackQuery):
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
                 [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), InlineKeyboardButton('Caption •', callback_data='caption')],
-                [InlineKeyboardButton('• Metadata', callback_data='meta'), InlineKeyboardButton('Donate •', callback_data='donate')],
-                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='secanciel'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toogle_src')],
+                [InlineKeyboardButton('• Metadata', callback_data='meta')],
+                [InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
+                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ])
             caption = Txt.HELP_TXT.format(client.mention)
