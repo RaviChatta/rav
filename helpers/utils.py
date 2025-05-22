@@ -9,7 +9,8 @@ from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import settings
 from scripts import Txt
-
+import logging
+logger = logging.getLogger(__name__)
 # Enhanced patterns with priority matching
 MEDIA_PATTERNS = {
     'season': [
