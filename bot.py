@@ -33,7 +33,8 @@ class Bot(Client):
     async def start(self):
         await super().start()
         #await initialize_database()
-        await get_database()
+        #await get_database()
+        
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
