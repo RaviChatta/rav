@@ -428,7 +428,9 @@ async def admin_commands_handler(client: Client, message: Message):
             await AdminCommands.list_users(message)
         elif command == "admin_cmds":
             await AdminCommands.admin_commands_panel(client, message)
-            
+        # Add to admin_commands_handler:
+        elif command == "stats":
+            await AdminCommands.system_stats(client, message)
     except FloodWait as e:
         await asyncio.sleep(e.value)
         await admin_commands_handler(client, message)
@@ -462,3 +464,67 @@ async def broadcast_confirmation(client: Client, callback_query: CallbackQuery):
 async def refresh_botstats(client: Client, callback_query: CallbackQuery):
     await AdminCommands.bot_stats(client, callback_query.message)
     await callback_query.answer("Stats refreshed")
+@staticmethod
+async def system_stats(client: Client, message: Message):
+    """Advanced system monitoring with visual indicators"""
+    if message.from_user.id != ADMIN_USER_ID:
+        return await message.reply("🚫 Admin access required")
+
+    try:
+        # System Info
+        uptime = datetime.now() - datetime.fromtimestamp(psutil.boot_time())
+        cpu_usage = psutil.cpu_percent(interval=1)
+        cpu_count = psutil.cpu_count()
+        cpu_freq = psutil.cpu_freq().current / 1000 if psutil.cpu_freq() else "N/A"
+        
+        # Memory
+        mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        
+        # Disk
+        disk = psutil.disk_usage('/')
+        disk_io = psutil.disk_io_counters()
+        
+        # Network
+        net_io = psutil.net_io_counters()
+        
+        # Processes
+        processes = len(psutil.pids())
+        
+        # Create visual bars
+        def progress_bar(percent, width=20):
+            filled = int(round(width * percent / 100))
+            return f"[{'█' * filled}{'-' * (width - filled)}] {percent}%"
+        
+        # Prepare message
+        stats_msg = (
+            f"<b>🖥️ ADVANCED SYSTEM STATS</b>\n\n"
+            f"⏳ <b>Uptime:</b> {str(uptime).split('.')[0]}\n"
+            f"🔢 <b>Processes:</b> {processes}\n\n"
+            
+            f"<b>🔥 CPU ({cpu_count} cores @ {cpu_freq}GHz)</b>\n"
+            f"{progress_bar(cpu_usage)}\n"
+            f"  - User: {psutil.cpu_times_percent().user:.1f}%\n"
+            f"  - System: {psutil.cpu_times_percent().system:.1f}%\n\n"
+            
+            f"<b>🧠 MEMORY</b>\n"
+            f"RAM: {progress_bar(mem.percent)}\n"
+            f"  - Used: {mem.used/1024/1024:.1f}MB / {mem.total/1024/1024:.1f}MB\n"
+            f"Swap: {progress_bar(swap.percent)}\n\n"
+            
+            f"<b>💾 DISK (/)</b>\n"
+            f"Space: {progress_bar(disk.percent)}\n"
+            f"  - Read: {disk_io.read_bytes/1024/1024:.1f}MB\n"
+            f"  - Write: {disk_io.write_bytes/1024/1024:.1f}MB\n\n"
+            
+            f"<b>🌐 NETWORK</b>\n"
+            f"  - Sent: {net_io.bytes_sent/1024/1024:.1f}MB\n"
+            f"  - Recv: {net_io.bytes_recv/1024/1024:.1f}MB"
+        )
+        
+        await message.reply_text(stats_msg, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"System stats error: {e}")
+        await message.reply_text(f"❌ Error fetching stats: {str(e)}")
+
