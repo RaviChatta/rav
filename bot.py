@@ -70,14 +70,30 @@ async def start_services():
         site = web.TCPSite(app, "0.0.0.0", 8080)
         await site.start()
     
-    # Keep the bot running
-    await asyncio.Event().wait()
+    try:
+        # Keep the bot running
+        await asyncio.Event().wait()
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        print("Shutting down...")
+    finally:
+        if Config.WEBHOOK:
+            await site.stop()
+            await app.cleanup()
+        await bot.stop()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(start_services())
     except KeyboardInterrupt:
         pass
     finally:
+        # Cancel all running tasks
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        
+        # Wait for tasks to finish cancellation
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
