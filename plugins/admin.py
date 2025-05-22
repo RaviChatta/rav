@@ -394,18 +394,29 @@ async def bot_stats(client: Client, message: Message):
                     f"🏓 Ping: {ping_time:.2f} ms"
                 )
             ),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")],
-                [InlineKeyboardButton("❌ Close", callback_data="close")]
-            ])
-        )
+            msg = await AdminCommands._send_auto_delete(
+                message,
+                stats_text,
+                delete_delay=120
+            )
+            
+            # Add refresh button that preserves auto-delete
+            if msg:
+                await msg.edit_reply_markup(
+                    InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")
+                    ]])
+                )
+                
+            await message.delete()  # Delete command after 5 seconds
+            await asyncio.sleep(5)
     except Exception as e:
         logger.error(f"Error in bot_stats: {e}")
         await message.reply_text("❌ Failed to get stats")
 
 # Update the admin_commands_handler to include the new commands
 @Client.on_message(filters.private & filters.command(
-    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users", "admin_cmds"]
+    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users", "admin_cmds","stats"]
 ) & filters.user(ADMIN_USER_ID))
 async def admin_commands_handler(client: Client, message: Message):
     """Handle all admin commands"""
@@ -468,8 +479,8 @@ async def refresh_botstats(client: Client, callback_query: CallbackQuery):
 async def system_stats(client: Client, message: Message):
     """Advanced system monitoring with visual indicators"""
     if message.from_user.id != ADMIN_USER_ID:
-        return await message.reply("🚫 Admin access required")
-
+        #return await message.reply("🚫 Admin access required")
+        return await message.delete()
     try:
         # System Info
         uptime = datetime.now() - datetime.fromtimestamp(psutil.boot_time())
@@ -527,4 +538,26 @@ async def system_stats(client: Client, message: Message):
     except Exception as e:
         logger.error(f"System stats error: {e}")
         await message.reply_text(f"❌ Error fetching stats: {str(e)}")
-
+            await AdminCommands._send_auto_delete(
+            message,
+            stats_msg,
+            delete_delay=90,
+            parse_mode="HTML"
+        )
+        
+        # Auto-delete the trigger command too
+        await asyncio.sleep(5)  # Small delay before deleting command
+        await message.delete()
+        
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)[:200]}"
+        await AdminCommands._send_auto_delete(message, error_msg, delete_delay=30)
+@staticmethod
+async def _send_auto_delete(message: Message, text: str, delete_delay: int = 60, **kwargs):
+    """Send message that auto-deletes after delay"""
+    try:
+        msg = await message.reply_text(text, **kwargs)
+        asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_delay))
+        return msg
+    except Exception as e:
+        logger.error(f"Auto-delete message failed: {e}")
