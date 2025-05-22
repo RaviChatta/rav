@@ -51,19 +51,6 @@ EMOJI_CLOCK = "⏳"
 EMOJI_LINK = "🔗"
 EMOJI_MONEY = "💰"
 
-# Button Templates
-ON = [
-    [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
-     InlineKeyboardButton(f'{EMOJI_SUCCESS}', callback_data='metadata_1')],
-    [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]
-]
-
-OFF = [
-    [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
-     InlineKeyboardButton(f'{EMOJI_ERROR}', callback_data='metadata_0')],
-    [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]
-]
-
 def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     """Generate leaderboard navigation keyboard"""
     periods = {
@@ -127,7 +114,7 @@ async def send_effect_message(client: Client, chat_id: int, text: str, effect_id
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "view_dump", "viewdump",
-    "del_dump", "deldump", "profile", "leaderboard", "lb", "stats", "admin_cmds"
+    "del_dump", "deldump", "profile", "leaderboard", "lb", "stats", "mystats", "admin_cmds", "botstats"
 ]))
 async def command(client, message: Message):
     user_id = message.from_user.id
@@ -161,10 +148,10 @@ async def command(client, message: Message):
             asyncio.create_task(auto_delete_message(m, delay=3))
             
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI_STATS} My Stats", callback_data='stats'),
+                [InlineKeyboardButton(f"{EMOJI_STATS} My Stats", callback_data='mystats'),
                  InlineKeyboardButton(f"{EMOJI_LEADERBOARD} Leaderboard", callback_data='leaderboard')],
-                [InlineKeyboardButton(f"{EMOJI_POINTS} Earn Points", url='https://t.me/your_channel'),
-                 InlineKeyboardButton(f"{EMOJI_PREMIUM} Go Premium", callback_data='premium')],
+                [InlineKeyboardButton(f"{EMOJI_POINTS} Earn Points", callback_data='free_points'),
+                 InlineKeyboardButton(f"{EMOJI_PREMIUM} Go Premium", callback_data='premiumx')],
                 [InlineKeyboardButton("🛠️ Help", callback_data='help')]
             ])
 
@@ -247,7 +234,7 @@ async def command(client, message: Message):
                 )
             asyncio.create_task(auto_delete_message(msg, delay=120))
 
-        elif command == "stats":
+        elif command in ["stats", "mystats"]:
             # Show user statistics including file rename counts
             stats = await hyoshcoder.get_user_file_stats(user_id)
             points = await hyoshcoder.get_points(user_id)
@@ -282,6 +269,34 @@ async def command(client, message: Message):
                 reply_markup=buttons
             )
             asyncio.create_task(auto_delete_message(msg, delay=90))
+
+        elif command == "botstats" and is_admin:
+            # Admin-only bot statistics
+            total_users = await hyoshcoder.total_users_count()
+            total_premium = await hyoshcoder.total_premium_users_count()
+            total_renamed = await hyoshcoder.total_renamed_files()
+            points_distributed = await hyoshcoder.total_points_distributed()
+            
+            text = (
+                f"🤖 <b>Bot Statistics</b>\n\n"
+                f"👥 <b>Total Users:</b> {total_users}\n"
+                f"⭐ <b>Premium Users:</b> {total_premium}\n"
+                f"📝 <b>Total Files Renamed:</b> {total_renamed}\n"
+                f"✨ <b>Total Points Distributed:</b> {points_distributed}\n\n"
+                f"<i>Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
+            )
+            
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")],
+                [InlineKeyboardButton("❌ Close", callback_data="close")]
+            ])
+            
+            msg = await message.reply_photo(
+                photo=img,
+                caption=text,
+                reply_markup=buttons
+            )
+            asyncio.create_task(auto_delete_message(msg, delay=120))
 
         elif command == "admin_cmds" and is_admin:
             # Admin command panel
