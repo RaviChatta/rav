@@ -851,12 +851,13 @@ async def get_daily_active_users(self) -> int:
 
 # Initialize database instance
 # At the bottom of the file after all class definitions
-hyoshcoder = None  # Global variable
+hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
 
-async def get_database():
-    """Initialize and return database instance"""
-    global hyoshcoder
-    if hyoshcoder is None:
-        hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
+async def initialize_database():
+    """Initialize database connection"""
+    try:
         await hyoshcoder.connect()
-    return hyoshcoder
+        return hyoshcoder
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize database: {e}")
+        raise
