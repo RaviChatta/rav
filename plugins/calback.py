@@ -15,7 +15,9 @@ from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
 import logging
+
 logger = logging.getLogger(__name__)
+
 # Constants
 METADATA_TIMEOUT = 60  # seconds
 POINT_RANGE = range(5, 21)  # 5-20 points
@@ -31,6 +33,58 @@ I'm using this awesome file renaming bot with these features:
 
 Join me using this link: {invite_link}
 """
+
+# Metadata Toggle Buttons
+ON = [[
+    InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'), 
+    InlineKeyboardButton('✅', callback_data='metadata_1')
+], [
+    InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')
+]]
+
+OFF = [[
+    InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'), 
+    InlineKeyboardButton('❌', callback_data='metadata_0')
+], [
+    InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')
+]]
+
+def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
+    """Generate leaderboard navigation keyboard"""
+    periods = {
+        "daily": "⏳ Daily",
+        "weekly": "📆 Weekly",
+        "monthly": "🗓 Monthly",
+        "alltime": "🏆 All-Time"
+    }
+    types = {
+        "points": "✨ Points",
+        "renames": "📝 Files",
+        "referrals": "👥 Referrals"
+    }
+    
+    # Period buttons
+    period_buttons = []
+    for period, text in periods.items():
+        if period == selected_period:
+            period_buttons.append(InlineKeyboardButton(f"• {text} •", callback_data=f"lb_period_{period}"))
+        else:
+            period_buttons.append(InlineKeyboardButton(text, callback_data=f"lb_period_{period}"))
+    
+    # Type buttons
+    type_buttons = []
+    for lb_type, text in types.items():
+        if lb_type == selected_type:
+            type_buttons.append(InlineKeyboardButton(f"• {text} •", callback_data=f"lb_type_{lb_type}"))
+        else:
+            type_buttons.append(InlineKeyboardButton(text, callback_data=f"lb_type_{lb_type}"))
+    
+    return InlineKeyboardMarkup([
+        period_buttons[:2],  # First row: daily, weekly
+        period_buttons[2:],  # Second row: monthly, alltime
+        type_buttons,        # Third row: types
+        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+    ])
 
 class CallbackActions:
     @staticmethod
@@ -133,7 +187,7 @@ class CallbackActions:
         text = f"🏆 {period_display} {type_display} Leaderboard:\n\n"
         for i, user in enumerate(leaders[:10], 1):
             text += (
-                f"{i}. {user['username'] or user['_id']} - "
+                f"{i}. {user.get('username', user['_id'])} - "
                 f"{user['value']} {type_display} "
                 f"{'⭐' if user.get('is_premium') else ''}\n"
             )
@@ -151,25 +205,9 @@ class CallbackActions:
             
             await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
             
-            ON = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'), 
-                    InlineKeyboardButton('✅', callback_data='metadata_1')
-                ],
-                [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]
-            ])
-            
-            OFF = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'), 
-                    InlineKeyboardButton('❌', callback_data='metadata_0')
-                ],
-                [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]
-            ])
-            
             return {
                 'caption': f"<b>Your Current Metadata:</b>\n\n➜ {user_metadata}",
-                'reply_markup': ON if is_enabled else OFF
+                'reply_markup': InlineKeyboardMarkup(ON if is_enabled else OFF)
             }
         
         elif data == "custom_metadata":
