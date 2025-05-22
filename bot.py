@@ -8,7 +8,7 @@ from pyrogram import Client
 from aiohttp import web
 from route import web_server
 from config import settings
-from database.data import hyoshcoder
+from database.data import get_database
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,7 +31,8 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
-        await initialize_database()  
+        #await initialize_database()
+        await get_database()
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
