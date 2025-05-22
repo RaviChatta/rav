@@ -58,6 +58,6 @@ class Settings():
     
     # URL par défaut pour l'image de démarrage ou de log
     IMAGES = os.getenv("IMAGES", "https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg")
-    ANIMATIONS = os.getenv("ANIMATIONS", "").strip()
+    ANIMATIONS = os.getenv("ANIMATIONS", "CgACAgUAAxkBAAIqu2gvdr3Ig6KwAjQdM9woyO2OApJsAAI9JQACQFB4VZDEV3IIg0VcHgQ").strip()
 # Crée une instance de Settings pour un accès global
 settings = Settings()
