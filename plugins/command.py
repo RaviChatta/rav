@@ -195,7 +195,7 @@ async def command(client, message: Message):
         
         if command == 'start':
             user = message.from_user
-            await hyoshcoder.add_user(client, message)
+            await hyoshcoder.add_user(user_id)
             
             # Welcome effect with auto-delete
             welcome_msg = await send_effect_message(
@@ -278,7 +278,7 @@ async def command(client, message: Message):
             text = f"{EMOJI_LEADERBOARD} Weekly Points Leaderboard:\n\n"
             for i, user in enumerate(leaders[:10], 1):
                 text += (
-                    f"{i}. {user['username'] or user['_id']} - "
+                    f"{i}. {user.get('username', user['_id'])} - "
                     f"{user['value']} {EMOJI_POINTS} "
                     f"{EMOJI_PREMIUM if user.get('is_premium') else ''}\n"
                 )
