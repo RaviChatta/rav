@@ -39,11 +39,12 @@ class Bot(Client):
         self.start_time = time.time()
 
     async def start(self):
-        # Initialize database first
+        """Starts the bot and initializes the database"""
         await initialize_database()
-        
-        # Then start the bot as usual
+
+        # Start the bot normally
         await super().start()
+
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
@@ -65,37 +66,53 @@ class Bot(Client):
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg",
-                    caption=(
-                        "**Oops! The bot has restarted.**\n\n"
-                        f"I haven't slept since: `{uptime_string}`"
-                    )
+                    caption=(f"**Oops! The bot has restarted.**\n\n"
+                              f"I haven't slept since: `{uptime_string}`")
                 )
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
 
+    async def stop(self):
+        """Gracefully stop the bot"""
+        try:
+            print(f"Stopping bot {self.username}...")
+            await super().stop()  # Ensure proper bot shutdown
+        except Exception as e:
+            print(f"Error during bot shutdown: {e}")
+
 async def start_services():
+    """Start the bot and the web server if necessary"""
     bot = Bot()
     await bot.start()
 
     if Config.WEBHOOK:
+        # Set up the web server if needed
         app = web.AppRunner(await web_server())
         await app.setup()
         site = web.TCPSite(app, "0.0.0.0", 8080)
         await site.start()
-    
-    # Keep the bot running
+
+    # Keep the bot running (this line keeps it alive indefinitely)
     await asyncio.Event().wait()
+
+async def graceful_shutdown(bot: Bot):
+    """Handle graceful shutdown of the bot"""
+    print("Gracefully shutting down...")
+    await bot.stop()
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     bot = None
     try:
+        # Run the bot and server
         loop.run_until_complete(start_services())
     except KeyboardInterrupt:
-        pass
+        # Handle graceful shutdown on KeyboardInterrupt
+        print("Shutting down bot due to KeyboardInterrupt...")
     except Exception as e:
         print(f"Bot crashed with error: {e}")
     finally:
+        # Ensure graceful shutdown if the bot was initialized
         if bot:
-            loop.run_until_complete(bot.stop())  # stop the bot gracefully
-        loop.close()
+            loop.run_until_complete(graceful_shutdown(bot))
+        loop.close()  # Close the event loop properly after shutdown
