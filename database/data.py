@@ -11,32 +11,46 @@ from urllib.parse import urlencode
 Config = settings
 
 class Database:
-    async def __init__(self, uri: str, database_name: str):
-        """Initialize database connection with enhanced error handling."""
+    def __init__(self, uri: str, database_name: str):
+        """Initialize database connection."""
+        self._uri = uri
+        self._database_name = database_name
+        self._client = None
+        self.db = None
+        self.users = None
+        self.premium_codes = None
+        self.transactions = None
+        self.rewards = None
+        self.point_links = None
+        self.leaderboards = None
+        self.file_stats = None
+
+    async def connect(self):
+        """Establish database connection with enhanced error handling."""
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(
-                uri,
+                self._uri,
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=30000,
                 socketTimeoutMS=30000
             )
             await self._client.admin.command('ping')
             logging.info("Successfully connected to MongoDB")
+            
+            self.db = self._client[self._database_name]
+            self.users = self.db.users
+            self.premium_codes = self.db.premium_codes
+            self.transactions = self.db.transactions
+            self.rewards = self.db.rewards
+            self.point_links = self.db.point_links
+            self.leaderboards = self.db.leaderboards
+            self.file_stats = self.db.file_stats
+            
+            await self._create_indexes()
+            
         except Exception as e:
             logging.error(f"Failed to connect to MongoDB: {e}")
             raise e
-        
-        self.db = self._client[database_name]
-        self.users = self.db.users
-        self.premium_codes = self.db.premium_codes
-        self.transactions = self.db.transactions
-        self.rewards = self.db.rewards
-        self.point_links = self.db.point_links
-        self.leaderboards = self.db.leaderboards
-        self.file_stats = self.db.file_stats
-        
-        await self._create_indexes()
-
     async def _create_indexes(self):
         """Create necessary indexes for performance optimization."""
         indexes = [
