@@ -16,6 +16,15 @@ load_dotenv()
 Config = settings
 SUPPORT_CHAT = -1002072871676
 
+async def initialize_database():
+    """Initialize the database connection"""
+    try:
+        await hyoshcoder.connect()
+        print("✅ Database connection established")
+    except Exception as e:
+        print(f"❌ Failed to connect to database: {e}")
+        raise
+
 class Bot(Client):
     def __init__(self):
         super().__init__(
@@ -30,6 +39,10 @@ class Bot(Client):
         self.start_time = time.time()
 
     async def start(self):
+        # Initialize database first
+        await initialize_database()
+        
+        # Then start the bot as usual
         await super().start()
         me = await self.get_me()
         self.mention = me.mention
@@ -80,8 +93,9 @@ if __name__ == "__main__":
         loop.run_until_complete(start_services())
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        print(f"Bot crashed with error: {e}")
     finally:
         if bot:
             loop.run_until_complete(bot.stop())  # stop the bot gracefully
         loop.close()
-
