@@ -96,19 +96,81 @@ async def auto_delete_message(message: Message, delay: int = AUTO_DELETE_DELAY):
     except Exception as e:
         logger.warning(f"Couldn't delete message: {e}")
 
-async def send_effect_message(client: Client, chat_id: int, text: str, effect_id: int = None):
-    """Send message with optional effect"""
-    try:
-        if effect_id:
+async def send_effect_message(
+    client: Client,
+    chat_id: Union[int, str],
+    text: str,
+    effect_id: Optional[int] = None,
+    max_retries: int = 3,
+    **kwargs
+) -> Optional[Message]:
+    """
+    Send a message with optional effect (animation).
+    
+    Args:
+        client: Pyrogram Client instance
+        chat_id: Target chat ID or username
+        text: Message text to send
+        effect_id: ID of the message effect
+        max_retries: Maximum number of retry attempts
+        **kwargs: Additional send_message parameters
+        
+    Returns:
+        Message object if successful, None otherwise
+    """
+    additional_params = {
+        'disable_web_page_preview': kwargs.pop('disable_web_page_preview', True),
+        'parse_mode': kwargs.pop('parse_mode', "markdown")
+    }
+    additional_params.update(kwargs)
+    
+    for attempt in range(max_retries):
+        try:
+            if effect_id:
+                return await client.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    effect_id=effect_id,
+                    **additional_params
+                )
             return await client.send_message(
-                chat_id,
-                text,
-                effect_id=effect_id
+                chat_id=chat_id,
+                text=text,
+                **additional_params
             )
-        return await client.send_message(chat_id, text)
-    except Exception as e:
-        logger.error(f"Error sending effect message: {e}")
-        return await client.send_message(chat_id, text)
+            
+        except FloodWait as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Flood wait too long ({e.x}s) for chat {chat_id}")
+                raise
+            logger.warning(f"Flood wait {e.x}s, retrying {attempt + 1}/{max_retries}")
+            await asyncio.sleep(e.x)
+            
+        except (PeerIdInvalid, ChannelInvalid) as e:
+            logger.error(f"Invalid chat ID {chat_id}: {e}")
+            return None
+            
+        except ChatWriteForbidden:
+            logger.error(f"No permission to write in chat {chat_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error sending message (attempt {attempt + 1}): {e}")
+            if attempt == max_retries - 1:
+                # Final fallback - try without effect
+                if effect_id:
+                    try:
+                        return await client.send_message(
+                            chat_id=chat_id,
+                            text=text,
+                            **additional_params
+                        )
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback send failed: {fallback_error}")
+                        return None
+            await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+            
+    return None
 
 @Client.on_message(filters.private & filters.command([
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
