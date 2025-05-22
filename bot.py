@@ -75,9 +75,13 @@ async def start_services():
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+    bot = None
     try:
         loop.run_until_complete(start_services())
     except KeyboardInterrupt:
         pass
     finally:
+        if bot:
+            loop.run_until_complete(bot.stop())  # stop the bot gracefully
         loop.close()
+
