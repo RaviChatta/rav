@@ -1,8 +1,13 @@
 from database.data import hyoshcoder
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
-import os, sys, time, asyncio, logging, traceback
+import os
+import sys
+import time
+import asyncio
+import logging
+import traceback
 from datetime import datetime, timedelta
 from config import settings
 from helpers.utils import get_random_photo
@@ -11,210 +16,372 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
 
+# Global state for restart prevention
 is_restarting = False
 
-@Client.on_message(filters.private & filters.command(["restart", "ban", "unban", "banned_users", "broadcast", "stats", "status", "users"]) & filters.user(ADMIN_USER_ID))
-async def admin_commands(b: Client, m: Message):
-    global is_restarting
-    user = m.from_user
-    command = m.command[0]
-    img = await get_random_photo()  
-
-    if command == "restart":
-        if not is_restarting:
-            is_restarting = True
-            caption = ("**ᴘʀᴏᴄᴇssᴇs sᴛᴏᴘᴘᴇᴅ. ʙᴏᴛ ɪs ʀᴇsᴛᴀʀᴛɪɴɢ.....**")
-            if img:
-                await m.reply_photo(photo=img, caption=caption)
+class AdminCommands:
+    """Class containing all admin command handlers"""
+    
+    @staticmethod
+    async def _send_response(message: Message, text: str, photo: str = None, delete_after: int = None):
+        """Helper method to send responses with optional auto-delete"""
+        try:
+            if photo:
+                msg = await message.reply_photo(photo=photo, caption=text)
             else:
-                await m.reply_text(text=caption)
-            await b.stop()
-            time.sleep(2)
+                msg = await message.reply_text(text)
+            
+            if delete_after:
+                asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_after))
+            return msg
+        except Exception as e:
+            logger.error(f"Error sending response: {e}", exc_info=True)
+            return None
+
+    @staticmethod
+    async def _auto_delete_message(message: Message, delay: int):
+        """Auto-delete message after delay"""
+        await asyncio.sleep(delay)
+        try:
+            await message.delete()
+        except Exception as e:
+            logger.warning(f"Couldn't delete message: {e}")
+
+    @staticmethod
+    async def restart_bot(client: Client, message: Message):
+        """Restart the bot"""
+        global is_restarting
+        if is_restarting:
+            return
+            
+        is_restarting = True
+        try:
+            caption = "**🔄 Bot is restarting...**\n\nAll processes will be back online shortly."
+            img = await get_random_photo()
+            
+            await AdminCommands._send_response(message, caption, photo=img)
+            
+            # Give time for message to be delivered
+            await asyncio.sleep(2)
+            
+            await client.stop()
             os.execl(sys.executable, sys.executable, *sys.argv)
+            
+        except Exception as e:
+            logger.error(f"Restart failed: {e}", exc_info=True)
+            is_restarting = False
+            await AdminCommands._send_response(message, f"❌ Restart failed: {str(e)}")
 
-    elif command == "ban":
-        if len(m.command) < 4:
-            caption =(
-                "Utilisez cette commande pour bannir un utilisateur du bot.\n\n"
-                "Usage :\n\n"
-                "`/ban user_id ban_duration ban_reason`\n\n"
-                "Exemple : `/ban 1234567 28 Vous m'avez mal utilisé.`\n"
-                "Cela bannira l'utilisateur avec l'ID `1234567` pendant `28` jours pour la raison `Vous m'avez mal utilisé`."
-                )
-            if img:
-                await m.reply_photo(photo=img, caption=caption, quote=True)
-            else:
-                await m.reply_text(text=caption, quote=True)
-            return
+    @staticmethod
+    async def ban_user(client: Client, message: Message):
+        """Ban a user from using the bot"""
+        if len(message.command) < 4:
+            help_text = (
+                "**Ban Command Usage:**\n\n"
+                "`/ban user_id duration_days reason`\n\n"
+                "**Example:**\n"
+                "`/ban 1234567 30 Spamming`\n\n"
+                "This will ban user with ID 1234567 for 30 days for spamming."
+            )
+            return await AdminCommands._send_response(message, help_text)
 
         try:
-            user_id = int(m.command[1])
-            ban_duration = int(m.command[2])
-            ban_reason = ' '.join(m.command[3:])
-            ban_log_text = f"Banning user {user_id} for {ban_duration} days for the reason {ban_reason}."
+            user_id = int(message.command[1])
+            ban_duration = int(message.command[2])
+            ban_reason = ' '.join(message.command[3:])
+            
+            # Check if user exists
+            user = await hyoshcoder.read_user(user_id)
+            if not user:
+                return await AdminCommands._send_response(message, f"❌ User {user_id} not found in database")
 
-            try:
-                caption(
-                    f"Vous êtes banni de l'utilisation de ce bot pendant **{ban_duration}** jour(s) pour la raison __{ban_reason}__.\n\n**Message de l'admin**"
-                )
-                if img:
-                    await b.send_photo(chat_id=user_id, photo=img, caption=caption, quote=True)
-                else:
-                    await b.send_message(chat_id=user_id, text=caption, quote=True)
-                
-                ban_log_text += '\n\nUser notified successfully!'
-            except Exception:
-                traceback.print_exc()
-                ban_log_text += f"\n\nUser notification failed! \n\n`{traceback.format_exc()}`"
-
+            # Ban the user in database
             await hyoshcoder.ban_user(user_id, ban_duration, ban_reason)
-            logger.info(ban_log_text)
-            await m.reply_text(ban_log_text, quote=True)
-        except Exception:
-            traceback.print_exc()
-            await m.reply_text(
-                f"Error occurred! Traceback given below\n\n`{traceback.format_exc()}`",
-                quote=True
+            
+            # Notify the banned user
+            try:
+                ban_notification = (
+                    f"🚫 **You have been banned**\n\n"
+                    f"**Duration:** {ban_duration} days\n"
+                    f"**Reason:** {ban_reason}\n\n"
+                    "Contact admin if you think this was a mistake."
+                )
+                await client.send_message(user_id, ban_notification)
+                ban_status = "User notified successfully"
+            except Exception as e:
+                ban_status = f"Failed to notify user: {str(e)}"
+            
+            log_msg = (
+                f"✅ User {user_id} banned successfully\n"
+                f"⏳ Duration: {ban_duration} days\n"
+                f"📝 Reason: {ban_reason}\n"
+                f"🔔 Status: {ban_status}"
             )
+            
+            await AdminCommands._send_response(message, log_msg)
+            logger.info(log_msg)
+            
+        except Exception as e:
+            error_msg = f"❌ Ban failed: {str(e)}"
+            await AdminCommands._send_response(message, error_msg)
+            logger.error(error_msg, exc_info=True)
 
-    elif command == "unban":
-        if len(m.command) != 2:
-            await m.reply_text(
-                f"Utilisez cette commande pour débannir un utilisateur.\n\n"
-                f"Usage:\n\n`/unban user_id`\n\n"
-                f"Exemple : `/unban 1234567`\n"
-                f"Cela débannira l'utilisateur avec l'ID `1234567`.",
-                quote=True
+    @staticmethod
+    async def unban_user(client: Client, message: Message):
+        """Unban a previously banned user"""
+        if len(message.command) != 2:
+            help_text = (
+                "**Unban Command Usage:**\n\n"
+                "`/unban user_id`\n\n"
+                "**Example:**\n"
+                "`/unban 1234567`"
             )
-            return
+            return await AdminCommands._send_response(message, help_text)
 
         try:
-            user_id = int(m.command[1])
-            unban_log_text = f"Unbanning user {user_id}"
+            user_id = int(message.command[1])
+            
+            # Check if user is actually banned
+            user = await hyoshcoder.read_user(user_id)
+            if not user or not user.get('ban_status', {}).get('is_banned'):
+                return await AdminCommands._send_response(message, f"ℹ️ User {user_id} is not currently banned")
 
-            try:
-                await b.send_message(
-                    user_id,
-                    "Your ban was lifted!"
-                )
-                unban_log_text += '\n\nUser notified successfully!'
-            except Exception:
-                traceback.print_exc()
-                unban_log_text += f"\n\nUser notification failed! \n\n`{traceback.format_exc()}`"
-
+            # Unban the user
             await hyoshcoder.remove_ban(user_id)
-            logger.info(unban_log_text)
-            await m.reply_text(unban_log_text, quote=True)
-        except Exception:
-            traceback.print_exc()
-            await m.reply_text(
-                f"Error occurred! Traceback given below\n\n`{traceback.format_exc()}`",
-                quote=True
+            
+            # Notify the unbanned user
+            try:
+                await client.send_message(user_id, "🎉 Your ban has been lifted!")
+                unban_status = "User notified successfully"
+            except Exception as e:
+                unban_status = f"Failed to notify user: {str(e)}"
+            
+            log_msg = (
+                f"✅ User {user_id} unbanned successfully\n"
+                f"🔔 Status: {unban_status}"
             )
+            
+            await AdminCommands._send_response(message, log_msg)
+            logger.info(log_msg)
+            
+        except Exception as e:
+            error_msg = f"❌ Unban failed: {str(e)}"
+            await AdminCommands._send_response(message, error_msg)
+            logger.error(error_msg, exc_info=True)
 
-    elif command == "banned_users":
-        all_banned_users = await hyoshcoder.get_all_banned_users()
-        banned_usr_count = 0
-        text = ''
-
-        async for banned_user in all_banned_users:
-            user_id = banned_user['id']
-            ban_duration = banned_user['ban_status']['ban_duration']
-            banned_on = banned_user['ban_status']['banned_on']
-            ban_reason = banned_user['ban_status']['ban_reason']
-            banned_usr_count += 1
-            text += f"> **user_id**: `{user_id}`, **Ban Duration**: `{ban_duration}`, " \
-                    f"**Banned on**: `{banned_on}`, **Reason**: `{ban_reason}`\n\n"
-
-        reply_text = f"Total banned user(s): `{banned_usr_count}`\n\n{text}"
-        if len(reply_text) > 4096:
-            with open('banned-users.txt', 'w') as f:
-                f.write(reply_text)
-            await m.reply_document('banned-users.txt', caption="Banned users list")
-            os.remove('banned-users.txt')
-        else:
-            await m.reply_text(reply_text, quote=True)
-
-    elif command == "broadcast":
-        if not m.reply_to_message:
-            return await m.reply_text("Vous devez répondre à un message pour le diffuser.")
-
-        await b.send_message(settings.LOG_CHANNEL, f"{m.from_user.mention} or {m.from_user.id} Started the Broadcast.")
-        all_users = await hyoshcoder.get_all_users()
-        broadcast_msg = m.reply_to_message
-        sts_msg = await m.reply_text("Broadcast Started..!")
-        done = 0
-        failed = 0
-        success = 0
-        start_time = time.time()
-        total_users = await hyoshcoder.total_users_count()
-
-        async for user in all_users:
-            sts = await send_msg(user['_id'], broadcast_msg)
-            if sts == 200:
-                success += 1
-            elif sts == 400:
-                await hyoshcoder.delete_user(user['_id'])
+    @staticmethod
+    async def list_banned_users(message: Message):
+        """List all currently banned users"""
+        try:
+            banned_users = []
+            async for user in await hyoshcoder.get_all_banned_users():
+                banned_users.append(
+                    f"👤 **User ID:** `{user['id']}`\n"
+                    f"⏳ **Duration:** {user['ban_status']['ban_duration']} days\n"
+                    f"📅 **Banned On:** {user['ban_status']['banned_on']}\n"
+                    f"📝 **Reason:** {user['ban_status']['ban_reason']}\n"
+                )
+            
+            if not banned_users:
+                return await AdminCommands._send_response(message, "ℹ️ No banned users found.")
+            
+            response = f"🚫 **Banned Users ({len(banned_users)})**\n\n" + "\n".join(banned_users)
+            
+            if len(response) > 4000:
+                filename = f"banned_users_{datetime.now().strftime('%Y%m%d')}.txt"
+                with open(filename, 'w') as f:
+                    f.write(response)
+                await message.reply_document(filename, caption="List of banned users")
+                os.remove(filename)
             else:
-                failed += 1
-            done += 1
-            if not done % 20:
-                await sts_msg.edit_text(f"Broadcast In Progress: \n\nTotal Users: {total_users} \nCompleted: {done} / {total_users}\nSuccess: {success}\nFailed: {failed}")
+                await AdminCommands._send_response(message, response)
+                
+        except Exception as e:
+            error_msg = f"❌ Failed to get banned users: {str(e)}"
+            await AdminCommands._send_response(message, error_msg)
+            logger.error(error_msg, exc_info=True)
 
-        completed_in = timedelta(seconds=int(time.time() - start_time))
-        await sts_msg.edit_text(f"Broadcast Completed: \nCompleted in `{completed_in}`.\n\nTotal Users: {total_users}\nCompleted: {done} / {total_users}\nSuccess: {success}\nFailed: {failed}")
+    @staticmethod
+    async def broadcast_message(client: Client, message: Message):
+        """Broadcast a message to all users"""
+        if not message.reply_to_message:
+            return await AdminCommands._send_response(message, "Please reply to a message to broadcast it.")
+        
+        # Confirmation step
+        confirm = await AdminCommands._send_response(
+            message,
+            "⚠️ **Are you sure you want to broadcast this message to all users?**\n\n"
+            "This action cannot be undone!",
+            delete_after=30
+        )
+        
+        # Add confirmation buttons
+        confirm_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Yes, broadcast", callback_data="broadcast_confirm")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="broadcast_cancel")]
+        ])
+        await confirm.edit_reply_markup(confirm_keyboard)
 
-
-    elif command in ["status", "stats"]:
-        if not hasattr(b, 'uptime'):
-            b.uptime = time.time()
+    @staticmethod
+    async def execute_broadcast(client: Client, message: Message):
+        """Actually execute the broadcast after confirmation"""
+        broadcast_msg = message.reply_to_message
         total_users = await hyoshcoder.total_users_count()
-        uptime = time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - b.uptime))
-        start_t = time.time()
-        st = await m.reply('**Accessing The Details.....**')
-        end_t = time.time()
-        time_taken_s = (end_t - start_t) * 1000
-        await st.edit_text(
-            f"**--Bot Status--** \n\n"
-            f"**⌚️ Bot Uptime :** {uptime} \n"
-            f"**🐌 Current Ping :** `{time_taken_s:.3f} ms` \n"
-            f"**👭 Total Users :** `{total_users}`"
+        start_time = time.time()
+
+        # Log broadcast start
+        await client.send_message(
+            settings.LOG_CHANNEL,
+            f"📢 Broadcast started by {message.from_user.mention}\n"
+            f"Total recipients: {total_users}"
+        )
+        
+        status_msg = await AdminCommands._send_response(
+            message,
+            "📢 **Broadcast Started**\n\n"
+            f"Total Users: {total_users}\n"
+            "Completed: 0\n"
+            "Success: 0\n"
+            "Failed: 0"
+        )
+        
+        success = failed = 0
+        async for user in await hyoshcoder.get_all_users():
+            try:
+                await broadcast_msg.copy(user['_id'])
+                success += 1
+            except (InputUserDeactivated, UserIsBlocked):
+                await hyoshcoder.delete_user(user['_id'])
+                failed += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"Broadcast failed for {user['_id']}: {str(e)}")
+            
+            # Update status every 20 users
+            if (success + failed) % 20 == 0:
+                await status_msg.edit_text(
+                    "📢 **Broadcast In Progress**\n\n"
+                    f"Total Users: {total_users}\n"
+                    f"Completed: {success + failed}\n"
+                    f"Success: {success}\n"
+                    f"Failed: {failed}"
+                )
+        
+        # Final report
+        time_taken = str(timedelta(seconds=int(time.time() - start_time)))
+        await status_msg.edit_text(
+            "✅ **Broadcast Completed**\n\n"
+            f"⏱️ Time Taken: {time_taken}\n"
+            f"👥 Total Users: {total_users}\n"
+            f"✅ Success: {success}\n"
+            f"❌ Failed: {failed}"
+        )
+        
+        # Log completion
+        await client.send_message(
+            settings.LOG_CHANNEL,
+            f"📢 Broadcast completed\n"
+            f"⏱️ Time Taken: {time_taken}\n"
+            f"✅ Success: {success}\n"
+            f"❌ Failed: {failed}"
         )
 
-    elif command == "users":
-        all_users = await hyoshcoder.get_all_users()
-        user_count = 0
-        text = ''
-        async for user in all_users:
-            user_count += 1
-            text += f"> **user_id**: `{user['_id']}`\n\n"
+    @staticmethod
+    async def bot_stats(client: Client, message: Message):
+        """Show bot statistics (admin version)"""
+        start_time = time.time()
+        status_msg = await AdminCommands._send_response(message, "🔄 Gathering bot statistics...")
+        
+        # Get all stats
+        total_users = await hyoshcoder.total_users_count()
+        banned_users = await hyoshcoder.total_banned_users_count()
+        premium_users = await hyoshcoder.total_premium_users_count()
+        daily_active = await hyoshcoder.get_daily_active_users()
+        ping_time = (time.time() - start_time) * 1000
+        
+        await status_msg.edit_text(
+            "📊 **Bot Statistics (Admin)**\n\n"
+            f"👥 Total Users: {total_users}\n"
+            f"🚫 Banned Users: {banned_users}\n"
+            f"⭐ Premium Users: {premium_users}\n"
+            f"📈 Daily Active Users: {daily_active}\n"
+            f"🏓 Ping: {ping_time:.2f} ms"
+        )
 
-        reply_text = f"Total Users: `{user_count}`\n\n{text}"
-        if len(reply_text) > 4096:
-            with open('users.txt', 'w') as f:
-                f.write(reply_text)
-            await m.reply_document('users.txt', caption="Users list")
-            os.remove('users.txt')
-        else:
-            await m.reply_text(reply_text, quote=True)
+    @staticmethod
+    async def list_users(message: Message):
+        """List all bot users"""
+        try:
+            users = []
+            async for user in await hyoshcoder.get_all_users():
+                premium_status = "⭐" if user.get('is_premium') else ""
+                users.append(f"👤 User ID: `{user['_id']}` {premium_status}")
+            
+            response = f"👥 **Total Users: {len(users)}**\n\n" + "\n".join(users)
+            
+            if len(response) > 4000:
+                filename = f"users_{datetime.now().strftime('%Y%m%d')}.txt"
+                with open(filename, 'w') as f:
+                    f.write(response)
+                await message.reply_document(filename, caption="List of users")
+                os.remove(filename)
+            else:
+                await AdminCommands._send_response(message, response)
+                
+        except Exception as e:
+            error_msg = f"❌ Failed to get users: {str(e)}"
+            await AdminCommands._send_response(message, error_msg)
+            logger.error(error_msg, exc_info=True)
 
-
-async def send_msg(user_id: int, message: Message):
+@Client.on_message(filters.private & filters.command(
+    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users"]
+) & filters.user(ADMIN_USER_ID))
+async def admin_commands_handler(client: Client, message: Message):
+    """Handle all admin commands"""
+    command = message.command[0].lower()
+    
     try:
-        await message.copy(chat_id=user_id)
-        return 200
+        if command == "restart":
+            await AdminCommands.restart_bot(client, message)
+        elif command == "ban":
+            await AdminCommands.ban_user(client, message)
+        elif command == "unban":
+            await AdminCommands.unban_user(client, message)
+        elif command == "banned_users":
+            await AdminCommands.list_banned_users(message)
+        elif command == "broadcast":
+            await AdminCommands.broadcast_message(client, message)
+        elif command == "botstats":
+            await AdminCommands.bot_stats(client, message)
+        elif command == "users":
+            await AdminCommands.list_users(message)
+            
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        return await send_msg(user_id, message)
-    except InputUserDeactivated:
-        logger.info(f"{user_id} : Deactivated")
-        return 400
-    except UserIsBlocked:
-        logger.info(f"{user_id} : Blocked The Bot")
-        return 400
-    except PeerIdInvalid:
-        logger.info(f"{user_id} : User ID Invalid")
-        return 400
+        await admin_commands_handler(client, message)
     except Exception as e:
-        logger.error(f"{user_id} : {e}")
-        return 500
+        error_msg = f"❌ Admin command failed: {str(e)}"
+        await message.reply_text(error_msg, quote=True)
+        logger.error(error_msg, exc_info=True)
+
+@Client.on_callback_query(filters.regex(r"^broadcast_(confirm|cancel)$") & filters.user(ADMIN_USER_ID))
+async def broadcast_confirmation(client: Client, callback_query: CallbackQuery):
+    """Handle broadcast confirmation"""
+    try:
+        action = callback_query.data.split("_")[1]
+        
+        if action == "confirm":
+            await callback_query.message.edit_text("🚀 Starting broadcast...")
+            message = await client.get_messages(
+                callback_query.message.chat.id,
+                callback_query.message.reply_to_message_id
+            )
+            await AdminCommands.execute_broadcast(client, message)
+        else:
+            await callback_query.message.edit_text("❌ Broadcast cancelled")
+            await AdminCommands._auto_delete_message(callback_query.message, 5)
+            
+        await callback_query.answer()
+    except Exception as e:
+        logger.error(f"Broadcast confirmation error: {e}", exc_info=True)
+        await callback_query.answer("An error occurred", show_alert=True)
