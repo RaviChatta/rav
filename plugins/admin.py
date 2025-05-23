@@ -369,7 +369,7 @@ async def bot_stats(client: Client, message: Message):
     try:
         start_time = time.time()
         status_msg = await AdminCommands._send_response(message, "🔄 Gathering bot statistics...")
-        
+
         # Get all stats
         total_users = await hyoshcoder.total_users_count()
         banned_users = await hyoshcoder.total_banned_users_count()
@@ -378,41 +378,45 @@ async def bot_stats(client: Client, message: Message):
         total_renamed = await hyoshcoder.total_renamed_files()
         points_distributed = await hyoshcoder.total_points_distributed()
         ping_time = (time.time() - start_time) * 1000
-        
+
         img = await get_random_photo()
+        stats_text = (
+            "🤖 <b>Bot Statistics (Admin)</b>\n\n"
+            f"👥 Total Users: {total_users}\n"
+            f"🚫 Banned Users: {banned_users}\n"
+            f"⭐ Premium Users: {premium_users}\n"
+            f"📈 Daily Active Users: {daily_active}\n"
+            f"📝 Total Files Renamed: {total_renamed}\n"
+            f"✨ Total Points Distributed: {points_distributed}\n"
+            f"🏓 Ping: {ping_time:.2f} ms"
+        )
+
         await status_msg.edit_media(
             media=InputMediaPhoto(
                 media=img,
-                caption=(
-                    "🤖 <b>Bot Statistics (Admin)</b>\n\n"
-                    f"👥 Total Users: {total_users}\n"
-                    f"🚫 Banned Users: {banned_users}\n"
-                    f"⭐ Premium Users: {premium_users}\n"
-                    f"📈 Daily Active Users: {daily_active}\n"
-                    f"📝 Total Files Renamed: {total_renamed}\n"
-                    f"✨ Total Points Distributed: {points_distributed}\n"
-                    f"🏓 Ping: {ping_time:.2f} ms"
-                )
-            ),
-            msg = await AdminCommands._send_auto_delete(
-                message,
-                stats_text,
-                delete_delay=120
+                caption=stats_text
             )
-            
-            # Add refresh button that preserves auto-delete
-            if msg:
-                await msg.edit_reply_markup(
-                    InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")
-                    ]])
-                )
-                
-            await message.delete()  # Delete command after 5 seconds
-            await asyncio.sleep(5)
+        )
+
+        msg = await AdminCommands._send_auto_delete(
+            message,
+            stats_text,
+            delete_delay=120
+        )
+
+        # Add refresh button that preserves auto-delete
+        if msg:
+            await msg.edit_reply_markup(
+                InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")]])
+            )
+
+        await asyncio.sleep(5)
+        await message.delete()
+
     except Exception as e:
         logger.error(f"Error in bot_stats: {e}")
         await message.reply_text("❌ Failed to get stats")
+
 
 # Update the admin_commands_handler to include the new commands
 @Client.on_message(filters.private & filters.command(
