@@ -1020,7 +1020,7 @@ class Database:
 	    except Exception as e:
 	        logging.error(f"Error getting all users: {e}")
 	        return []
-
+	
 	async def get_sequential_mode(self, user_id: int) -> bool:
 	    """Get user's sequential mode setting."""
 	    try:
