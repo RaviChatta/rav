@@ -1033,13 +1033,13 @@ class Database:
             logging.error(f"Error getting users: {e}")
             
     async def get_all_banned_users(self) -> List[Dict]:
-    """Get all banned users."""
-    try:
-        cursor = self.users.find({"ban_status.is_banned": True})
-        return await cursor.to_list(length=None)
-    except Exception as e:
-        logging.error(f"Error getting banned users: {e}")
-        return []
+        """Get all banned users."""
+        try:
+            cursor = self.users.find({"ban_status.is_banned": True})
+            return await cursor.to_list(length=None)
+        except Exception as e:
+            logging.error(f"Error getting banned users: {e}")
+            return []
     async def get_sequential_mode(self, user_id: int) -> bool:
         """Get user's sequential mode setting."""
         try:
