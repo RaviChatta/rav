@@ -1,23 +1,21 @@
 import random
 import uuid
 import asyncio
+import logging
 from urllib.parse import quote
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import (
     CallbackQuery, 
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
     InputMediaPhoto
 )
-import html
 from typing import Optional, Dict
-from urllib.parse import quote
 from pyrogram.errors import FloodWait, ChatWriteForbidden
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +64,9 @@ class CallbackActions:
     async def handle_help(client: Client, query: CallbackQuery, user_id: int):
         """Handle help menu callback"""
         sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-        btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
-        
         src_info = await hyoshcoder.get_src_info(user_id)
+        
+        btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
         src_txt = "File name" if src_info == "file_name" else "File caption"
 
         buttons = [
@@ -77,14 +75,24 @@ class CallbackActions:
                 InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), 
                 InlineKeyboardButton('Caption •', callback_data='caption')
             ],
-            [InlineKeyboardButton('• Metadata', callback_data='meta')],
+            [
+                InlineKeyboardButton('• Metadata', callback_data='meta'), 
+                InlineKeyboardButton('Set Media •', callback_data='setmedia')
+            ],
+            [
+                InlineKeyboardButton('• Set Dump', callback_data='setdump'), 
+                InlineKeyboardButton('View Dump •', callback_data='viewdump')
+            ],
             [
                 InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), 
                 InlineKeyboardButton('Premium •', callback_data='premiumx')
             ],
-            [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
+            [
+                InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src'),
+            ],
             [InlineKeyboardButton('• Home', callback_data='home')]
         ]
+        
         return {
             'caption': Txt.HELP_TXT.format(client.mention),
             'reply_markup': InlineKeyboardMarkup(buttons)
@@ -211,23 +219,21 @@ class CallbackActions:
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
             }
-    
+
     @staticmethod
     async def handle_metadata_toggle(client: Client, query: CallbackQuery, user_id: int, data: str):
         """Handle metadata toggle and customization"""
         try:
             if data.startswith("metadata_"):
-                # Convert string '1'/'0' to boolean
                 is_enabled = data.split("_")[1] == '1'
                 await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
                 user_metadata = await hyoshcoder.get_metadata_code(user_id) or "Not set"
                 
-                # Create toggle buttons with clear visual states
                 buttons = [
                     [
                         InlineKeyboardButton(
                             f"🟢 ON" if is_enabled else "🔴 OFF",
-                            callback_data=f"metadata_{int(not is_enabled)}"  # Toggles between 1 and 0
+                            callback_data=f"metadata_{int(not is_enabled)}"
                         )
                     ],
                     [
@@ -239,15 +245,14 @@ class CallbackActions:
                     [
                         InlineKeyboardButton(
                             "🔙 Back to Settings",
-                            callback_data="settings_back"
+                            callback_data="help"
                         )
                     ]
                 ]
                 
-                # Response with proper HTML formatting
                 return {
                     'text': (
-                        f"<b>📝 Metadata Settings</b>\n\n"
+                        f"📝 <b>Metadata Settings</b>\n\n"
                         f"<b>Status:</b> {'🟢 Enabled' if is_enabled else '🔴 Disabled'}\n"
                         f"<b>Current Code:</b>\n<code>{html.escape(user_metadata)}</code>\n\n"
                         f"<i>Metadata will be embedded in processed files</i>"
@@ -260,7 +265,6 @@ class CallbackActions:
                 await query.message.delete()
                 current_meta = await hyoshcoder.get_metadata_code(user_id) or ""
                 
-                # Request new metadata with proper escaping
                 request_msg = await client.send_message(
                     chat_id=user_id,
                     text=(
@@ -277,17 +281,14 @@ class CallbackActions:
                 )
                 
                 try:
-                    # Wait for user input
                     metadata_msg = await client.listen.Message(
                         filters.text & filters.user(user_id),
                         timeout=METADATA_TIMEOUT
                     )
                     
-                    # Validate length
                     if len(metadata_msg.text) > 200:
                         raise ValueError("Maximum 200 characters allowed")
                     
-                    # Update and confirm
                     await hyoshcoder.set_metadata_code(user_id, metadata_msg.text)
                     
                     await client.send_message(
@@ -299,7 +300,6 @@ class CallbackActions:
                         parse_mode=enums.ParseMode.HTML
                     )
                     
-                    # Cleanup after delay
                     await asyncio.sleep(3)
                     await request_msg.delete()
                     if metadata_msg:
@@ -325,10 +325,11 @@ class CallbackActions:
             return {
                 'text': "❌ An error occurred while processing metadata settings",
                 'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="settings_back")]
+                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ]),
                 'parse_mode': enums.ParseMode.HTML
             }
+
     @staticmethod
     async def handle_free_points(client: Client, query: CallbackQuery, user_id: int):
         """Handle free points callback"""
@@ -344,29 +345,34 @@ class CallbackActions:
                 points_link
             ) if all([settings.SHORTED_LINK, settings.SHORTED_LINK_API]) else points_link
             
-            points = random.choice(POINT_RANGE)
+            config = await hyoshcoder.get_config("points_config") or {}
+            ad_config = config.get('ad_watch', {})
+            min_points = ad_config.get('min_points', 5)
+            max_points = ad_config.get('max_points', 20)
+            
+            points = random.randint(min_points, max_points)
             if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
                 raise Exception("Failed to track points")
             
             share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
             
-            buttons = [
+            buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
                 [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ]
+            ])
             
             caption = (
                 "**✨ Free Points System**\n\n"
                 "Earn points by helping grow our community:\n\n"
-                f"🔹 **Share Bot**: Get {POINT_RANGE.start}-{POINT_RANGE.stop} points per referral\n"
-                "🔹 **Watch Ads**: Earn instant points\n\n"
-                "💎 Premium members earn DOUBLE points!"
+                f"🔹 **Share Bot**: Get {config.get('referral_bonus', 10)} points per referral\n"
+                f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n\n"
+                f"💎 Premium members earn {config.get('premium_multiplier', 2)}x more points!"
             )
             
             return {
                 'caption': caption,
-                'reply_markup': InlineKeyboardMarkup(buttons)
+                'reply_markup': buttons
             }
         except Exception as e:
             logger.error(f"Free points error: {e}")
@@ -416,7 +422,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             if not response:
                 return
         
-        elif data == "free_points":
+        elif data == "freepoints":
             response = await CallbackActions.handle_free_points(client, query, user_id)
         
         elif data == "caption":
@@ -488,7 +494,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         
         elif data == "premiumx":
             buttons = [
-                [InlineKeyboardButton("• Free Points", callback_data="free_points")],
+                [InlineKeyboardButton("• Free Points", callback_data="freepoints")],
                 [InlineKeyboardButton("• Back", callback_data="help")]
             ]
             response = {
