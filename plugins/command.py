@@ -21,6 +21,7 @@ from pyrogram.errors import (
     FloodWait, 
     InputUserDeactivated, 
     UserIsBlocked, 
+    ChatWriteForbidden,
     PeerIdInvalid
 )
 from config import settings
