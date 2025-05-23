@@ -1217,8 +1217,8 @@ class Database:
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
     
 async def initialize_database():
-     """Initialize database connection"""
-     try:
+    """Initialize database connection"""
+    try:
         await hyoshcoder.connect()
         return hyoshcoder
     except Exception as e:
