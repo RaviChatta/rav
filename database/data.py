@@ -1214,13 +1214,13 @@ class Database:
             return default
     
     # Initialize database instance
-    hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
+hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
     
-    async def initialize_database():
-        """Initialize database connection"""
-        try:
-            await hyoshcoder.connect()
-            return hyoshcoder
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize database: {e}")
-            raise
+async def initialize_database():
+     """Initialize database connection"""
+     try:
+        await hyoshcoder.connect()
+        return hyoshcoder
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize database: {e}")
+        raise
