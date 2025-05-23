@@ -31,7 +31,7 @@ class Settings():
     ADMIN = [int(admin) for admin in os.getenv('ADMIN', '1047253913').split() if admin.isdigit()]
     
     # Liste des canaux pour le force subscribe (séparés par une virgule)
-    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '').split(',')
+    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '-1001333766434').split(',')
     
     # Récupération et conversion sécurisée des IDs de chat
     def safe_int(var_name, default=None):
@@ -54,8 +54,9 @@ class Settings():
     SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002072871676)
     
     # Variables pour le raccourcissement de liens (à configurer si utilisé)
-    SHORTED_LINK = os.getenv("SHORTED_LINK", None)
-    SHORTED_LINK_API = os.getenv("SHORTED_LINK_API", None)
+    SHORTED_LINK = os.getenv("SHORTED_LINK", "pocolinks.com")
+    SHORTED_LINK_API = os.getenv("SHORTED_LINK_API", "de5bd3536a538fb73d70f5d82c5a55820a869b0a")
+
     
     # URL par défaut pour l'image de démarrage ou de log
     IMAGES = os.getenv("IMAGES", "https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg")
