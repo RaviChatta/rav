@@ -92,18 +92,28 @@ class CallbackActions:
     @staticmethod
     async def handle_home(client, query):
         buttons = [
-            [InlineKeyboardButton("• My Stats •", callback_data='mystats'),
-             InlineKeyboardButton("• Leaderboard •", callback_data='leaderboard')],
-            [InlineKeyboardButton("• My Commands •", callback_data='help')],
+            # Top center - Most important command
+            [InlineKeyboardButton("✨ My Commands ✨", callback_data='help')],
+            
+            # Middle row - Secondary important actions
             [
-                InlineKeyboardButton('• Updates', url='https://t.me/sineur_x_bot'), 
-                InlineKeyboardButton('Support •', url='https://t.me/sineur_x_bot')
+                InlineKeyboardButton("💎 My Stats", callback_data='mystats'),
+                InlineKeyboardButton("🏆 Leaderboard", callback_data='leaderboard')
             ],
+            
+            # Bottom row - Support/Info
             [
-                InlineKeyboardButton('• About', callback_data='about'), 
-                InlineKeyboardButton('Source •', callback_data='source')
+                InlineKeyboardButton("🆕 Updates", url='https://t.me/sineur_x_bot'),
+                InlineKeyboardButton("🛟 Support", url='https://t.me/sineur_x_bot')
+            ],
+            
+            # Last row - About/Source
+            [
+                InlineKeyboardButton("📜 About", callback_data='about'),
+                InlineKeyboardButton("🧑‍💻 Source", callback_data='source')
             ]
         ]
+        
         return {
             'caption': Txt.START_TXT.format(query.from_user.mention),
             'reply_markup': InlineKeyboardMarkup(buttons)
@@ -201,49 +211,140 @@ class CallbackActions:
 
     @staticmethod
     async def handle_metadata_toggle(client, query, user_id, data):
-        if data.startswith("metadata_"):
-            is_enabled = data.split("_")[1] == '1'
-            user_metadata = await hyoshcoder.get_metadata_code(user_id)
+        """Handle metadata toggle and customization with premium styling"""
+        try:
+            if data.startswith("metadata_"):
+                # Toggle metadata status
+                is_enabled = data.split("_")[1] == '1'
+                await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
+                
+                # Get current metadata with fallback
+                user_metadata = await hyoshcoder.get_metadata_code(user_id) or "Not set"
+                
+                # Premium-styled buttons
+                buttons = [
+                    [
+                        InlineKeyboardButton(
+                            f"🔘 {'Metadata Enabled' if is_enabled else 'Metadata Disabled'}",
+                            callback_data=f"metadata_{0 if is_enabled else 1}"
+                        ),
+                        InlineKeyboardButton(
+                            "✅" if is_enabled else "❌", 
+                            callback_data=f"metadata_{0 if is_enabled else 1}"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "✏️ Edit Metadata", 
+                            callback_data="custom_metadata"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🔙 Back", 
+                            callback_data="help"
+                        )
+                    ]
+                ]
+                
+                return {
+                    'caption': (
+                        f"<b>🎛️ Metadata Settings</b>\n\n"
+                        f"<b>Current Status:</b> {'Enabled' if is_enabled else 'Disabled'}\n"
+                        f"<b>Your Metadata Code:</b>\n<code>{user_metadata}</code>\n\n"
+                        f"ℹ️ Metadata modifies MKV video files including audio and subtitles."
+                    ),
+                    'reply_markup': InlineKeyboardMarkup(buttons),
+                    'parse_mode': "HTML"
+                }
             
-            await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
-            
-            return {
-                'caption': f"<b>Your Current Metadata:</b>\n\n➜ {user_metadata}",
-                'reply_markup': InlineKeyboardMarkup(ON if is_enabled else OFF)
-            }
-        
-        elif data == "custom_metadata":
-            await query.message.delete()
-            try:
-                user_metadata = await hyoshcoder.get_metadata_code(user_id)
-                metadata_message = f"""
-<b>--Metadata Settings--</b>
-
-➜ <b>Current Metadata:</b> {user_metadata}
-
-<b>Description</b>: Metadata will modify MKV video files, including all audio titles, streams and subtitles.
-
-<b>➲ Send the metadata title. Timeout: {METADATA_TIMEOUT} sec</b>
-"""
-                metadata = await client.ask(
-                    text=metadata_message,
-                    chat_id=user_id,
-                    filters=filters.text,
-                    timeout=METADATA_TIMEOUT,
-                    disable_web_page_preview=True,
+            elif data == "custom_metadata":
+                # Handle metadata customization
+                await query.message.delete()
+                
+                # Get current metadata with nice formatting
+                current_meta = await hyoshcoder.get_metadata_code(user_id)
+                current_display = (
+                    f"<code>{current_meta}</code>" if current_meta 
+                    else "No metadata set"
                 )
                 
-                await hyoshcoder.set_metadata_code(user_id, metadata_code=metadata.text)
-                await client.send_message(
+                # Send metadata request with premium styling
+                request_msg = await client.send_message(
                     chat_id=user_id,
-                    text="**Your metadata code has been set successfully ✅**"
+                    text=(
+                        f"<b>✏️ Metadata Editor</b>\n\n"
+                        f"<b>Current Metadata:</b>\n{current_display}\n\n"
+                        f"<b>Please send your new metadata (max 200 chars):</b>\n"
+                        f"⏳ Timeout: {METADATA_TIMEOUT} seconds\n\n"
+                        f"<i>Example:</i> <code>Telegram : @hyoshassistantbot</code>"
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("❌ Cancel", callback_data="meta")
+                    ]])
                 )
-            except asyncio.TimeoutError:
-                await client.send_message(
-                    chat_id=user_id,
-                    text="⚠️ Error!!\n\n**Request has expired.**\nRestart using /metadata",
-                )
-            return None
+                
+                try:
+                    # Wait for user response
+                    metadata = await client.listen.Message(
+                        filters.text & filters.user(user_id),
+                        timeout=METADATA_TIMEOUT
+                    )
+                    
+                    # Validate length
+                    if len(metadata.text) > 200:
+                        raise ValueError("Metadata too long (max 200 chars)")
+                    
+                    # Save and confirm
+                    await hyoshcoder.set_metadata_code(user_id, metadata.text)
+                    
+                    success_msg = await client.send_message(
+                        chat_id=user_id,
+                        text=(
+                            "✨ <b>Metadata Updated Successfully!</b>\n\n"
+                            f"<code>{metadata.text}</code>\n\n"
+                            f"Your files will now use this metadata."
+                        ),
+                        parse_mode="HTML"
+                    )
+                    
+                    # Auto-cleanup
+                    await asyncio.sleep(5)
+                    await request_msg.delete()
+                    await asyncio.sleep(5)
+                    await success_msg.delete()
+                    
+                except asyncio.TimeoutError:
+                    await client.send_message(
+                        chat_id=user_id,
+                        text="⏳ <b>Metadata edit timed out</b>\nPlease try again.",
+                        parse_mode="HTML"
+                    )
+                except ValueError as e:
+                    await client.send_message(
+                        chat_id=user_id,
+                        text=f"❌ <b>Error:</b> {str(e)}",
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logger.error(f"Metadata edit error: {e}")
+                    await client.send_message(
+                        chat_id=user_id,
+                        text="⚠️ <b>An error occurred</b>\nPlease try again later.",
+                        parse_mode="HTML"
+                    )
+                
+                return None
+                
+        except Exception as e:
+            logger.error(f"Metadata toggle error: {e}")
+            return {
+                'caption': "❌ An error occurred. Please try again.",
+                'reply_markup': InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back", callback_data="help")
+                ]])
+            }
 
     @staticmethod
     async def handle_free_points(client, query, user_id):
