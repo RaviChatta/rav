@@ -11,6 +11,7 @@ from pyrogram.errors import (
     PeerIdInvalid,
     UsernameNotOccupied,
     UsernameInvalid,
+    ChatWriteForbidden,
     MessageNotModified
 )
 from config import settings
