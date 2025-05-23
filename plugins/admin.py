@@ -35,7 +35,7 @@ class AdminCommands:
         photo: str = None,
         delete_after: int = None,
         reply_markup=None,
-        parse_mode="markdown"
+        parse_mode="html"
     ):
         """Smart response sender with auto-delete and media support"""
         try:
