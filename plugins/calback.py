@@ -9,6 +9,7 @@ from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
+from pyrogram import enums 
 
 @Client.on_callback_query()
 async def cb_handler(client, query: CallbackQuery):
