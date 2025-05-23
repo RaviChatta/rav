@@ -68,7 +68,7 @@ async def is_subscribed(client: Client, user_id: int, channel: str) -> bool:
         logger.error(f"Subscription check error for {channel}: {e}")
         return True  # Fail safe - allow access
 
-async def check_subscriptions(client: Client, user_id: int) -> tuple[bool, list]:
+async def check_subscriptions(client: Client, user_id: int) -> tuple:
     """
     Check all forced subscriptions
     Returns (all_joined, failed_checks)
@@ -85,7 +85,7 @@ async def check_subscriptions(client: Client, user_id: int) -> tuple[bool, list]
     if not valid_channels:
         return True, []
 
-    results = await asyncio.gather(*[is_subscribed(client, user_id, channel) for channel in valid_channels)
+    results = await asyncio.gather(*[is_subscribed(client, user_id, channel) for channel in valid_channels])
     failed = [channel for channel, result in zip(valid_channels, results) if not result]
     
     return len(failed) == 0, failed
