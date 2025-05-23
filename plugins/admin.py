@@ -11,6 +11,8 @@ import traceback
 from datetime import datetime, timedelta
 from config import settings
 from helpers.utils import get_random_photo
+import psutil  # For system stats
+from pyrogram.types import InputMediaPhoto  # For media edits
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -222,18 +224,6 @@ class AdminCommands:
         ])
         await confirm.edit_reply_markup(confirm_keyboard)
 
-    @staticmethod  
-    async def bot_stats(client: Client, message: Message):
-        try:
-            if not hyoshcoder or not hyoshcoder.db:
-                await message.reply_text("⚠️ Database not initialized")
-                return
-
-            total_users = await hyoshcoder.total_users_count()
-            await message.reply_text(f"Total users: {total_users}")
-        except Exception as e:
-            logger.error(f"Error in bot_stats: {e}")
-            await message.reply_text("❌ Failed to get stats")
 
     @staticmethod
     async def execute_broadcast(client: Client, message: Message):
@@ -397,19 +387,6 @@ async def bot_stats(client: Client, message: Message):
                 caption=stats_text
             )
         )
-
-        msg = await AdminCommands._send_auto_delete(
-            message,
-            stats_text,
-            delete_delay=120
-        )
-
-        # Add refresh button that preserves auto-delete
-        if msg:
-            await msg.edit_reply_markup(
-                InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data="refresh_botstats")]])
-            )
-
         await asyncio.sleep(5)
         await message.delete()
 
@@ -417,10 +394,9 @@ async def bot_stats(client: Client, message: Message):
         logger.error(f"Error in bot_stats: {e}")
         await message.reply_text("❌ Failed to get stats")
 
-
 # Update the admin_commands_handler to include the new commands
 @Client.on_message(filters.private & filters.command(
-    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users", "admin_cmds","stats"]
+    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users", "admin", "stats"]
 ) & filters.user(ADMIN_USER_ID))
 async def admin_commands_handler(client: Client, message: Message):
     """Handle all admin commands"""
@@ -433,19 +409,16 @@ async def admin_commands_handler(client: Client, message: Message):
             await AdminCommands.ban_user(client, message)
         elif command == "unban":
             await AdminCommands.unban_user(client, message)
-        elif command == "banned_users":
+        elif command in ["banned_users", "banned"]:
             await AdminCommands.list_banned_users(message)
         elif command == "broadcast":
             await AdminCommands.broadcast_message(client, message)
-        elif command == "botstats":
+        elif command in ["botstats", "stats"]:
             await AdminCommands.bot_stats(client, message)
         elif command == "users":
             await AdminCommands.list_users(message)
-        elif command == "admin_cmds":
+        elif command in ["admin", "admin_cmds"]:
             await AdminCommands.admin_commands_panel(client, message)
-        # Add to admin_commands_handler:
-        elif command == "stats":
-            await AdminCommands.system_stats(client, message)
     except FloodWait as e:
         await asyncio.sleep(e.value)
         await admin_commands_handler(client, message)
@@ -453,7 +426,6 @@ async def admin_commands_handler(client: Client, message: Message):
         error_msg = f"❌ Admin command failed: {str(e)}"
         await message.reply_text(error_msg, quote=True)
         logger.error(error_msg, exc_info=True)
-
 @Client.on_callback_query(filters.regex(r"^broadcast_(confirm|cancel)$") & filters.user(ADMIN_USER_ID))
 async def broadcast_confirmation(client: Client, callback_query: CallbackQuery):
     """Handle broadcast confirmation"""
@@ -482,9 +454,11 @@ async def refresh_botstats(client: Client, callback_query: CallbackQuery):
 @staticmethod
 async def system_stats(client: Client, message: Message):
     """Advanced system monitoring with visual indicators"""
-    if message.from_user.id != ADMIN_USER_ID:
-        return await message.delete()
     try:
+        if not hasattr(AdminCommands, '_send_auto_delete'):
+            await message.reply_text("❌ System stats unavailable")
+            return
+
         # System Info
         uptime = datetime.now() - datetime.fromtimestamp(psutil.boot_time())
         cpu_usage = psutil.cpu_percent(interval=1)
@@ -512,46 +486,33 @@ async def system_stats(client: Client, message: Message):
         
         # Prepare message
         stats_msg = (
-            f"<b>🖥️ ADVANCED SYSTEM STATS</b>\n\n"
+            f"<b>🖥️ SYSTEM STATISTICS</b>\n\n"
             f"⏳ <b>Uptime:</b> {str(uptime).split('.')[0]}\n"
             f"🔢 <b>Processes:</b> {processes}\n\n"
             
-            f"<b>🔥 CPU ({cpu_count} cores @ {cpu_freq}GHz)</b>\n"
+            f"<b>🔥 CPU ({cpu_count} cores)</b>\n"
             f"{progress_bar(cpu_usage)}\n"
-            f"  - User: {psutil.cpu_times_percent().user:.1f}%\n"
-            f"  - System: {psutil.cpu_times_percent().system:.1f}%\n\n"
+            f"  - Usage: {cpu_usage}%\n\n"
             
             f"<b>🧠 MEMORY</b>\n"
             f"RAM: {progress_bar(mem.percent)}\n"
-            f"  - Used: {mem.used/1024/1024:.1f}MB / {mem.total/1024/1024:.1f}MB\n"
-            f"Swap: {progress_bar(swap.percent)}\n\n"
+            f"  - Used: {mem.used/1024/1024:.1f}MB\n\n"
             
-            f"<b>💾 DISK (/)</b>\n"
+            f"<b>💾 DISK</b>\n"
             f"Space: {progress_bar(disk.percent)}\n"
-            f"  - Read: {disk_io.read_bytes/1024/1024:.1f}MB\n"
-            f"  - Write: {disk_io.write_bytes/1024/1024:.1f}MB\n\n"
-            
-            f"<b>🌐 NETWORK</b>\n"
-            f"  - Sent: {net_io.bytes_sent/1024/1024:.1f}MB\n"
-            f"  - Recv: {net_io.bytes_recv/1024/1024:.1f}MB"
+            f"  - Free: {disk.free/1024/1024:.1f}MB"
         )
         
-        await message.reply_text(stats_msg, parse_mode="HTML")
-
-        # Auto-delete the reply and the trigger message
         await AdminCommands._send_auto_delete(
             message,
             stats_msg,
             delete_delay=90,
             parse_mode="HTML"
         )
-        await asyncio.sleep(5)
-        await message.delete()
-
+        
     except Exception as e:
         logger.error(f"System stats error: {e}")
-        error_msg = f"❌ Error fetching stats: {str(e)[:200]}"
-        await AdminCommands._send_auto_delete(message, error_msg, delete_delay=30)
+        await message.reply_text(f"❌ Error: {str(e)}")
 
 @staticmethod
 async def _send_auto_delete(message: Message, text: str, delete_delay: int = 60, **kwargs):
@@ -562,3 +523,4 @@ async def _send_auto_delete(message: Message, text: str, delete_delay: int = 60,
         return msg
     except Exception as e:
         logger.error(f"Auto-delete message failed: {e}")
+        return None
