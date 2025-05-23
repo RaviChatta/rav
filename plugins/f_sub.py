@@ -1,231 +1,188 @@
-import os
 import asyncio
 import logging
-from typing import List, Union
-from pyrogram import Client, filters, idle
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, Message, User
+from typing import List, Optional
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
 from pyrogram.errors import (
-    UserNotParticipant, 
-    FloodWait, 
-    ChannelInvalid, 
+    UserNotParticipant,
+    FloodWait,
+    ChannelInvalid,
     ChatAdminRequired,
     PeerIdInvalid,
+    UsernameNotOccupied,
+    UsernameInvalid,
     MessageNotModified
 )
 from config import settings
-from helpers.utils import get_random_photo, get_random_animation
 
 logger = logging.getLogger(__name__)
-FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS
+FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS or []
 
-async def not_subscribed(_: Client, client: Client, message: Message) -> bool:
-    """
-    Check if user is not subscribed to required channels.
-    Returns True if user needs to subscribe, False if already subscribed.
-    """
-    if not FORCE_SUB_CHANNELS:
+async def validate_channel(client: Client, channel: str) -> bool:
+    """Check if a channel exists and is accessible"""
+    try:
+        if isinstance(channel, int) or (isinstance(channel, str) and channel.lstrip('-').isdigit()):
+            await client.get_chat(int(channel))
+        else:
+            await client.get_chat(channel)
+        return True
+    except (UsernameNotOccupied, UsernameInvalid, PeerIdInvalid, ChannelInvalid):
+        logger.error(f"Channel {channel} doesn't exist or is inaccessible")
+        return False
+    except Exception as e:
+        logger.error(f"Error validating channel {channel}: {e}")
         return False
 
-    for channel in FORCE_SUB_CHANNELS:
-        try:
-            user = await client.get_chat_member(channel, message.from_user.id)
-            if user.status in ["kicked", "left"]:
-                logger.info(f"User {message.from_user.id} not subscribed to {channel}")
-                return True
-        except UserNotParticipant:
-            logger.info(f"User {message.from_user.id} not participant in {channel}")
-            return True
-        except (ChannelInvalid, PeerIdInvalid) as e:
-            logger.error(f"Invalid channel {channel}: {e}")
-            continue
-        except ChatAdminRequired:
-            logger.error(f"Bot needs admin in {channel} to check subscriptions")
-            continue
-        except FloodWait as e:
-            logger.warning(f"Flood wait {e.x}s for channel {channel}")
-            await asyncio.sleep(e.x)
-            return await not_subscribed(_, client, message)  # Retry
-        except Exception as e:
-            logger.error(f"Error checking subscription for {channel}: {e}")
-            continue
-    
-    return False
-
-async def build_subscription_buttons(client: Client, user_id: int) -> tuple[List[List[InlineKeyboardButton]], List[str]]:
-    """
-    Build subscription buttons for channels user hasn't joined.
-    Returns (buttons, not_joined_channels)
-    """
-    buttons = []
-    not_joined_channels = []
-
-    for channel in FORCE_SUB_CHANNELS:
-        try:
-            user = await client.get_chat_member(channel, user_id)
-            if user.status in ["kicked", "left"]:
-                not_joined_channels.append(channel)
-        except UserNotParticipant:
-            not_joined_channels.append(channel)
-        except Exception as e:
-            logger.error(f"Error checking channel {channel}: {e}")
-            not_joined_channels.append(channel)
-
-    for channel in not_joined_channels:
-        try:
-            chat = await client.get_chat(channel)
-            channel_name = chat.title
-            buttons.append([
-                InlineKeyboardButton(
-                    text=f"✨ Join {channel_name}",
-                    url=f"https://t.me/{chat.username or channel}"
-                )
-            ])
-        except Exception:
-            buttons.append([
-                InlineKeyboardButton(
-                    text="✨ Join Channel", 
-                    url=f"https://t.me/{channel}"
-                )
-            ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            text="✅ I've Joined",
-            callback_data="check_subscription"
-        )
-    ])
-    
-    return buttons, not_joined_channels
-
-@Client.on_message(filters.private & filters.create(not_subscribed))
-async def force_sub_handler(client: Client, message: Message):
-    """
-    Handle users who haven't subscribed to required channels.
-    """
+async def get_channel_info(client: Client, channel: str) -> Optional[dict]:
+    """Get channel info with error handling"""
     try:
-        media = await get_random_animation() or await get_random_photo()
-        buttons, _ = await build_subscription_buttons(client, message.from_user.id)
+        if isinstance(channel, int) or (isinstance(channel, str) and channel.lstrip('-').isdigit()):
+            chat = await client.get_chat(int(channel))
+        else:
+            chat = await client.get_chat(channel)
+        return {
+            'id': chat.id,
+            'username': getattr(chat, 'username', None),
+            'title': getattr(chat, 'title', f"Channel {chat.id}"),
+            'invite_link': getattr(chat, 'invite_link', None)
+        }
+    except Exception as e:
+        logger.error(f"Couldn't get info for channel {channel}: {e}")
+        return None
+
+async def is_subscribed(client: Client, user_id: int, channel: str) -> bool:
+    """Check if user is subscribed to a specific channel"""
+    try:
+        member = await client.get_chat_member(channel, user_id)
+        return member.status not in ["left", "kicked", None]
+    except UserNotParticipant:
+        return False
+    except (ChannelInvalid, PeerIdInvalid, ChatAdminRequired):
+        logger.error(f"Can't check membership in {channel}")
+        return True  # Assume subscribed to avoid blocking users
+    except FloodWait as e:
+        logger.warning(f"Flood wait {e.x}s for channel {channel}")
+        await asyncio.sleep(e.x)
+        return await is_subscribed(client, user_id, channel)
+    except Exception as e:
+        logger.error(f"Subscription check error for {channel}: {e}")
+        return True  # Fail safe - allow access
+
+async def check_subscriptions(client: Client, user_id: int) -> tuple[bool, list]:
+    """
+    Check all forced subscriptions
+    Returns (all_joined, failed_checks)
+    """
+    valid_channels = []
+    
+    # First validate all channels
+    for channel in FORCE_SUB_CHANNELS:
+        if await validate_channel(client, channel):
+            valid_channels.append(channel)
+        else:
+            logger.warning(f"Removing invalid channel: {channel}")
+
+    if not valid_channels:
+        return True, []
+
+    results = await asyncio.gather(*[is_subscribed(client, user_id, channel) for channel in valid_channels)
+    failed = [channel for channel, result in zip(valid_channels, results) if not result]
+    
+    return len(failed) == 0, failed
+
+async def build_subscription_buttons(client: Client, channels: list) -> InlineKeyboardMarkup:
+    """Build buttons for channels user needs to join"""
+    buttons = []
+    
+    for channel in channels:
+        info = await get_channel_info(client, channel)
+        if not info:
+            continue
+            
+        url = f"https://t.me/{info['username']}" if info['username'] else info['invite_link']
+        if not url:
+            continue
+            
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"Join {info['title']}",
+                url=url
+            )
+        ])
+    
+    if buttons:
+        buttons.append([
+            InlineKeyboardButton(
+                text="✅ I've Subscribed",
+                callback_data="check_subs"
+            )
+        ])
+    
+    return InlineKeyboardMarkup(buttons) if buttons else None
+
+@Client.on_message(filters.private & ~filters.user(settings.ADMIN))
+async def force_sub_check(client: Client, message: Message):
+    """Check subscriptions on private messages"""
+    if not FORCE_SUB_CHANNELS:
+        return
         
+    try:
+        all_joined, missing = await check_subscriptions(client, message.from_user.id)
+        if all_joined:
+            return
+            
+        buttons = await build_subscription_buttons(client, missing)
+        if not buttons:
+            return
+            
         text = (
             "**🔒 Premium Content Access**\n\n"
-            "To use this bot, please join our official channels first:\n"
-            "• Join all channels below\n"
-            "• Then click 'I've Joined' to verify\n\n"
-            "Thank you for your support! 💖"
+            "To use this bot, please join our official channels first:\n\n"
+            "1. Join all channels below\n"
+            "2. Then click 'I've Subscribed'\n\n"
+            "Thank you! 💖"
         )
         
-        try:
-            if media and media.endswith(('.mp4', '.gif')):
-                await message.reply_animation(
-                    animation=media,
-                    caption=text,
-                    reply_markup=InlineKeyboardMarkup(buttons),
-                    parse_mode="markdown"
-                )
-            elif media:
-                await message.reply_photo(
-                    photo=media,
-                    caption=text,
-                    reply_markup=InlineKeyboardMarkup(buttons),
-                    parse_mode="markdown"
-                )
-            else:
-                await message.reply_text(
-                    text=text,
-                    reply_markup=InlineKeyboardMarkup(buttons),
-                    disable_web_page_preview=True,
-                    parse_mode="markdown"
-                )
-        except Exception as e:
-            logger.error(f"Failed to send media message: {e}")
-            await message.reply_text(
-                text=text,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                disable_web_page_preview=True,
-                parse_mode="markdown"
-            )
-            
+        await message.reply(
+            text=text,
+            reply_markup=buttons,
+            disable_web_page_preview=True
+        )
+        
     except Exception as e:
-        logger.error(f"Error in force_sub_handler: {e}")
-        await message.reply_text(
-            "⚠️ An error occurred. Please try again later.",
-            parse_mode="markdown"
-        )
+        logger.error(f"Force sub check error: {e}")
 
-@Client.on_callback_query(filters.regex("^check_subscription$"))
-async def check_subscription_callback(client: Client, callback_query: CallbackQuery):
-    """
-    Handle subscription verification callback.
-    """
-    user = callback_query.from_user
+@Client.on_callback_query(filters.regex("^check_subs$"))
+async def verify_subscription(client: Client, callback: CallbackQuery):
+    """Verify user subscriptions"""
     try:
-        await callback_query.answer("Checking subscriptions...")
+        await callback.answer("Checking subscriptions...")
+        all_joined, missing = await check_subscriptions(client, callback.from_user.id)
         
-        # Check subscriptions with retries
-        for attempt in range(3):
-            buttons, not_joined = await build_subscription_buttons(client, user.id)
-            
-            if not not_joined:
-                try:
-                    await callback_query.message.delete()
-                except:
-                    pass
+        if all_joined:
+            try:
+                await callback.message.delete()
+            except:
+                pass
                 
-                welcome_msg = await send_effect_message(
-                    client,
-                    user.id,
-                    f"**🎉 Access Granted!**\n\n"
-                    f"Thanks for joining {user.mention()}!\n"
-                    "You can now use all bot features.\n\n"
-                    "Type /start to begin!",
-                    effect_id=5  # Sparkles effect
-                )
-                asyncio.create_task(auto_delete_message(welcome_msg, delay=15))
-                return
+            await callback.message.reply("🎉 Access granted! You can now use all bot features.")
+            return
             
-            await asyncio.sleep(2)  # Wait between checks
-
-        # Still not subscribed to all channels
-        text = (
-            "**🚫 Subscription Required**\n\n"
-            "You haven't joined all required channels yet:\n"
-            "• Please join the channels below\n"
-            "• Then click 'I've Joined' again\n\n"
-            "If you've joined but still see this, try leaving and rejoining."
-        )
-        
-        try:
-            await callback_query.message.edit_caption(
-                caption=text,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                parse_mode="markdown"
-            )
-        except MessageNotModified:
-            pass
-        except Exception:
-            await callback_query.message.edit_text(
-                text=text,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                disable_web_page_preview=True,
-                parse_mode="markdown"
-            )
-            
-        await callback_query.answer(
-            "Please join all channels first!",
+        buttons = await build_subscription_buttons(client, missing)
+        if buttons:
+            try:
+                await callback.message.edit_reply_markup(buttons)
+            except MessageNotModified:
+                pass
+                
+        await callback.answer(
+            "Please join all required channels first!",
             show_alert=True
         )
         
     except Exception as e:
-        logger.error(f"Error in check_subscription_callback: {e}")
-        await callback_query.answer(
+        logger.error(f"Subscription verification error: {e}")
+        await callback.answer(
             "An error occurred. Please try again.",
             show_alert=True
         )
-
-async def auto_delete_message(message: Message, delay: int = 15):
-    """Automatically delete message after delay"""
-    try:
-        await asyncio.sleep(delay)
-        await message.delete()
-    except Exception as e:
-        logger.warning(f"Couldn't delete message: {e}")
