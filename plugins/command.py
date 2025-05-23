@@ -1,94 +1,39 @@
 import os
 import random
 import asyncio
-import sys
-import time
-import traceback
-from datetime import datetime, timedelta
-from pyrogram import Client, filters
-from pyrogram.types import (
-    Message, 
-    InlineKeyboardButton, 
-    InlineKeyboardMarkup, 
-    CallbackQuery, 
-    InputMediaPhoto,
-    InputMediaAnimation
-)
-from pyrogram.errors import (
-    ChannelInvalid, 
-    ChannelPrivate, 
-    ChatAdminRequired, 
-    FloodWait, 
-    InputUserDeactivated, 
-    UserIsBlocked, 
-    ChatWriteForbidden,
-    PeerIdInvalid
-)
+import logging
+from datetime import datetime
+from pyrogram import Client, filters, enums
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.errors import FloodWait, ChatWriteForbidden
 from config import settings
 from scripts import Txt
-from typing import Union, List, Optional, Dict
 from helpers.utils import get_random_photo, get_random_animation
 from database.data import hyoshcoder
-import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-ADMIN_USER_ID = settings.ADMIN
-is_restarting = False
 
-# Constants
+ADMIN_USER_ID = settings.ADMIN
 AUTO_DELETE_DELAY = 30  # Seconds before auto-deleting messages
 
 # Emoji Constants
-EMOJI_POINTS = "✨"
-EMOJI_PREMIUM = "⭐"
-EMOJI_REFERRAL = "👥"
-EMOJI_RENAME = "📝"
-EMOJI_STATS = "📊"
-EMOJI_LEADERBOARD = "🏆"
-EMOJI_ADMIN = "🛠️"
-EMOJI_SUCCESS = "✅"
-EMOJI_ERROR = "❌"
-EMOJI_CLOCK = "⏳"
-EMOJI_LINK = "🔗"
-EMOJI_MONEY = "💰"
-
-def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
-    """Generate leaderboard navigation keyboard"""
-    periods = {
-        "daily": f"{EMOJI_CLOCK} Daily",
-        "weekly": f"📆 Weekly",
-        "monthly": f"🗓 Monthly",
-        "alltime": f"{EMOJI_LEADERBOARD} All-Time"
-    }
-    types = {
-        "points": f"{EMOJI_POINTS} Points",
-        "renames": f"{EMOJI_RENAME} Files",
-        "referrals": f"{EMOJI_REFERRAL} Referrals"
-    }
-    
-    # Period buttons
-    period_buttons = []
-    for period, text in periods.items():
-        if period == selected_period:
-            period_buttons.append(InlineKeyboardButton(f"• {text} •", callback_data=f"lb_period_{period}"))
-        else:
-            period_buttons.append(InlineKeyboardButton(text, callback_data=f"lb_period_{period}"))
-    
-    # Type buttons
-    type_buttons = []
-    for lb_type, text in types.items():
-        if lb_type == selected_type:
-            type_buttons.append(InlineKeyboardButton(f"• {text} •", callback_data=f"lb_type_{lb_type}"))
-        else:
-            type_buttons.append(InlineKeyboardButton(text, callback_data=f"lb_type_{lb_type}"))
-    
-    return InlineKeyboardMarkup([
-        period_buttons[:2],  # First row: daily, weekly
-        period_buttons[2:],  # Second row: monthly, alltime
-        type_buttons,        # Third row: types
-        [InlineKeyboardButton("🔙 Back", callback_data="help")]
-    ])
+EMOJI = {
+    'points': "✨",
+    'premium': "⭐",
+    'referral': "👥",
+    'rename': "📝",
+    'stats': "📊",
+    'leaderboard': "🏆",
+    'admin': "🛠️",
+    'success': "✅",
+    'error': "❌",
+    'clock': "⏳",
+    'link': "🔗",
+    'money': "💰",
+    'file': "📁",
+    'video': "🎥"
+}
 
 async def auto_delete_message(message: Message, delay: int = AUTO_DELETE_DELAY):
     """Auto-delete message after delay"""
@@ -98,96 +43,107 @@ async def auto_delete_message(message: Message, delay: int = AUTO_DELETE_DELAY):
     except Exception as e:
         logger.warning(f"Couldn't delete message: {e}")
 
-async def send_effect_message(
+async def send_response(
     client: Client,
-    chat_id: Union[int, str],
+    chat_id: int,
     text: str,
-    message_effect_id : Optional[int] = None,
-    max_retries: int = 3,
-    **kwargs
-) -> Optional[Message]:
-    """
-    Send a message with optional effect (animation).
-    
-    Args:
-        client: Pyrogram Client instance
-        chat_id: Target chat ID or username
-        text: Message text to send
-        message_effect_id : ID of the message effect
-        max_retries: Maximum number of retry attempts
-        **kwargs: Additional send_message parameters
-        
-    Returns:
-        Message object if successful, None otherwise
-    """
-    additional_params = {
-        'disable_web_page_preview': kwargs.pop('disable_web_page_preview', True),
-        'parse_mode': kwargs.pop('parse_mode', "html")
-    }
-    additional_params.update(kwargs)
-    
-    for attempt in range(max_retries):
-        try:
-            if message_effect_id :
-                return await client.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    message_effect_id =message_effect_id ,
-                    **additional_params
-                )
-            return await client.send_message(
+    reply_markup=None,
+    photo=None,
+    animation=None,
+    delete_after: int = AUTO_DELETE_DELAY,
+    parse_mode: enums.ParseMode = enums.ParseMode.HTML
+):
+    """Send response with auto-delete and media support"""
+    try:
+        if animation:
+            msg = await client.send_animation(
+                chat_id=chat_id,
+                animation=animation,
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        elif photo:
+            msg = await client.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        else:
+            msg = await client.send_message(
                 chat_id=chat_id,
                 text=text,
-                **additional_params
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                disable_web_page_preview=True
             )
-            
-        except FloodWait as e:
-            if attempt == max_retries - 1:
-                logger.error(f"Flood wait too long ({e.x}s) for chat {chat_id}")
-                raise
-            logger.warning(f"Flood wait {e.x}s, retrying {attempt + 1}/{max_retries}")
-            await asyncio.sleep(e.x)
-            
-        except (PeerIdInvalid, ChannelInvalid) as e:
-            logger.error(f"Invalid chat ID {chat_id}: {e}")
+        
+        if delete_after:
+            asyncio.create_task(auto_delete_message(msg, delete_after))
+        return msg
+    except Exception as e:
+        logger.error(f"Response error: {e}")
+        try:
+            return await client.send_message(
+                chat_id=chat_id,
+                text="An error occurred while processing this message.",
+                parse_mode=None
+            )
+        except:
             return None
-            
-        except ChatWriteForbidden:
-            logger.error(f"No permission to write in chat {chat_id}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error sending message (attempt {attempt + 1}): {e}")
-            if attempt == max_retries - 1:
-                # Final fallback - try without effect
-                if message_effect_id :
-                    try:
-                        return await client.send_message(
-                            chat_id=chat_id,
-                            text=text,
-                            **additional_params
-                        )
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback send failed: {fallback_error}")
-                        return None
-            await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
-            
-    return None
+
+def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
+    """Generate leaderboard navigation keyboard"""
+    periods = {
+        "daily": f"{EMOJI['clock']} Daily",
+        "weekly": f"📆 Weekly",
+        "monthly": f"🗓 Monthly",
+        "alltime": f"{EMOJI['leaderboard']} All-Time"
+    }
+    types = {
+        "points": f"{EMOJI['points']} Points",
+        "renames": f"{EMOJI['rename']} Files",
+        "referrals": f"{EMOJI['referral']} Referrals"
+    }
+    
+    # Create buttons
+    period_buttons = [
+        InlineKeyboardButton(
+            f"• {text} •" if period == selected_period else text,
+            callback_data=f"lb_period_{period}"
+        ) for period, text in periods.items()
+    ]
+    
+    type_buttons = [
+        InlineKeyboardButton(
+            f"• {text} •" if lb_type == selected_type else text,
+            callback_data=f"lb_type_{lb_type}"
+        ) for lb_type, text in types.items()
+    ]
+    
+    return InlineKeyboardMarkup([
+        period_buttons[:2],
+        period_buttons[2:],
+        type_buttons,
+        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+    ])
 
 @Client.on_message(filters.private & filters.command([
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "view_dump", "viewdump",
-    "del_dump", "deldump", "profile", "leaderboard", "lb", "mystats"
+    "del_dump", "deldump", "profile", "leaderboard", "lb", "mystats", "freepoints"
 ]))
-async def command(client, message: Message):
+async def command_handler(client: Client, message: Message):
     user_id = message.from_user.id
     is_admin = user_id == ADMIN_USER_ID
     img = await get_random_photo()
     animation = await get_random_animation()
     
     try:
-        command = message.text.split(' ')[0][1:].lower()
+        command = message.command[0][1:].lower()
         args = message.command[1:]
         
         # Auto-delete non-start commands after delay
@@ -198,78 +154,75 @@ async def command(client, message: Message):
             user = message.from_user
             await hyoshcoder.add_user(user_id)
             
-            # Welcome effect with auto-delete
-            welcome_msg = await send_effect_message(
+            # Welcome message
+            welcome_msg = await send_response(
                 client,
                 message.chat.id,
                 f"✨ Welcome {user.mention} to our file renaming bot!",
-                message_effect_id =5  # Sparkles effect
+                delete_after=10
             )
-            asyncio.create_task(auto_delete_message(welcome_msg, delay=10))
             
-            # Send sticker and delete after delay
+            # Send sticker
             m = await message.reply_sticker("CAACAgIAAxkBAALmzGXSSt3ppnOsSl_spnAP8wHC26jpAAJEGQACCOHZSVKp6_XqghKoHgQ")
             asyncio.create_task(auto_delete_message(m, delay=3))
             
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI_STATS} My Stats", callback_data='mystats'),
-                 InlineKeyboardButton(f"{EMOJI_LEADERBOARD} Leaderboard", callback_data='leaderboard')],
-                [InlineKeyboardButton(f"{EMOJI_POINTS} Earn Points", callback_data='free_points'),
-                 InlineKeyboardButton(f"{EMOJI_PREMIUM} Go Premium", callback_data='premiumx')],
+                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
+                 InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
+                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints'),
+                 InlineKeyboardButton(f"{EMOJI['premium']} Go Premium", callback_data='premiumx')],
                 [InlineKeyboardButton("🛠️ Help", callback_data='help')]
             ])
 
             # Handle referral links
             if args and args[0].startswith("refer_"):
                 referrer_id = int(args[0].replace("refer_", ""))
-                reward = await hyoshcoder.get_config("referral_reward", 15)
+                config = await hyoshcoder.get_config("points_config") or {}
+                reward = config.get('referral_bonus', 10)
+                
                 if referrer_id != user_id:
                     referrer = await hyoshcoder.read_user(referrer_id)
                     if referrer:
                         await hyoshcoder.set_referrer(user_id, referrer_id)
-                        await hyoshcoder.add_points(referrer_id, reward, "referral", 
-                                                  f"Referral from {user_id}")
+                        await hyoshcoder.add_points(
+                            referrer_id, 
+                            reward, 
+                            "referral", 
+                            f"Referral from {user_id}"
+                        )
                         
-                        # Notify referrer with effect
+                        # Notify referrer
                         cap = (
                             f"🎉 {user.mention} joined through your referral!\n"
-                            f"You received {reward} {EMOJI_POINTS}"
+                            f"You received {reward} {EMOJI['points']}"
                         )
-                        await send_effect_message(
-                            client,
-                            referrer_id,
-                            cap,
-                            message_effect_id =3  # Bounce effect
-                        )
+                        await send_response(client, referrer_id, cap)
 
             # Handle points links
             if args and args[0].startswith("points_"):
                 code = args[0][7:]
                 result = await hyoshcoder.claim_points_link(user_id, code)
                 if result["success"]:
-                    claim_msg = await send_effect_message(
+                    await send_response(
                         client,
                         message.chat.id,
-                        f"🎉 You claimed {result['points']} {EMOJI_POINTS}!\n"
+                        f"🎉 You claimed {result['points']} {EMOJI['points']}!\n"
                         f"Remaining claims: {result['remaining_claims']}",
-                        message_effect_id =1  # Confetti effect
+                        delete_after=10
                     )
-                    asyncio.create_task(auto_delete_message(claim_msg, delay=10))
                 else:
-                    await message.reply(f"{EMOJI_ERROR} {result['reason']}")
+                    await message.reply(f"{EMOJI['error']} {result['reason']}")
 
-            if animation:
-                await message.reply_animation(
-                    animation=animation,
-                    caption=Txt.START_TXT.format(user.mention),
-                    reply_markup=buttons
-                )
-            else:
-                await message.reply_photo(
-                    photo=img,
-                    caption=Txt.START_TXT.format(user.mention),
-                    reply_markup=buttons
-                )
+            # Send start message
+            await send_response(
+                client,
+                message.chat.id,
+                Txt.START_TXT.format(user.mention),
+                reply_markup=buttons,
+                photo=img,
+                animation=animation,
+                delete_after=None  # Don't auto-delete start message
+            )
 
         elif command in ["leaderboard", "lb"]:
             try:
@@ -279,52 +232,48 @@ async def command(client, message: Message):
                 if not leaders:
                     raise ValueError("No leaderboard data available")
                 
-                text = f"{EMOJI_LEADERBOARD} Weekly Points Leaderboard:\n\n"
+                text = f"{EMOJI['leaderboard']} Weekly Points Leaderboard:\n\n"
                 for i, user in enumerate(leaders[:10], 1):
                     text += (
                         f"{i}. {user.get('username', user['_id'])} - "
-                        f"{user['value']} {EMOJI_POINTS} "
-                        f"{EMOJI_PREMIUM if user.get('is_premium') else ''}\n"
+                        f"{user['value']} {EMOJI['points']} "
+                        f"{EMOJI['premium'] if user.get('is_premium') else ''}\n"
                     )
                 
-                if animation:
-                    msg = await message.reply_animation(
-                        animation=animation,
-                        caption=text,
-                        reply_markup=keyboard
-                    )
-                else:
-                    msg = await message.reply_photo(
-                        photo=img,
-                        caption=text,
-                        reply_markup=keyboard
-                    )
-                asyncio.create_task(auto_delete_message(msg, delay=120))
+                await send_response(
+                    client,
+                    message.chat.id,
+                    text,
+                    reply_markup=keyboard,
+                    photo=img,
+                    animation=animation,
+                    delete_after=120
+                )
                 
             except Exception as e:
                 logger.error(f"Leaderboard error: {str(e)}")
-                error_msg = await message.reply(
-                    f"{EMOJI_ERROR} Couldn't load leaderboard. Please try again later."
+                await send_response(
+                    client,
+                    message.chat.id,
+                    f"{EMOJI['error']} Couldn't load leaderboard. Please try again later.",
+                    delete_after=15
                 )
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
 
-        elif command in [ "mystats"]:
+        elif command in ["mystats"]:
             try:
                 stats = await hyoshcoder.get_user_file_stats(user_id)
                 points = await hyoshcoder.get_points(user_id)
                 premium_status = await hyoshcoder.check_premium_status(user_id)
-                referral_stats = await hyoshcoder.users.find_one(
-                    {"_id": user_id},
-                    {"referral.referred_count": 1, "referral.referral_earnings": 1}
-                )
+                user_data = await hyoshcoder.read_user(user_id)
+                referral_stats = user_data.get('referral', {})
                 
                 text = (
                     f"📊 <b>Your Statistics</b>\n\n"
-                    f"{EMOJI_POINTS} <b>Points Balance:</b> {points}\n"
-                    f"{EMOJI_PREMIUM} <b>Premium Status:</b> {'Active ' + EMOJI_SUCCESS if premium_status['is_premium'] else 'Inactive ' + EMOJI_ERROR}\n"
-                    f"{EMOJI_REFERRAL} <b>Referrals:</b> {referral_stats.get('referral', {}).get('referred_count', 0)} "
-                    f"(Earned {referral_stats.get('referral', {}).get('referral_earnings', 0)} {EMOJI_POINTS})\n\n"
-                    f"{EMOJI_RENAME} <b>Files Renamed</b>\n"
+                    f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
+                    f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status['is_premium'] else 'Inactive ' + EMOJI['error']}\n"
+                    f"{EMOJI['referral']} <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
+                    f"(Earned {referral_stats.get('referral_earnings', 0)} {EMOJI['points']})\n\n"
+                    f"{EMOJI['rename']} <b>Files Renamed</b>\n"
                     f"• Total: {stats['total_renamed']}\n"
                     f"• Today: {stats['today']}\n"
                     f"• This Week: {stats['this_week']}\n"
@@ -332,229 +281,272 @@ async def command(client, message: Message):
                 )
                 
                 buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"{EMOJI_LEADERBOARD} Leaderboard", callback_data="leaderboard")],
-                    [InlineKeyboardButton(f"{EMOJI_REFERRAL} Invite Friends", callback_data="invite")],
+                    [InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data="leaderboard")],
+                    [InlineKeyboardButton(f"{EMOJI['referral']} Invite Friends", callback_data="invite")],
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
                 
-                msg = await message.reply_photo(
+                await send_response(
+                    client,
+                    message.chat.id,
+                    text,
+                    reply_markup=buttons,
                     photo=img,
-                    caption=text,
-                    reply_markup=buttons
+                    delete_after=90
                 )
-                asyncio.create_task(auto_delete_message(msg, delay=90))
                 
             except Exception as e:
                 logger.error(f"Stats error: {str(e)}")
-                error_msg = await message.reply(
-                    f"{EMOJI_ERROR} Couldn't load your stats. Please try again later."
+                await send_response(
+                    client,
+                    message.chat.id,
+                    f"{EMOJI['error']} Couldn't load your stats. Please try again later.",
+                    delete_after=15
                 )
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
 
         elif command == "autorename":
             try:
-                points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
+                config = await hyoshcoder.get_config("points_config") or {}
+                points_per_rename = config.get('per_rename', 2)
                 current_points = await hyoshcoder.get_points(user_id)
                 
-                command_parts = message.text.split("/autorename", 1)
-                if len(command_parts) < 2 or not command_parts[1].strip():
+                if len(args) < 1:
                     caption = (
-                        f"{EMOJI_ERROR} <b>Please provide a rename template</b>\n\n"
+                        f"{EMOJI['error']} <b>Please provide a rename template</b>\n\n"
                         "Example:\n"
                         "<code>/autorename MyFile_[episode]_[quality]</code>\n\n"
                         "Available placeholders:\n"
                         "[filename], [size], [duration], [date], [time]"
                     )
-                    msg = await message.reply(caption)
-                    asyncio.create_task(auto_delete_message(msg, delay=30))
+                    await send_response(client, message.chat.id, caption, delete_after=30)
                     return
 
-                format_template = command_parts[1].strip()
+                format_template = ' '.join(args)
                 if len(format_template) > 200:
                     raise ValueError("Template too long (max 200 chars)")
 
                 await hyoshcoder.set_format_template(user_id, format_template)
                 
                 caption = (
-                    f"{EMOJI_SUCCESS} <b>Auto-rename template set!</b>\n\n"
+                    f"{EMOJI['success']} <b>Auto-rename template set!</b>\n\n"
                     f"📝 <b>Your template:</b> <code>{format_template}</code>\n\n"
                     "Now send me files to rename automatically!"
                 )
                 
-                msg = await send_effect_message(
-                    client,
-                    message.chat.id,
-                    caption,
-                    message_effect_id =2  # Slow zoom effect
-                )
-                asyncio.create_task(auto_delete_message(msg, delay=30))
+                await send_response(client, message.chat.id, caption, delete_after=30)
                 
             except ValueError as e:
-                error_msg = await message.reply(f"{EMOJI_ERROR} {str(e)}")
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+                await send_response(client, message.chat.id, f"{EMOJI['error']} {str(e)}", delete_after=15)
             except Exception as e:
                 logger.error(f"Autorename error: {str(e)}")
-                error_msg = await message.reply(
-                    f"{EMOJI_ERROR} Failed to set rename template. Please try again."
+                await send_response(
+                    client,
+                    message.chat.id,
+                    f"{EMOJI['error']} Failed to set rename template. Please try again.",
+                    delete_after=15
                 )
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
 
         elif command == "setmedia":
-            try:
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📁 Document", callback_data="setmedia_document")],
-                    [InlineKeyboardButton("🎥 Video", callback_data="setmedia_video")]
-                ])
-                caption = "**Please select the type of media you want to set:**"
-                if img:
-                    await message.reply_photo(photo=img, caption=caption, reply_markup=keyboard)
-                else:
-                    await message.reply_text(text=caption, reply_markup=keyboard)
-            except Exception as e:
-                logger.error(f"Setmedia error: {str(e)}")
-                error_msg = await message.reply(f"{EMOJI_ERROR} Failed to process request")
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"{EMOJI['file']} Document", callback_data="setmedia_document")],
+                [InlineKeyboardButton(f"{EMOJI['video']} Video", callback_data="setmedia_video")]
+            ])
+            caption = "**Please select the type of media you want to set:**"
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                reply_markup=keyboard,
+                photo=img,
+                delete_after=30
+            )
 
         elif command == "set_caption":
             try:
-                if len(message.command) == 1:
+                if len(args) == 0:
                     caption = (
                         "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
                     )
-                    await message.reply_text(caption)
+                    await send_response(client, message.chat.id, caption, delete_after=30)
                     return
                 
-                new_caption = message.text.split(" ", 1)[1]
+                new_caption = ' '.join(args)
                 if len(new_caption) > 500:
                     raise ValueError("Caption too long (max 500 chars)")
                 
-                await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
+                await hyoshcoder.set_caption(user_id, caption=new_caption)
                 caption = "**Your caption has been saved successfully ✅**"
-                
-                if img:
-                    await message.reply_photo(photo=img, caption=caption)
-                else:
-                    await message.reply_text(text=caption)
+                await send_response(
+                    client,
+                    message.chat.id,
+                    caption,
+                    photo=img,
+                    delete_after=30
+                )
                     
             except ValueError as e:
-                error_msg = await message.reply(f"{EMOJI_ERROR} {str(e)}")
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+                await send_response(client, message.chat.id, f"{EMOJI['error']} {str(e)}", delete_after=15)
             except Exception as e:
                 logger.error(f"Set caption error: {str(e)}")
-                error_msg = await message.reply(f"{EMOJI_ERROR} Failed to save caption")
-                asyncio.create_task(auto_delete_message(error_msg, delay=15))
-
+                await send_response(
+                    client,
+                    message.chat.id,
+                    f"{EMOJI['error']} Failed to save caption",
+                    delete_after=15
+                )
 
         elif command == "del_caption":
-            old_caption = await hyoshcoder.get_caption(message.from_user.id)
+            old_caption = await hyoshcoder.get_caption(user_id)
             if not old_caption:
-                caption = ("**You don't have any caption ❌**")
-                await message.reply_text(caption)
+                caption = "**You don't have any caption ❌**"
+                await send_response(client, message.chat.id, caption, delete_after=15)
                 return
-            await hyoshcoder.set_caption(message.from_user.id, caption=None)
-            caption = ("**Your caption has been successfully deleted 🗑️**")
-            if img:
-                await message.reply_photo(photo=img, caption=caption)
-            else:
-                await message.reply_text(text=caption)
+            
+            await hyoshcoder.set_caption(user_id, caption=None)
+            caption = "**Your caption has been successfully deleted 🗑️**"
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                photo=img,
+                delete_after=30
+            )
 
         elif command in ['see_caption', 'view_caption']:
-            old_caption = await hyoshcoder.get_caption(message.from_user.id)
+            old_caption = await hyoshcoder.get_caption(user_id)
             if old_caption:
-                caption = (f"**Your caption:**\n\n`{old_caption}`")
+                caption = f"**Your caption:**\n\n`{old_caption}`"
             else:
-                caption = ("**You don't have any caption ❌**")
-            if img:
-                await message.reply_photo(photo=img, caption=caption)
-            else:
-                await message.reply_text(text=caption)
+                caption = "**You don't have any caption ❌**"
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                photo=img,
+                delete_after=30
+            )
 
         elif command in ['view_thumb', 'viewthumb']:
-            thumb = await hyoshcoder.get_thumbnail(message.from_user.id)
+            thumb = await hyoshcoder.get_thumbnail(user_id)
             if thumb:
                 await client.send_photo(chat_id=message.chat.id, photo=thumb)
             else:
-                caption = ("**You don't have any thumbnail ❌**")
-                if img:
-                    await message.reply_photo(photo=img, caption=caption)
-                else:
-                    await message.reply_text(text=caption)
+                caption = "**You don't have any thumbnail ❌**"
+                await send_response(
+                    client,
+                    message.chat.id,
+                    caption,
+                    photo=img,
+                    delete_after=30
+                )
 
         elif command in ['del_thumb', 'delthumb']:
             old_thumb = await hyoshcoder.get_thumbnail(user_id)
             if not old_thumb:
                 caption = "No thumbnail is currently set."
-                await message.reply_photo(photo=img, caption=caption)
+                await send_response(
+                    client,
+                    message.chat.id,
+                    caption,
+                    photo=img,
+                    delete_after=30
+                )
                 return
 
-            await hyoshcoder.set_thumbnail(message.from_user.id, file_id=None)
-            caption = ("**Thumbnail successfully deleted 🗑️**")
-            if img:
-                await message.reply_photo(photo=img, caption=caption)
-            else:
-                await message.reply_text(text=caption)
+            await hyoshcoder.set_thumbnail(user_id, file_id=None)
+            caption = "**Thumbnail successfully deleted 🗑️**"
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                photo=img,
+                delete_after=30
+            )
 
         elif command == "metadata":
-            ms = await message.reply_text("**Please wait...**", reply_to_message_id=message.id)
-            bool_metadata = await hyoshcoder.get_metadata(message.from_user.id)
-            user_metadata = await hyoshcoder.get_metadata_code(message.from_user.id)
-            await ms.delete()
-            if bool_metadata:
-                await message.reply_text(
-                    f"<b>Your current metadata:</b>\n\n➜ {user_metadata} ",
-                    reply_markup=InlineKeyboardMarkup(ON),
-                )
-            else:
-                await message.reply_text(
-                    f"<b>Your current metadata:</b>\n\n➜ {user_metadata} ",
-                    reply_markup=InlineKeyboardMarkup(OFF),
-                )
+            bool_metadata = await hyoshcoder.get_metadata(user_id)
+            user_metadata = await hyoshcoder.get_metadata_code(user_id) or "Not set"
+            
+            buttons = [
+                [
+                    InlineKeyboardButton(
+                        f"🟢 ON" if bool_metadata else "🔴 OFF",
+                        callback_data=f"metadata_{int(not bool_metadata)}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "✏️ Edit Metadata Code",
+                        callback_data="custom_metadata"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back to Settings",
+                        callback_data="settings_back"
+                    )
+                ]
+            ]
+            
+            text = (
+                f"📝 <b>Metadata Settings</b>\n\n"
+                f"<b>Status:</b> {'🟢 Enabled' if bool_metadata else '🔴 Disabled'}\n"
+                f"<b>Current Code:</b>\n<code>{user_metadata}</code>\n\n"
+                f"<i>Metadata will be embedded in processed files</i>"
+            )
+            
+            await send_response(
+                client,
+                message.chat.id,
+                text,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                delete_after=60
+            )
 
         elif command == "donate":
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton(text="Back", callback_data="help"),
                  InlineKeyboardButton(text="Owner", url='https://t.me/hyoshassistantBot')]
             ])
-            caption = Txt.DONATE_TXT
-
-            if img:
-                yt = await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-            else:
-                yt = await message.reply_text(text=caption, reply_markup=buttons)
-
-            asyncio.create_task(auto_delete_message(yt, delay=300))
-            asyncio.create_task(auto_delete_message(message, delay=300))
+            await send_response(
+                client,
+                message.chat.id,
+                Txt.DONATE_TXT,
+                reply_markup=buttons,
+                photo=img,
+                delete_after=300
+            )
 
         elif command == "premium":
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Owner", url="https://t.me/hyoshassistantBot"),
                  InlineKeyboardButton("Close", callback_data="close")]
             ])
-            caption = Txt.PREMIUM_TXT
-            if img:
-                yt = await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-            else:
-                yt = await message.reply_text(text=caption, reply_markup=buttons)
-
-            asyncio.create_task(auto_delete_message(yt, delay=300))
-            asyncio.create_task(auto_delete_message(message, delay=300))
+            await send_response(
+                client,
+                message.chat.id,
+                Txt.PREMIUM_TXT,
+                reply_markup=buttons,
+                photo=img,
+                delete_after=300
+            )
 
         elif command == "plan":
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Pay Your Subscription", url="https://t.me/hyoshassistantBot"),
                  InlineKeyboardButton("Close", callback_data="close")]
             ])
-            caption = Txt.PREPLANS_TXT
-            if img:
-                yt = await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-            else:
-                yt = await message.reply_text(text=caption, reply_markup=buttons)
-
-            asyncio.create_task(auto_delete_message(yt, delay=300))
-            asyncio.create_task(auto_delete_message(message, delay=300))
+            await send_response(
+                client,
+                message.chat.id,
+                Txt.PREPLANS_TXT,
+                reply_markup=buttons,
+                photo=img,
+                delete_after=300
+            )
 
         elif command == "bought":
-            msg = await message.reply("Hold on, I'm verifying...")
+            msg = await send_response(client, message.chat.id, "Hold on, I'm verifying...")
             replied = message.reply_to_message
 
             if not replied:
@@ -576,9 +568,6 @@ async def command(client, message: Message):
                 await msg.edit_text("<b>Your screenshot has been sent to the admins.</b>")
         
         elif command == "help":
-            bot = await client.get_me()
-            mention = bot.mention
-            caption = Txt.HELP_TXT.format(mention=mention) 
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             src_info = await hyoshcoder.get_src_info(user_id)
         
@@ -587,140 +576,234 @@ async def command(client, message: Message):
         
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Automatic renaming format •", callback_data='file_names')],
-                [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), InlineKeyboardButton('Caption •', callback_data='caption')],
-                [InlineKeyboardButton('• Metadata', callback_data='meta'), InlineKeyboardButton('Make a donation •', callback_data='donate')],
-                [InlineKeyboardButton(f'• {btn_seq_text}', callback_data='secanciel'), InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toogle_src')],
+                [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), 
+                 InlineKeyboardButton('Caption •', callback_data='caption')],
+                [InlineKeyboardButton('• Metadata', callback_data='meta'), 
+                 InlineKeyboardButton('Set Media •', callback_data='setmedia')],
+                [InlineKeyboardButton('• Set Dump', callback_data='setdump'), 
+                 InlineKeyboardButton('View Dump •', callback_data='viewdump')],
+                [InlineKeyboardButton(f'• {btn_seq_text}', callback_data='sequential'), 
+                 InlineKeyboardButton('Premium •', callback_data='premiumx')],
+                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ])
-            caption = Txt.HELP_TXT.format(client.mention)
-            if img:
-                await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-            else:
-                await message.reply_text(text=caption, disable_web_page_preview=True, reply_markup=buttons)
+            
+            await send_response(
+                client,
+                message.chat.id,
+                Txt.HELP_TXT.format(client.mention),
+                reply_markup=buttons,
+                photo=img,
+                delete_after=None  # Don't auto-delete help message
+            )
         
         elif command == "set_dump":
-            if len(message.command) == 1:
+            if len(args) == 0:
                 caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
-                await message.reply_text(caption)
+                await send_response(client, message.chat.id, caption, delete_after=30)
             else:
-                channel_id = message.command[1]
-                if not channel_id:
-                    await message.reply_text("Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
-                else:
-                    try:
-                        channel_info = await client.get_chat(channel_id)
-                        if channel_info:
-                            await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
-                            await message.reply_text(f"Channel {channel_id} has been set as the dump channel.")
-                        else:
-                            await message.reply_text("The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel.")
-                    except Exception as e:
-                        await message.reply_text(f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`")
+                channel_id = args[0]
+                try:
+                    channel_info = await client.get_chat(channel_id)
+                    if channel_info:
+                        await hyoshcoder.set_user_channel(user_id, channel_id)
+                        caption = f"**Channel {channel_id} has been set as the dump channel.**"
+                        await send_response(
+                            client,
+                            message.chat.id,
+                            caption,
+                            delete_after=30
+                        )
+                    else:
+                        caption = "The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel."
+                        await send_response(
+                            client,
+                            message.chat.id,
+                            caption,
+                            delete_after=30
+                        )
+                except Exception as e:
+                    caption = f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`"
+                    await send_response(
+                        client,
+                        message.chat.id,
+                        caption,
+                        delete_after=30
+                    )
         
         elif command in ["view_dump", "viewdump"]:
-            channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
+            channel_id = await hyoshcoder.get_user_channel(user_id)
             if channel_id:
-                caption = f"Channel {channel_id} is currently set as the dump channel."
-                await message.reply_text(caption)
+                caption = f"**Channel {channel_id} is currently set as the dump channel.**"
             else:
-                await message.reply_text("No dump channel is currently set.")
+                caption = "**No dump channel is currently set.**"
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                delete_after=30
+            )
         
         elif command in ["del_dump", "deldump"]:
-            channel_id = await hyoshcoder.get_user_channel(message.from_user.id)
+            channel_id = await hyoshcoder.get_user_channel(user_id)
             if channel_id:
-                await hyoshcoder.set_user_channel(message.from_user.id, None)
-                caption = f"Channel {channel_id} has been removed from the dump list."
-                await message.reply_text(caption)
+                await hyoshcoder.set_user_channel(user_id, None)
+                caption = f"**Channel {channel_id} has been removed from the dump list.**"
             else:
-                await message.reply_text("No dump channel is currently set.")
+                caption = "**No dump channel is currently set.**"
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                delete_after=30
+            )
         
         elif command == "profile":
-            user = await hyoshcoder.read_user(message.from_user.id)
+            user = await hyoshcoder.read_user(user_id)
             caption = (
-                f"Username: {message.from_user.username}\n"
-                f"First Name: {message.from_user.first_name}\n"
-                f"Last Name: {message.from_user.last_name}\n"
-                f"User ID: {message.from_user.id}\n"
-                f"Points: {user['points']['balance']}\n"
+                f"**User Profile**\n\n"
+                f"👤 Username: @{message.from_user.username}\n"
+                f"🆔 ID: <code>{user_id}</code>\n"
+                f"📝 First Name: {message.from_user.first_name}\n"
+                f"✨ Points: {user['points']['balance']}\n"
+                f"⭐ Premium: {'Yes' if user.get('premium', {}).get('is_premium', False) else 'No'}\n"
+                f"📅 Member Since: {datetime.fromtimestamp(user['join_date']).strftime('%Y-%m-%d')}"
             )
-            await message.reply_photo(img, caption=caption)
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                photo=img,
+                delete_after=60
+            )
+
+        elif command == "freepoints":
+            config = await hyoshcoder.get_config("points_config") or {}
+            ad_config = config.get('ad_watch', {})
+            
+            min_points = ad_config.get('min_points', 5)
+            max_points = ad_config.get('max_points', 20)
+            
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Share Bot", callback_data="invite")],
+                [InlineKeyboardButton("💰 Watch Ad", callback_data="watch_ad")],
+                [InlineKeyboardButton("🔙 Back", callback_data="help")]
+            ])
+            
+            caption = (
+                "**✨ Free Points System**\n\n"
+                "Earn points by helping grow our community:\n\n"
+                f"🔹 **Share Bot**: Get {config.get('referral_bonus', 10)} points per referral\n"
+                f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n\n"
+                f"💎 Premium members earn {config.get('premium_multiplier', 2)}x more points!"
+            )
+            
+            await send_response(
+                client,
+                message.chat.id,
+                caption,
+                reply_markup=buttons,
+                photo=img,
+                delete_after=60
+            )
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
     except Exception as e:
         logger.error(f"Error in command {command}: {str(e)}")
-        error_msg = await message.reply(f"{EMOJI_ERROR} An error occurred. Please try again later.")
-        asyncio.create_task(auto_delete_message(error_msg, delay=15))
+        await send_response(
+            client,
+            message.chat.id,
+            f"{EMOJI['error']} An error occurred. Please try again later.",
+            delete_after=15
+        )
 
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client, message):
-    """Handle thumbnail setting without points cost"""
+    """Handle thumbnail setting"""
     try:
-        mkn = await message.reply_text("Please wait...")
+        mkn = await send_response(client, message.chat.id, "Please wait...")
         await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
         await mkn.edit("**Thumbnail saved successfully ✅️**")
         asyncio.create_task(auto_delete_message(mkn, delay=30))
     except Exception as e:
         logger.error(f"Error setting thumbnail: {str(e)}")
-        error_msg = await message.reply(f"{EMOJI_ERROR} Failed to save thumbnail")
-        asyncio.create_task(auto_delete_message(error_msg, delay=15))
+        await send_response(
+            client,
+            message.chat.id,
+            f"{EMOJI['error']} Failed to save thumbnail",
+            delete_after=15
+        )
 
-@Client.on_message(filters.private & filters.document | filters.video)
+@Client.on_message(filters.private & (filters.document | filters.video))
 async def handle_file_rename(client, message: Message):
     """Handle file renaming with points deduction"""
     try:
         user_id = message.from_user.id
-        points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
+        config = await hyoshcoder.get_config("points_config") or {}
+        points_per_rename = config.get('per_rename', 2)
         current_points = await hyoshcoder.get_points(user_id)
         
+        # Check premium status for unlimited renames
+        premium_status = await hyoshcoder.check_premium_status(user_id)
+        if premium_status['is_premium'] and config.get('premium_unlimited_renames', True):
+            points_per_rename = 0
+        
         if current_points < points_per_rename:
-            msg = await message.reply(
-                f"{EMOJI_ERROR} Insufficient points!\n"
-                f"Each rename costs {points_per_rename} {EMOJI_POINTS}\n"
-                f"Your balance: {current_points} {EMOJI_POINTS}\n\n"
-                "Get more points with /help"
+            msg = await send_response(
+                client,
+                message.chat.id,
+                f"{EMOJI['error']} Insufficient points!\n"
+                f"Each rename costs {points_per_rename} {EMOJI['points']}\n"
+                f"Your balance: {current_points} {EMOJI['points']}\n\n"
+                "Get more points with /freepoints",
+                delete_after=30
             )
-            asyncio.create_task(auto_delete_message(msg, delay=30))
             return
         
-        # Deduct points first
-        await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
+        # Deduct points (if not premium with unlimited renames)
+        if points_per_rename > 0:
+            await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
         
         # Get user's rename template
         template = await hyoshcoder.get_format_template(user_id)
         if not template:
             # Refund points if no template set
-            await hyoshcoder.add_points(user_id, points_per_rename, "refund", "No rename template set")
-            msg = await message.reply(
-                f"{EMOJI_ERROR} No rename template set!\n"
+            if points_per_rename > 0:
+                await hyoshcoder.add_points(user_id, points_per_rename, "refund", "No rename template set")
+            msg = await send_response(
+                client,
+                message.chat.id,
+                f"{EMOJI['error']} No rename template set!\n"
                 "Use /autorename to set your template first\n\n"
-                f"{EMOJI_POINTS} Refunded {points_per_rename} points"
+                f"{points_per_rename} points refunded" if points_per_rename > 0 else "",
+                delete_after=30
             )
-            asyncio.create_task(auto_delete_message(msg, delay=30))
             return
         
         # [Actual file renaming logic would go here]
-        # Track the rename operation
         original_name = message.document.file_name if message.document else message.video.file_name
         new_name = "generated_new_name.ext"  # Replace with actual generated name
         
         await hyoshcoder.track_file_rename(user_id, original_name, new_name)
         
-        # Send success message with effect
-        success_msg = await send_effect_message(
+        # Send success message
+        success_msg = await send_response(
             client,
             message.chat.id,
-            f"{EMOJI_SUCCESS} <b>File renamed successfully!</b>\n\n"
+            f"{EMOJI['success']} <b>File renamed successfully!</b>\n\n"
             f"📝 <b>Original:</b> {original_name}\n"
             f"🆕 <b>New name:</b> {new_name}\n\n"
-            f"⏳ <b>Points deducted:</b> {points_per_rename} {EMOJI_POINTS}\n"
-            f"💰 <b>Remaining balance:</b> {current_points - points_per_rename} {EMOJI_POINTS}",
-            message_effect_id =4  # Spin effect
+            f"{f'⏳ <b>Points deducted:</b> {points_per_rename} {EMOJI['points']}\n' if points_per_rename > 0 else ''}"
+            f"💰 <b>Remaining balance:</b> {current_points - points_per_rename} {EMOJI['points']}",
+            delete_after=30
         )
-        asyncio.create_task(auto_delete_message(success_msg, delay=30))
         
     except Exception as e:
         logger.error(f"Error handling file rename: {str(e)}")
-        error_msg = await message.reply(f"{EMOJI_ERROR} Error processing file")
-        asyncio.create_task(auto_delete_message(error_msg, delay=15))
+        await send_response(
+            client,
+            message.chat.id,
+            f"{EMOJI['error']} Error processing file",
+            delete_after=15
+        )
