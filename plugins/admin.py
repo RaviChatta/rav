@@ -6,24 +6,23 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
+import re
+import html
 
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, InputMediaPhoto
+from pyrogram import Client, filters, enums
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, ChatWriteForbidden
 
 from database.data import hyoshcoder
 from config import settings
 from helpers.utils import get_random_photo
-from pyrogram import enums
-from typing import Optional
-from pyrogram.types import Message
 
 # Logging setup
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 ADMIN_USER_ID = settings.ADMIN
-is_restarting = False
+BOT_START_TIME = datetime.now()
 
 class AdminCommands:
     """Comprehensive admin command handlers with points and premium management"""
@@ -32,62 +31,52 @@ class AdminCommands:
     # Core Utility Methods
     # ========================
 
-@staticmethod
-async def _send_response(
-    message: Message,
-    text: str,
-    photo: str = None,
-    delete_after: int = None,
-    reply_markup=None,
-    parse_mode: Optional[enums.ParseMode] = enums.ParseMode.HTML
-):
-    """Smart response sender with auto-delete and media support"""
-    try:
-        if photo:
-            msg = await message.reply_photo(
-                photo=photo,
-                caption=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        else:
-            msg = await message.reply_text(
-                text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-            
-        if delete_after:
-            await asyncio.sleep(delete_after)
-            await msg.delete()
-            
-        return msg
-        
-    except ValueError as e:
-        # Fallback if HTML parse mode fails
-        if "Invalid parse mode" in str(e):
-            clean_text = re.sub('<[^<]+?>', '', text)  # Strip HTML tags
-            return await message.reply_text(
-                clean_text,
-                reply_markup=reply_markup,
-                parse_mode=None
-            )
-        raise
-        
-    except Exception as e:
-        logger.error(f"Response error: {str(e)}")
-        # Final fallback to basic text
-        await message.reply_text(
-            "An error occurred while processing this message.",
-            parse_mode=None
-        )
+    @staticmethod
+    async def _send_response(
+        message: Message,
+        text: str,
+        photo: str = None,
+        delete_after: int = None,
+        reply_markup=None,
+        parse_mode: Optional[enums.ParseMode] = enums.ParseMode.HTML
+    ):
+        """Smart response sender with auto-delete and media support"""
+        try:
+            if photo:
+                msg = await message.reply_photo(
+                    photo=photo,
+                    caption=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+            else:
+                msg = await message.reply_text(
+                    text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
             
             if delete_after:
                 asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_after))
             return msg
+        except ValueError as e:
+            if "Invalid parse mode" in str(e):
+                clean_text = re.sub('<[^<]+?>', '', text)
+                return await message.reply_text(
+                    clean_text,
+                    reply_markup=reply_markup,
+                    parse_mode=None
+                )
+            raise
         except Exception as e:
             logger.error(f"Response error: {e}", exc_info=True)
-            return None
+            try:
+                return await message.reply_text(
+                    "An error occurred while processing this message.",
+                    parse_mode=None
+                )
+            except:
+                return None
 
     @staticmethod
     async def _auto_delete_message(message: Message, delay: int):
@@ -98,9 +87,19 @@ async def _send_response(
         except Exception as e:
             logger.warning(f"Delete failed: {e}")
 
+    @staticmethod
+    def _format_uptime():
+        """Format bot uptime as human readable string"""
+        uptime = datetime.now() - BOT_START_TIME
+        days = uptime.days
+        hours, remainder = divmod(uptime.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{days}d {hours}h {minutes}m {seconds}s"
+
     # ========================
     # User Management
     # ========================
+
     @staticmethod
     async def ban_user(client: Client, message: Message):
         """Ban user with duration and reason"""
@@ -108,8 +107,8 @@ async def _send_response(
             if len(message.command) < 4:
                 return await AdminCommands._send_response(
                     message,
-                    "**Usage:** `/ban user_id duration_days reason`\n"
-                    "**Example:** `/ban 1234567 30 Spamming`"
+                    "<b>Usage:</b> <code>/ban user_id duration_days reason</code>\n"
+                    "<b>Example:</b> <code>/ban 1234567 30 Spamming</code>"
                 )
 
             user_id = int(message.command[1])
@@ -123,10 +122,11 @@ async def _send_response(
             try:
                 await client.send_message(
                     user_id,
-                    f"🚫 **You've been banned**\n\n"
+                    f"🚫 <b>You've been banned</b>\n\n"
                     f"⏳ Duration: {duration} days\n"
                     f"📝 Reason: {reason}\n\n"
-                    "Contact admin for appeal."
+                    "Contact admin for appeal.",
+                    parse_mode=enums.ParseMode.HTML
                 )
                 notify = "✅ User notified"
             except Exception as e:
@@ -134,8 +134,8 @@ async def _send_response(
 
             await AdminCommands._send_response(
                 message,
-                f"🔨 **User Banned**\n\n"
-                f"🆔 ID: `{user_id}`\n"
+                f"🔨 <b>User Banned</b>\n\n"
+                f"🆔 ID: <code>{user_id}</code>\n"
                 f"⏳ Duration: {duration} days\n"
                 f"📝 Reason: {reason}\n"
                 f"{notify}"
@@ -151,8 +151,8 @@ async def _send_response(
             if len(message.command) != 2:
                 return await AdminCommands._send_response(
                     message,
-                    "**Usage:** `/unban user_id`\n"
-                    "**Example:** `/unban 1234567`"
+                    "<b>Usage:</b> <code>/unban user_id</code>\n"
+                    "<b>Example:</b> <code>/unban 1234567</code>"
                 )
 
             user_id = int(message.command[1])
@@ -161,15 +161,19 @@ async def _send_response(
 
             # Notify user
             try:
-                await client.send_message(user_id, "🎉 Your ban has been lifted!")
+                await client.send_message(
+                    user_id, 
+                    "🎉 Your ban has been lifted!",
+                    parse_mode=enums.ParseMode.HTML
+                )
                 notify = "✅ User notified"
             except Exception as e:
                 notify = f"⚠️ Notify failed: {e}"
 
             await AdminCommands._send_response(
                 message,
-                f"🔓 **User Unbanned**\n\n"
-                f"🆔 ID: `{user_id}`\n"
+                f"🔓 <b>User Unbanned</b>\n\n"
+                f"🆔 ID: <code>{user_id}</code>\n"
                 f"{notify}"
             )
         except Exception as e:
@@ -179,6 +183,7 @@ async def _send_response(
     # ========================
     # Points Management
     # ========================
+
     @staticmethod
     async def add_points(client: Client, message: Message):
         """Add points to user balance"""
@@ -186,8 +191,8 @@ async def _send_response(
             if len(message.command) < 3:
                 return await AdminCommands._send_response(
                     message,
-                    "**Usage:** `/addpoints user_id amount [reason]`\n"
-                    "**Example:** `/addpoints 1234567 100 Birthday gift`"
+                    "<b>Usage:</b> <code>/addpoints user_id amount [reason]</code>\n"
+                    "<b>Example:</b> <code>/addpoints 1234567 100 Birthday gift</code>"
                 )
 
             user_id = int(message.command[1])
@@ -200,8 +205,8 @@ async def _send_response(
             new_balance = await hyoshcoder.get_points(user_id)
             await AdminCommands._send_response(
                 message,
-                f"🪙 **Points Added**\n\n"
-                f"👤 User: `{user_id}`\n"
+                f"🪙 <b>Points Added</b>\n\n"
+                f"👤 User: <code>{user_id}</code>\n"
                 f"➕ Amount: {amount}\n"
                 f"💳 New Balance: {new_balance}\n"
                 f"📝 Reason: {reason}"
@@ -217,8 +222,8 @@ async def _send_response(
             if len(message.command) < 3:
                 return await AdminCommands._send_response(
                     message,
-                    "**Usage:** `/genpoints amount max_claims [hours=24] [note]`\n"
-                    "**Example:** `/genpoints 50 10 48 Welcome bonus`"
+                    "<b>Usage:</b> <code>/genpoints amount max_claims [hours=24] [note]</code>\n"
+                    "<b>Example:</b> <code>/genpoints 50 10 48 Welcome bonus</code>"
                 )
 
             points = int(message.command[1])
@@ -239,13 +244,13 @@ async def _send_response(
 
             await AdminCommands._send_response(
                 message,
-                f"🔗 **Points Link Created**\n\n"
+                f"🔗 <b>Points Link Created</b>\n\n"
                 f"🪙 Points: {points}\n"
                 f"👥 Max Claims: {max_claims}\n"
                 f"⏳ Expires: {hours} hours\n"
                 f"📝 Note: {note or 'None'}\n\n"
                 f"🔗 Link: {link}\n"
-                f"📌 Code: `{code}`"
+                f"📌 Code: <code>{code}</code>"
             )
         except Exception as e:
             await AdminCommands._send_response(message, f"❌ Link error: {str(e)}")
@@ -254,6 +259,7 @@ async def _send_response(
     # ========================
     # Premium Management
     # ========================
+
     @staticmethod
     async def make_premium(client: Client, message: Message):
         """Grant premium status"""
@@ -261,8 +267,8 @@ async def _send_response(
             if len(message.command) < 4:
                 return await AdminCommands._send_response(
                     message,
-                    "**Usage:** `/premium user_id days plan_name`\n"
-                    "**Example:** `/premium 1234567 30 Gold`"
+                    "<b>Usage:</b> <code>/premium user_id days plan_name</code>\n"
+                    "<b>Example:</b> <code>/premium 1234567 30 Gold</code>"
                 )
 
             user_id = int(message.command[1])
@@ -276,9 +282,10 @@ async def _send_response(
             try:
                 await client.send_message(
                     user_id,
-                    f"⭐ **You've been upgraded to {plan} Premium!**\n\n"
+                    f"⭐ <b>You've been upgraded to {plan} Premium!</b>\n\n"
                     f"⏳ Duration: {days} days\n"
-                    "Enjoy your exclusive benefits!"
+                    "Enjoy your exclusive benefits!",
+                    parse_mode=enums.ParseMode.HTML
                 )
                 notify = "✅ User notified"
             except Exception as e:
@@ -286,8 +293,8 @@ async def _send_response(
 
             await AdminCommands._send_response(
                 message,
-                f"🌟 **Premium Activated**\n\n"
-                f"👤 User: `{user_id}`\n"
+                f"🌟 <b>Premium Activated</b>\n\n"
+                f"👤 User: <code>{user_id}</code>\n"
                 f"📝 Plan: {plan}\n"
                 f"⏳ Duration: {days} days\n"
                 f"{notify}"
@@ -299,6 +306,7 @@ async def _send_response(
     # ========================
     # Statistics & Reports
     # ========================
+
     @staticmethod
     async def bot_stats(client: Client, message: Message):
         """Show comprehensive bot statistics"""
@@ -316,7 +324,8 @@ async def _send_response(
 
             img = await get_random_photo()
             response = (
-                "📊 **Bot Statistics**\n\n"
+                "📊 <b>Bot Statistics</b>\n\n"
+                f"⏱️ Uptime: {AdminCommands._format_uptime()}\n"
                 f"👥 Users: {stats[0]}\n"
                 f"🚫 Banned: {stats[1]}\n"
                 f"⭐ Premium: {stats[2]}\n"
@@ -349,7 +358,7 @@ async def _send_response(
             report = await hyoshcoder.generate_points_report(days)
 
             response = (
-                f"📈 **Points Report ({days} days)**\n\n"
+                f"📈 <b>Points Report ({days} days)</b>\n\n"
                 f"🪙 Total Distributed: {report['total_points_distributed']}\n\n"
                 "📊 Distribution Breakdown:\n"
             )
@@ -369,6 +378,7 @@ async def _send_response(
     # ========================
     # Admin Panel
     # ========================
+
     @staticmethod
     async def admin_panel(client: Client, message: Message):
         """Interactive admin control panel"""
@@ -387,7 +397,7 @@ async def _send_response(
 
             await AdminCommands._send_response(
                 message,
-                "🛠 **Admin Control Panel**\n\n"
+                "🛠 <b>Admin Control Panel</b>\n\n"
                 "Select an option below:",
                 reply_markup=keyboard
             )
@@ -398,6 +408,7 @@ async def _send_response(
 # ========================
 # Command Handlers
 # ========================
+
 @Client.on_message(filters.private & filters.command(
     ["admin", "ban", "unban", "addpoints", "premium", "genpoints", "stats", "report"]
 ) & filters.user(ADMIN_USER_ID))
@@ -430,6 +441,7 @@ async def admin_commands_handler(client: Client, message: Message):
 # ========================
 # Callback Handlers
 # ========================
+
 @Client.on_callback_query(filters.regex(r"^admin_") & filters.user(ADMIN_USER_ID))
 async def admin_callbacks(client: Client, callback: CallbackQuery):
     """Handle admin panel callbacks"""
@@ -440,33 +452,36 @@ async def admin_callbacks(client: Client, callback: CallbackQuery):
             await AdminCommands.bot_stats(client, callback.message)
         elif action == "points":
             await callback.message.edit_text(
-                "🪙 **Points Management**\n\n"
+                "🪙 <b>Points Management</b>\n\n"
                 "Available commands:\n"
                 "• /addpoints - Grant points\n"
                 "• /genpoints - Create link\n"
                 "• /report - Points report",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="back_admin")]
-                ])
+                ]),
+                parse_mode=enums.ParseMode.HTML
             )
         elif action == "users":
             await callback.message.edit_text(
-                "👤 **User Management**\n\n"
+                "👤 <b>User Management</b>\n\n"
                 "Available commands:\n"
                 "• /ban - Ban user\n"
                 "• /unban - Unban user",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="back_admin")]
-                ])
+                ]),
+                parse_mode=enums.ParseMode.HTML
             )
         elif action == "premium":
             await callback.message.edit_text(
-                "⭐ **Premium Management**\n\n"
+                "⭐ <b>Premium Management</b>\n\n"
                 "Available commands:\n"
                 "• /premium - Grant premium",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="back_admin")]
-                ])
+                ]),
+                parse_mode=enums.ParseMode.HTML
             )
             
         await callback.answer()
