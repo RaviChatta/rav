@@ -1007,7 +1007,6 @@ class Database:
                 "distribution": [],
                 "top_earners": []
             }
-
 	async def get_all_users(self, filter_banned: bool = False) -> List[Dict]:
 	    """Get all users with optional banned filter."""
 	    try:
