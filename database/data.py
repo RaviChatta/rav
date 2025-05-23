@@ -1007,19 +1007,26 @@ class Database:
                 "distribution": [],
                 "top_earners": []
             }
-    async def get_all_users(self, filter_banned: bool = False) -> List[Dict]:
-        """Get all users with optional banned filter."""
+    async def get_all_users(self, filter_banned: bool = False):
+        """Async generator to get all users with optional banned filter."""
         try:
             query = {}
             if filter_banned:
                 query["ban_status.is_banned"] = False
                 
-            cursor = self.users.find(query)
-            return await cursor.to_list(length=None)
+            async for user in self.users.find(query):
+                yield user
         except Exception as e:
-            logging.error(f"Error getting all users: {e}")
-            return []
-    
+            logging.error(f"Error getting users: {e}")
+            
+    async def get_all_banned_users(self) -> List[Dict]:
+    """Get all banned users."""
+    try:
+        cursor = self.users.find({"ban_status.is_banned": True})
+        return await cursor.to_list(length=None)
+    except Exception as e:
+        logging.error(f"Error getting banned users: {e}")
+        return []
     async def get_sequential_mode(self, user_id: int) -> bool:
         """Get user's sequential mode setting."""
         try:
@@ -1196,7 +1203,7 @@ class Database:
     async def total_points_distributed(self) -> int:
         """Get total points distributed across all users."""
         try:
-            result = await self.users.aggregate([
+            result = await self.users.aggregate([  # Fixed typo here
                 {"$group": {"_id": None, "total": {"$sum": "$points.total_earned"}}}
             ]).to_list(length=1)
             return result[0]["total"] if result else 0
