@@ -9,6 +9,8 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     InputMediaPhoto
 )
+from typing import Optional, Dict
+from urllib.parse import quote
 from pyrogram.errors import FloodWait
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
