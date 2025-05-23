@@ -493,7 +493,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 ],
                 [
                     InlineKeyboardButton("• Developer", url='https://t.me/Raaaaavi'), 
-                    InlineKeyboardButton("Network •", url='https://t.me/Raaaaavi")
+                    InlineKeyboardButton("Network •", url='https://t.me/Raaaaavi')
                 ],
                 [InlineKeyboardButton("• Back •", callback_data="home")]
             ]
