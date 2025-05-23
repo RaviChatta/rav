@@ -102,7 +102,7 @@ async def send_effect_message(
     client: Client,
     chat_id: Union[int, str],
     text: str,
-    effect_id: Optional[int] = None,
+    message_effect_id : Optional[int] = None,
     max_retries: int = 3,
     **kwargs
 ) -> Optional[Message]:
@@ -113,7 +113,7 @@ async def send_effect_message(
         client: Pyrogram Client instance
         chat_id: Target chat ID or username
         text: Message text to send
-        effect_id: ID of the message effect
+        message_effect_id : ID of the message effect
         max_retries: Maximum number of retry attempts
         **kwargs: Additional send_message parameters
         
@@ -128,11 +128,11 @@ async def send_effect_message(
     
     for attempt in range(max_retries):
         try:
-            if effect_id:
+            if message_effect_id :
                 return await client.send_message(
                     chat_id=chat_id,
                     text=text,
-                    effect_id=effect_id,
+                    message_effect_id =message_effect_id ,
                     **additional_params
                 )
             return await client.send_message(
@@ -160,7 +160,7 @@ async def send_effect_message(
             logger.error(f"Error sending message (attempt {attempt + 1}): {e}")
             if attempt == max_retries - 1:
                 # Final fallback - try without effect
-                if effect_id:
+                if message_effect_id :
                     try:
                         return await client.send_message(
                             chat_id=chat_id,
@@ -203,7 +203,7 @@ async def command(client, message: Message):
                 client,
                 message.chat.id,
                 f"✨ Welcome {user.mention} to our file renaming bot!",
-                effect_id=5  # Sparkles effect
+                message_effect_id =5  # Sparkles effect
             )
             asyncio.create_task(auto_delete_message(welcome_msg, delay=10))
             
@@ -239,7 +239,7 @@ async def command(client, message: Message):
                             client,
                             referrer_id,
                             cap,
-                            effect_id=3  # Bounce effect
+                            message_effect_id =3  # Bounce effect
                         )
 
             # Handle points links
@@ -252,7 +252,7 @@ async def command(client, message: Message):
                         message.chat.id,
                         f"🎉 You claimed {result['points']} {EMOJI_POINTS}!\n"
                         f"Remaining claims: {result['remaining_claims']}",
-                        effect_id=1  # Confetti effect
+                        message_effect_id =1  # Confetti effect
                     )
                     asyncio.create_task(auto_delete_message(claim_msg, delay=10))
                 else:
@@ -385,7 +385,7 @@ async def command(client, message: Message):
                     client,
                     message.chat.id,
                     caption,
-                    effect_id=2  # Slow zoom effect
+                    message_effect_id =2  # Slow zoom effect
                 )
                 asyncio.create_task(auto_delete_message(msg, delay=30))
                 
@@ -716,7 +716,7 @@ async def handle_file_rename(client, message: Message):
             f"🆕 <b>New name:</b> {new_name}\n\n"
             f"⏳ <b>Points deducted:</b> {points_per_rename} {EMOJI_POINTS}\n"
             f"💰 <b>Remaining balance:</b> {current_points - points_per_rename} {EMOJI_POINTS}",
-            effect_id=4  # Spin effect
+            message_effect_id =4  # Spin effect
         )
         asyncio.create_task(auto_delete_message(success_msg, delay=30))
         
