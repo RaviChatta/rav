@@ -177,7 +177,7 @@ async def send_effect_message(
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "view_dump", "viewdump",
-    "del_dump", "deldump", "profile", "leaderboard", "lb", "stats", "mystats"
+    "del_dump", "deldump", "profile", "leaderboard", "lb", "mystats"
 ]))
 async def command(client, message: Message):
     user_id = message.from_user.id
@@ -271,129 +271,178 @@ async def command(client, message: Message):
                 )
 
         elif command in ["leaderboard", "lb"]:
-            # Show leaderboard with interactive buttons
-            keyboard = get_leaderboard_keyboard()
-            leaders = await hyoshcoder.get_leaderboard()
-            
-            text = f"{EMOJI_LEADERBOARD} Weekly Points Leaderboard:\n\n"
-            for i, user in enumerate(leaders[:10], 1):
-                text += (
-                    f"{i}. {user.get('username', user['_id'])} - "
-                    f"{user['value']} {EMOJI_POINTS} "
-                    f"{EMOJI_PREMIUM if user.get('is_premium') else ''}\n"
+            try:
+                keyboard = get_leaderboard_keyboard()
+                leaders = await hyoshcoder.get_leaderboard()
+                
+                if not leaders:
+                    raise ValueError("No leaderboard data available")
+                
+                text = f"{EMOJI_LEADERBOARD} Weekly Points Leaderboard:\n\n"
+                for i, user in enumerate(leaders[:10], 1):
+                    text += (
+                        f"{i}. {user.get('username', user['_id'])} - "
+                        f"{user['value']} {EMOJI_POINTS} "
+                        f"{EMOJI_PREMIUM if user.get('is_premium') else ''}\n"
+                    )
+                
+                if animation:
+                    msg = await message.reply_animation(
+                        animation=animation,
+                        caption=text,
+                        reply_markup=keyboard
+                    )
+                else:
+                    msg = await message.reply_photo(
+                        photo=img,
+                        caption=text,
+                        reply_markup=keyboard
+                    )
+                asyncio.create_task(auto_delete_message(msg, delay=120))
+                
+            except Exception as e:
+                logger.error(f"Leaderboard error: {str(e)}")
+                error_msg = await message.reply(
+                    f"{EMOJI_ERROR} Couldn't load leaderboard. Please try again later."
                 )
-            
-            if animation:
-                msg = await message.reply_animation(
-                    animation=animation,
-                    caption=text,
-                    reply_markup=keyboard
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+
+        elif command in [ "mystats"]:
+            try:
+                stats = await hyoshcoder.get_user_file_stats(user_id)
+                points = await hyoshcoder.get_points(user_id)
+                premium_status = await hyoshcoder.check_premium_status(user_id)
+                referral_stats = await hyoshcoder.users.find_one(
+                    {"_id": user_id},
+                    {"referral.referred_count": 1, "referral.referral_earnings": 1}
                 )
-            else:
+                
+                text = (
+                    f"📊 <b>Your Statistics</b>\n\n"
+                    f"{EMOJI_POINTS} <b>Points Balance:</b> {points}\n"
+                    f"{EMOJI_PREMIUM} <b>Premium Status:</b> {'Active ' + EMOJI_SUCCESS if premium_status['is_premium'] else 'Inactive ' + EMOJI_ERROR}\n"
+                    f"{EMOJI_REFERRAL} <b>Referrals:</b> {referral_stats.get('referral', {}).get('referred_count', 0)} "
+                    f"(Earned {referral_stats.get('referral', {}).get('referral_earnings', 0)} {EMOJI_POINTS})\n\n"
+                    f"{EMOJI_RENAME} <b>Files Renamed</b>\n"
+                    f"• Total: {stats['total_renamed']}\n"
+                    f"• Today: {stats['today']}\n"
+                    f"• This Week: {stats['this_week']}\n"
+                    f"• This Month: {stats['this_month']}\n"
+                )
+                
+                buttons = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"{EMOJI_LEADERBOARD} Leaderboard", callback_data="leaderboard")],
+                    [InlineKeyboardButton(f"{EMOJI_REFERRAL} Invite Friends", callback_data="invite")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                ])
+                
                 msg = await message.reply_photo(
                     photo=img,
                     caption=text,
-                    reply_markup=keyboard
+                    reply_markup=buttons
                 )
-            asyncio.create_task(auto_delete_message(msg, delay=120))
-
-        elif command in ["stats", "mystats"]:
-            # Show user statistics including file rename counts
-            stats = await hyoshcoder.get_user_file_stats(user_id)
-            points = await hyoshcoder.get_points(user_id)
-            premium_status = await hyoshcoder.check_premium_status(user_id)
-            referral_stats = await hyoshcoder.users.find_one(
-                {"_id": user_id},
-                {"referral.referred_count": 1, "referral.referral_earnings": 1}
-            )
-            
-            text = (
-                f"📊 <b>Your Statistics</b>\n\n"
-                f"{EMOJI_POINTS} <b>Points Balance:</b> {points}\n"
-                f"{EMOJI_PREMIUM} <b>Premium Status:</b> {'Active ' + EMOJI_SUCCESS if premium_status['is_premium'] else 'Inactive ' + EMOJI_ERROR}\n"
-                f"{EMOJI_REFERRAL} <b>Referrals:</b> {referral_stats.get('referral', {}).get('referred_count', 0)} "
-                f"(Earned {referral_stats.get('referral', {}).get('referral_earnings', 0)} {EMOJI_POINTS})\n\n"
-                f"{EMOJI_RENAME} <b>Files Renamed</b>\n"
-                f"• Total: {stats['total_renamed']}\n"
-                f"• Today: {stats['today']}\n"
-                f"• This Week: {stats['this_week']}\n"
-                f"• This Month: {stats['this_month']}\n"
-            )
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI_LEADERBOARD} Leaderboard", callback_data="leaderboard")],
-                [InlineKeyboardButton(f"{EMOJI_REFERRAL} Invite Friends", callback_data="invite")],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ])
-            
-            msg = await message.reply_photo(
-                photo=img,
-                caption=text,
-                reply_markup=buttons
-            )
-            asyncio.create_task(auto_delete_message(msg, delay=90))
-
-   
+                asyncio.create_task(auto_delete_message(msg, delay=90))
+                
+            except Exception as e:
+                logger.error(f"Stats error: {str(e)}")
+                error_msg = await message.reply(
+                    f"{EMOJI_ERROR} Couldn't load your stats. Please try again later."
+                )
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
 
         elif command == "autorename":
-            points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
-            current_points = await hyoshcoder.get_points(user_id)
-            
-            command_parts = message.text.split("/autorename", 1)
-            if len(command_parts) < 2 or not command_parts[1].strip():
-                caption = (
-                    f"{EMOJI_ERROR} <b>Please provide a rename template</b>\n\n"
-                    "Example:\n"
-                    "<code>/autorename MyFile_[episode]_[quality]</code>\n\n"
-                    "Available placeholders:\n"
-                    "[filename], [size], [duration], [date], [time]"
-                )
-                msg = await message.reply(caption)
-                asyncio.create_task(auto_delete_message(msg, delay=30))
-                return
+            try:
+                points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
+                current_points = await hyoshcoder.get_points(user_id)
+                
+                command_parts = message.text.split("/autorename", 1)
+                if len(command_parts) < 2 or not command_parts[1].strip():
+                    caption = (
+                        f"{EMOJI_ERROR} <b>Please provide a rename template</b>\n\n"
+                        "Example:\n"
+                        "<code>/autorename MyFile_[episode]_[quality]</code>\n\n"
+                        "Available placeholders:\n"
+                        "[filename], [size], [duration], [date], [time]"
+                    )
+                    msg = await message.reply(caption)
+                    asyncio.create_task(auto_delete_message(msg, delay=30))
+                    return
 
-            format_template = command_parts[1].strip()
-            await hyoshcoder.set_format_template(user_id, format_template)
-            
-            caption = (
-                f"{EMOJI_SUCCESS} <b>Auto-rename template set!</b>\n\n"
-                f"📝 <b>Your template:</b> <code>{format_template}</code>\n\n"
-                "Now send me files to rename automatically!"
-            )
-            
-            msg = await send_effect_message(
-                client,
-                message.chat.id,
-                caption,
-                effect_id=2  # Slow zoom effect
-            )
-            asyncio.create_task(auto_delete_message(msg, delay=30))
+                format_template = command_parts[1].strip()
+                if len(format_template) > 200:
+                    raise ValueError("Template too long (max 200 chars)")
+
+                await hyoshcoder.set_format_template(user_id, format_template)
+                
+                caption = (
+                    f"{EMOJI_SUCCESS} <b>Auto-rename template set!</b>\n\n"
+                    f"📝 <b>Your template:</b> <code>{format_template}</code>\n\n"
+                    "Now send me files to rename automatically!"
+                )
+                
+                msg = await send_effect_message(
+                    client,
+                    message.chat.id,
+                    caption,
+                    effect_id=2  # Slow zoom effect
+                )
+                asyncio.create_task(auto_delete_message(msg, delay=30))
+                
+            except ValueError as e:
+                error_msg = await message.reply(f"{EMOJI_ERROR} {str(e)}")
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+            except Exception as e:
+                logger.error(f"Autorename error: {str(e)}")
+                error_msg = await message.reply(
+                    f"{EMOJI_ERROR} Failed to set rename template. Please try again."
+                )
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
 
         elif command == "setmedia":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📁 Document", callback_data="setmedia_document")],
-                [InlineKeyboardButton("🎥 Video", callback_data="setmedia_video")]
-            ])
-            caption = "**Please select the type of media you want to set:**"
-            if img:
-                await message.reply_photo(photo=img, caption=caption, reply_markup=keyboard)
-            else:
-                await message.reply_text(text=caption, reply_markup=keyboard)
+            try:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📁 Document", callback_data="setmedia_document")],
+                    [InlineKeyboardButton("🎥 Video", callback_data="setmedia_video")]
+                ])
+                caption = "**Please select the type of media you want to set:**"
+                if img:
+                    await message.reply_photo(photo=img, caption=caption, reply_markup=keyboard)
+                else:
+                    await message.reply_text(text=caption, reply_markup=keyboard)
+            except Exception as e:
+                logger.error(f"Setmedia error: {str(e)}")
+                error_msg = await message.reply(f"{EMOJI_ERROR} Failed to process request")
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
 
         elif command == "set_caption":
-            if len(message.command) == 1:
-                caption = (
-                    "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
-                )
-                await message.reply_text(caption)
-                return
-            new_caption = message.text.split(" ", 1)[1]
-            await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
-            caption = ("**Your caption has been saved successfully ✅**")
-            if img:
-                await message.reply_photo(photo=img, caption=caption)
-            else:
-                await message.reply_text(text=caption)
+            try:
+                if len(message.command) == 1:
+                    caption = (
+                        "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
+                    )
+                    await message.reply_text(caption)
+                    return
+                
+                new_caption = message.text.split(" ", 1)[1]
+                if len(new_caption) > 500:
+                    raise ValueError("Caption too long (max 500 chars)")
+                
+                await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
+                caption = "**Your caption has been saved successfully ✅**"
+                
+                if img:
+                    await message.reply_photo(photo=img, caption=caption)
+                else:
+                    await message.reply_text(text=caption)
+                    
+            except ValueError as e:
+                error_msg = await message.reply(f"{EMOJI_ERROR} {str(e)}")
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+            except Exception as e:
+                logger.error(f"Set caption error: {str(e)}")
+                error_msg = await message.reply(f"{EMOJI_ERROR} Failed to save caption")
+                asyncio.create_task(auto_delete_message(error_msg, delay=15))
+
 
         elif command == "del_caption":
             old_caption = await hyoshcoder.get_caption(message.from_user.id)
