@@ -602,7 +602,20 @@ class Database:
         except Exception as e:
             logging.error(f"Error claiming points link {code} by {user_id}: {e}")
             return {"success": False, "reason": "Internal error"}
-
+    async def set_expend_points(self, user_id: int, points: int, code: str) -> bool:
+        """Track points expenditure"""
+        try:
+            await self.transactions.insert_one({
+                "user_id": user_id,
+                "type": "free_points",
+                "amount": points,
+                "code": code,
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+            return True
+        except Exception as e:
+            logging.error(f"Error tracking points expenditure: {e}")
+            return False
     async def update_leaderboards(self):
         """Update all leaderboards (run periodically)."""
         await self._update_daily_leaderboard()
