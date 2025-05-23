@@ -1008,220 +1008,220 @@ class Database:
                 "top_earners": []
             }
 
-   async def get_all_users(self, filter_banned: bool = False) -> List[Dict]:
-    """Get all users with optional banned filter."""
-    try:
-        query = {}
-        if filter_banned:
-            query["ban_status.is_banned"] = False
-            
-        cursor = self.users.find(query)
-        return await cursor.to_list(length=None)
-    except Exception as e:
-        logging.error(f"Error getting all users: {e}")
-        return []
+	async def get_all_users(self, filter_banned: bool = False) -> List[Dict]:
+	    """Get all users with optional banned filter."""
+	    try:
+	        query = {}
+	        if filter_banned:
+	            query["ban_status.is_banned"] = False
+	            
+	        cursor = self.users.find(query)
+	        return await cursor.to_list(length=None)
+	    except Exception as e:
+	        logging.error(f"Error getting all users: {e}")
+	        return []
 
-async def get_sequential_mode(self, user_id: int) -> bool:
-    """Get user's sequential mode setting."""
-    try:
-        user = await self.users.find_one({"_id": user_id})
-        return user.get("settings", {}).get("sequential_mode", False) if user else False
-    except Exception as e:
-        logging.error(f"Error getting sequential mode for {user_id}: {e}")
-        return False
-
-async def toggle_sequential_mode(self, user_id: int) -> bool:
-    """Toggle user's sequential mode setting."""
-    try:
-        current = await self.get_sequential_mode(user_id)
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {"settings.sequential_mode": not current}}
-        )
-        return not current
-    except Exception as e:
-        logging.error(f"Error toggling sequential mode for {user_id}: {e}")
-        return False
-
-async def get_user_channel(self, user_id: int) -> Optional[str]:
-    """Get user's dump channel ID."""
-    try:
-        user = await self.users.find_one({"_id": user_id})
-        return user.get("settings", {}).get("user_channel") if user else None
-    except Exception as e:
-        logging.error(f"Error getting user channel for {user_id}: {e}")
-        return None
-
-async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
-    """Set user's dump channel ID."""
-    try:
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {"settings.user_channel": channel_id}}
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error setting user channel for {user_id}: {e}")
-        return False
-
-async def get_metadata(self, user_id: int) -> bool:
-    """Get user's metadata setting."""
-    try:
-        user = await self.users.find_one({"_id": user_id})
-        return user.get("metadata", True) if user else True
-    except Exception as e:
-        logging.error(f"Error getting metadata for {user_id}: {e}")
-        return True
-
-async def set_metadata(self, user_id: int, bool_meta: bool) -> bool:
-    """Set user's metadata setting."""
-    try:
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {"metadata": bool_meta}}
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error setting metadata for {user_id}: {e}")
-        return False
-
-async def get_leaderboard_period(self, user_id: int) -> str:
-    """Get user's preferred leaderboard period."""
-    try:
-        user = await self.users.find_one({"_id": user_id})
-        return user.get("settings", {}).get("leaderboard_period", "weekly") if user else "weekly"
-    except Exception as e:
-        logging.error(f"Error getting leaderboard period for {user_id}: {e}")
-        return "weekly"
-
-async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
-    """Set user's preferred leaderboard period."""
-    try:
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {"settings.leaderboard_period": period}}
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error setting leaderboard period for {user_id}: {e}")
-        return False
-
-async def get_leaderboard_type(self, user_id: int) -> str:
-    """Get user's preferred leaderboard type."""
-    try:
-        user = await self.users.find_one({"_id": user_id})
-        return user.get("settings", {}).get("leaderboard_type", "points") if user else "points"
-    except Exception as e:
-        logging.error(f"Error getting leaderboard type for {user_id}: {e}")
-        return "points"
-
-async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
-    """Set user's preferred leaderboard type."""
-    try:
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {"settings.leaderboard_type": lb_type}}
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error setting leaderboard type for {user_id}: {e}")
-        return False
-
-async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
-    """Ban a user from using the bot."""
-    try:
-        banned_on = datetime.datetime.now(pytz.timezone("Africa/Lubumbashi")).isoformat()
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {
-                "ban_status.is_banned": True,
-                "ban_status.ban_duration": duration_days,
-                "ban_status.banned_on": banned_on,
-                "ban_status.ban_reason": reason
-            }}
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error banning user {user_id}: {e}")
-        return False
-
-async def remove_ban(self, user_id: int) -> bool:
-    """Remove ban from a user."""
-    try:
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {
-                "ban_status.is_banned": False,
-                "ban_status.ban_duration": 0,
-                "ban_status.unbanned_by": "admin",
-                "ban_status.unban_reason": "Manual unban"
-            }}
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error unbanning user {user_id}: {e}")
-        return False
-
-async def set_referrer(self, user_id: int, referrer_id: int) -> bool:
-    """Set referrer for a user."""
-    try:
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {"referral.referrer_id": referrer_id}}
-        )
-        
-        # Update referrer's stats
-        await self.users.update_one(
-            {"_id": referrer_id},
-            {
-                "$inc": {"referral.referred_count": 1},
-                "$push": {"referral.referred_users": user_id}
-            }
-        )
-        return True
-    except Exception as e:
-        logging.error(f"Error setting referrer for {user_id}: {e}")
-        return False
-
-async def total_renamed_files(self) -> int:
-    """Get total number of files renamed across all users."""
-    try:
-        result = await self.users.aggregate([
-            {"$group": {"_id": None, "total": {"$sum": "$activity.total_files_renamed"}}}
-        ]).to_list(length=1)
-        return result[0]["total"] if result else 0
-    except Exception as e:
-        logging.error(f"Error counting total renamed files: {e}")
-        return 0
-
-async def total_points_distributed(self) -> int:
-    """Get total points distributed across all users."""
-    try:
-        result = await self.users.aggregate([
-            {"$group": {"_id": None, "total": {"$sum": "$points.total_earned"}}}
-        ]).to_list(length=1)
-        return result[0]["total"] if result else 0
-    except Exception as e:
-        logging.error(f"Error counting total points distributed: {e}")
-        return 0
-
-async def get_config(self, key: str, default=None):
-    """Get configuration value with default fallback."""
-    try:
-        config = await self.db.config.find_one({"key": key})
-        return config["value"] if config else default
-    except Exception as e:
-        logging.error(f"Error getting config {key}: {e}")
-        return default
-
-# Initialize database instance
-hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
-
-async def initialize_database():
-    """Initialize database connection"""
-    try:
-        await hyoshcoder.connect()
-        return hyoshcoder
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
-        raise
+	async def get_sequential_mode(self, user_id: int) -> bool:
+	    """Get user's sequential mode setting."""
+	    try:
+	        user = await self.users.find_one({"_id": user_id})
+	        return user.get("settings", {}).get("sequential_mode", False) if user else False
+	    except Exception as e:
+	        logging.error(f"Error getting sequential mode for {user_id}: {e}")
+	        return False
+	
+	async def toggle_sequential_mode(self, user_id: int) -> bool:
+	    """Toggle user's sequential mode setting."""
+	    try:
+	        current = await self.get_sequential_mode(user_id)
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {"settings.sequential_mode": not current}}
+	        )
+	        return not current
+	    except Exception as e:
+	        logging.error(f"Error toggling sequential mode for {user_id}: {e}")
+	        return False
+	
+	async def get_user_channel(self, user_id: int) -> Optional[str]:
+	    """Get user's dump channel ID."""
+	    try:
+	        user = await self.users.find_one({"_id": user_id})
+	        return user.get("settings", {}).get("user_channel") if user else None
+	    except Exception as e:
+	        logging.error(f"Error getting user channel for {user_id}: {e}")
+	        return None
+	
+	async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
+	    """Set user's dump channel ID."""
+	    try:
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {"settings.user_channel": channel_id}}
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error setting user channel for {user_id}: {e}")
+	        return False
+	
+	async def get_metadata(self, user_id: int) -> bool:
+	    """Get user's metadata setting."""
+	    try:
+	        user = await self.users.find_one({"_id": user_id})
+	        return user.get("metadata", True) if user else True
+	    except Exception as e:
+	        logging.error(f"Error getting metadata for {user_id}: {e}")
+	        return True
+	
+	async def set_metadata(self, user_id: int, bool_meta: bool) -> bool:
+	    """Set user's metadata setting."""
+	    try:
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {"metadata": bool_meta}}
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error setting metadata for {user_id}: {e}")
+	        return False
+	
+	async def get_leaderboard_period(self, user_id: int) -> str:
+	    """Get user's preferred leaderboard period."""
+	    try:
+	        user = await self.users.find_one({"_id": user_id})
+	        return user.get("settings", {}).get("leaderboard_period", "weekly") if user else "weekly"
+	    except Exception as e:
+	        logging.error(f"Error getting leaderboard period for {user_id}: {e}")
+	        return "weekly"
+	
+	async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
+	    """Set user's preferred leaderboard period."""
+	    try:
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {"settings.leaderboard_period": period}}
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error setting leaderboard period for {user_id}: {e}")
+	        return False
+	
+	async def get_leaderboard_type(self, user_id: int) -> str:
+	    """Get user's preferred leaderboard type."""
+	    try:
+	        user = await self.users.find_one({"_id": user_id})
+	        return user.get("settings", {}).get("leaderboard_type", "points") if user else "points"
+	    except Exception as e:
+	        logging.error(f"Error getting leaderboard type for {user_id}: {e}")
+	        return "points"
+	
+	async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
+	    """Set user's preferred leaderboard type."""
+	    try:
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {"settings.leaderboard_type": lb_type}}
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error setting leaderboard type for {user_id}: {e}")
+	        return False
+	
+	async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
+	    """Ban a user from using the bot."""
+	    try:
+	        banned_on = datetime.datetime.now(pytz.timezone("Africa/Lubumbashi")).isoformat()
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {
+	                "ban_status.is_banned": True,
+	                "ban_status.ban_duration": duration_days,
+	                "ban_status.banned_on": banned_on,
+	                "ban_status.ban_reason": reason
+	            }}
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error banning user {user_id}: {e}")
+	        return False
+	
+	async def remove_ban(self, user_id: int) -> bool:
+	    """Remove ban from a user."""
+	    try:
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {
+	                "ban_status.is_banned": False,
+	                "ban_status.ban_duration": 0,
+	                "ban_status.unbanned_by": "admin",
+	                "ban_status.unban_reason": "Manual unban"
+	            }}
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error unbanning user {user_id}: {e}")
+	        return False
+	
+	async def set_referrer(self, user_id: int, referrer_id: int) -> bool:
+	    """Set referrer for a user."""
+	    try:
+	        await self.users.update_one(
+	            {"_id": user_id},
+	            {"$set": {"referral.referrer_id": referrer_id}}
+	        )
+	        
+	        # Update referrer's stats
+	        await self.users.update_one(
+	            {"_id": referrer_id},
+	            {
+	                "$inc": {"referral.referred_count": 1},
+	                "$push": {"referral.referred_users": user_id}
+	            }
+	        )
+	        return True
+	    except Exception as e:
+	        logging.error(f"Error setting referrer for {user_id}: {e}")
+	        return False
+	
+	async def total_renamed_files(self) -> int:
+	    """Get total number of files renamed across all users."""
+	    try:
+	        result = await self.users.aggregate([
+	            {"$group": {"_id": None, "total": {"$sum": "$activity.total_files_renamed"}}}
+	        ]).to_list(length=1)
+	        return result[0]["total"] if result else 0
+	    except Exception as e:
+	        logging.error(f"Error counting total renamed files: {e}")
+	        return 0
+	
+	async def total_points_distributed(self) -> int:
+	    """Get total points distributed across all users."""
+	    try:
+	        result = await self.users.aggregate([
+	            {"$group": {"_id": None, "total": {"$sum": "$points.total_earned"}}}
+	        ]).to_list(length=1)
+	        return result[0]["total"] if result else 0
+	    except Exception as e:
+	        logging.error(f"Error counting total points distributed: {e}")
+	        return 0
+	
+	async def get_config(self, key: str, default=None):
+	    """Get configuration value with default fallback."""
+	    try:
+	        config = await self.db.config.find_one({"key": key})
+	        return config["value"] if config else default
+	    except Exception as e:
+	        logging.error(f"Error getting config {key}: {e}")
+	        return default
+	
+	# Initialize database instance
+	hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
+	
+	async def initialize_database():
+	    """Initialize database connection"""
+	    try:
+	        await hyoshcoder.connect()
+	        return hyoshcoder
+	    except Exception as e:
+	        logger.error(f"❌ Failed to initialize database: {e}")
+	        raise
