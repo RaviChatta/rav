@@ -103,8 +103,8 @@ class CallbackActions:
             
             # Bottom row - Support/Info
             [
-                InlineKeyboardButton("🆕 Updates", url='https://t.me/sineur_x_bot'),
-                InlineKeyboardButton("🛟 Support", url='https://t.me/sineur_x_bot')
+                InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
+                InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')
             ],
             
             # Last row - About/Source
@@ -442,7 +442,7 @@ async def cb_handler(client, query: CallbackQuery):
         
         elif data == "caption":
             buttons = [
-                [InlineKeyboardButton("• Support", url='https://t.me/REQUETE_ANIME_30sbot'), 
+                [InlineKeyboardButton("• Support", url='https://t.me/Raaaaavi'), 
                  InlineKeyboardButton("Back •", callback_data="help")]
             ]
             response = {
@@ -526,12 +526,12 @@ async def cb_handler(client, query: CallbackQuery):
         elif data == "about":
             buttons = [
                 [
-                    InlineKeyboardButton("• Support", url='https://t.me/tout_manga_confondu'), 
+                    InlineKeyboardButton("• Support", url='https://t.me/Raaaaavi'), 
                     InlineKeyboardButton("Commands •", callback_data="help")
                 ],
                 [
-                    InlineKeyboardButton("• Developer", url='https://t.me/hyoshassistantbot'), 
-                    InlineKeyboardButton("Network •", url='https://t.me/tout_manga_confondu')
+                    InlineKeyboardButton("• Developer", url='https://t.me/Raaaaavi'), 
+                    InlineKeyboardButton("Network •", url='https://t.me/Raaaaavi')
                 ],
                 [InlineKeyboardButton("• Back •", callback_data="home")]
             ]
