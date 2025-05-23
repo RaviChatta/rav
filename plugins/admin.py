@@ -483,7 +483,6 @@ async def refresh_botstats(client: Client, callback_query: CallbackQuery):
 async def system_stats(client: Client, message: Message):
     """Advanced system monitoring with visual indicators"""
     if message.from_user.id != ADMIN_USER_ID:
-        #return await message.reply("🚫 Admin access required")
         return await message.delete()
     try:
         # System Info
@@ -538,24 +537,22 @@ async def system_stats(client: Client, message: Message):
         )
         
         await message.reply_text(stats_msg, parse_mode="HTML")
-        
-    except Exception as e:
-        logger.error(f"System stats error: {e}")
-        await message.reply_text(f"❌ Error fetching stats: {str(e)}")
-            await AdminCommands._send_auto_delete(
+
+        # Auto-delete the reply and the trigger message
+        await AdminCommands._send_auto_delete(
             message,
             stats_msg,
             delete_delay=90,
             parse_mode="HTML"
         )
-        
-        # Auto-delete the trigger command too
-        await asyncio.sleep(5)  # Small delay before deleting command
+        await asyncio.sleep(5)
         await message.delete()
-        
+
     except Exception as e:
-        error_msg = f"❌ Error: {str(e)[:200]}"
+        logger.error(f"System stats error: {e}")
+        error_msg = f"❌ Error fetching stats: {str(e)[:200]}"
         await AdminCommands._send_auto_delete(message, error_msg, delete_delay=30)
+
 @staticmethod
 async def _send_auto_delete(message: Message, text: str, delete_delay: int = 60, **kwargs):
     """Send message that auto-deletes after delay"""
