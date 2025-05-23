@@ -1,526 +1,464 @@
-from database.data import hyoshcoder
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from pyrogram import Client, filters
-from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
 import os
 import sys
 import time
 import asyncio
 import logging
-import traceback
+import secrets
 from datetime import datetime, timedelta
+from typing import Optional
+
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, InputMediaPhoto
+from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, ChatWriteForbidden
+
+from database.data import hyoshcoder
 from config import settings
 from helpers.utils import get_random_photo
-import psutil  # For system stats
-from pyrogram.types import InputMediaPhoto  # For media edits
 
+# Logging setup
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-ADMIN_USER_ID = settings.ADMIN
 
-# Global state for restart prevention
+ADMIN_USER_ID = settings.ADMIN
 is_restarting = False
 
 class AdminCommands:
-    """Class containing all admin command handlers"""
+    """Comprehensive admin command handlers with points and premium management"""
     
+    # ========================
+    # Core Utility Methods
+    # ========================
     @staticmethod
-    async def _send_response(message: Message, text: str, photo: str = None, delete_after: int = None):
-        """Helper method to send responses with optional auto-delete"""
+    async def _send_response(
+        message: Message,
+        text: str,
+        photo: str = None,
+        delete_after: int = None,
+        reply_markup=None,
+        parse_mode="markdown"
+    ):
+        """Smart response sender with auto-delete and media support"""
         try:
             if photo:
-                msg = await message.reply_photo(photo=photo, caption=text)
+                msg = await message.reply_photo(
+                    photo=photo,
+                    caption=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
             else:
-                msg = await message.reply_text(text)
+                msg = await message.reply_text(
+                    text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
             
             if delete_after:
                 asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_after))
             return msg
         except Exception as e:
-            logger.error(f"Error sending response: {e}", exc_info=True)
+            logger.error(f"Response error: {e}", exc_info=True)
             return None
 
     @staticmethod
     async def _auto_delete_message(message: Message, delay: int):
-        """Auto-delete message after delay"""
+        """Auto-delete helper with error handling"""
         await asyncio.sleep(delay)
         try:
             await message.delete()
         except Exception as e:
-            logger.warning(f"Couldn't delete message: {e}")
+            logger.warning(f"Delete failed: {e}")
 
-    @staticmethod
-    async def restart_bot(client: Client, message: Message):
-        """Restart the bot"""
-        global is_restarting
-        if is_restarting:
-            return
-            
-        is_restarting = True
-        try:
-            caption = "**🔄 Bot is restarting...**\n\nAll processes will be back online shortly."
-            img = await get_random_photo()
-            
-            await AdminCommands._send_response(message, caption, photo=img)
-            
-            # Give time for message to be delivered
-            await asyncio.sleep(2)
-            
-            await client.stop()
-            os.execl(sys.executable, sys.executable, *sys.argv)
-            
-        except Exception as e:
-            logger.error(f"Restart failed: {e}", exc_info=True)
-            is_restarting = False
-            await AdminCommands._send_response(message, f"❌ Restart failed: {str(e)}")
-
+    # ========================
+    # User Management
+    # ========================
     @staticmethod
     async def ban_user(client: Client, message: Message):
-        """Ban a user from using the bot"""
-        if len(message.command) < 4:
-            help_text = (
-                "**Ban Command Usage:**\n\n"
-                "`/ban user_id duration_days reason`\n\n"
-                "**Example:**\n"
-                "`/ban 1234567 30 Spamming`\n\n"
-                "This will ban user with ID 1234567 for 30 days for spamming."
-            )
-            return await AdminCommands._send_response(message, help_text)
-
+        """Ban user with duration and reason"""
         try:
-            user_id = int(message.command[1])
-            ban_duration = int(message.command[2])
-            ban_reason = ' '.join(message.command[3:])
-            
-            # Check if user exists
-            user = await hyoshcoder.read_user(user_id)
-            if not user:
-                return await AdminCommands._send_response(message, f"❌ User {user_id} not found in database")
-
-            # Ban the user in database
-            await hyoshcoder.ban_user(user_id, ban_duration, ban_reason)
-            
-            # Notify the banned user
-            try:
-                ban_notification = (
-                    f"🚫 **You have been banned**\n\n"
-                    f"**Duration:** {ban_duration} days\n"
-                    f"**Reason:** {ban_reason}\n\n"
-                    "Contact admin if you think this was a mistake."
+            if len(message.command) < 4:
+                return await AdminCommands._send_response(
+                    message,
+                    "**Usage:** `/ban user_id duration_days reason`\n"
+                    "**Example:** `/ban 1234567 30 Spamming`"
                 )
-                await client.send_message(user_id, ban_notification)
-                ban_status = "User notified successfully"
+
+            user_id = int(message.command[1])
+            duration = int(message.command[2])
+            reason = ' '.join(message.command[3:])
+
+            if not await hyoshcoder.ban_user(user_id, duration, reason):
+                return await AdminCommands._send_response(message, "❌ Failed to ban user")
+
+            # Notify user
+            try:
+                await client.send_message(
+                    user_id,
+                    f"🚫 **You've been banned**\n\n"
+                    f"⏳ Duration: {duration} days\n"
+                    f"📝 Reason: {reason}\n\n"
+                    "Contact admin for appeal."
+                )
+                notify = "✅ User notified"
             except Exception as e:
-                ban_status = f"Failed to notify user: {str(e)}"
-            
-            log_msg = (
-                f"✅ User {user_id} banned successfully\n"
-                f"⏳ Duration: {ban_duration} days\n"
-                f"📝 Reason: {ban_reason}\n"
-                f"🔔 Status: {ban_status}"
+                notify = f"⚠️ Notify failed: {e}"
+
+            await AdminCommands._send_response(
+                message,
+                f"🔨 **User Banned**\n\n"
+                f"🆔 ID: `{user_id}`\n"
+                f"⏳ Duration: {duration} days\n"
+                f"📝 Reason: {reason}\n"
+                f"{notify}"
             )
-            
-            await AdminCommands._send_response(message, log_msg)
-            logger.info(log_msg)
-            
         except Exception as e:
-            error_msg = f"❌ Ban failed: {str(e)}"
-            await AdminCommands._send_response(message, error_msg)
-            logger.error(error_msg, exc_info=True)
+            await AdminCommands._send_response(message, f"❌ Ban error: {str(e)}")
+            logger.error(f"Ban error: {e}", exc_info=True)
 
     @staticmethod
     async def unban_user(client: Client, message: Message):
-        """Unban a previously banned user"""
-        if len(message.command) != 2:
-            help_text = (
-                "**Unban Command Usage:**\n\n"
-                "`/unban user_id`\n\n"
-                "**Example:**\n"
-                "`/unban 1234567`"
-            )
-            return await AdminCommands._send_response(message, help_text)
-
+        """Remove user ban"""
         try:
-            user_id = int(message.command[1])
-            
-            # Check if user is actually banned
-            user = await hyoshcoder.read_user(user_id)
-            if not user or not user.get('ban_status', {}).get('is_banned'):
-                return await AdminCommands._send_response(message, f"ℹ️ User {user_id} is not currently banned")
+            if len(message.command) != 2:
+                return await AdminCommands._send_response(
+                    message,
+                    "**Usage:** `/unban user_id`\n"
+                    "**Example:** `/unban 1234567`"
+                )
 
-            # Unban the user
-            await hyoshcoder.remove_ban(user_id)
-            
-            # Notify the unbanned user
+            user_id = int(message.command[1])
+            if not await hyoshcoder.remove_ban(user_id):
+                return await AdminCommands._send_response(message, "❌ User not banned or failed")
+
+            # Notify user
             try:
                 await client.send_message(user_id, "🎉 Your ban has been lifted!")
-                unban_status = "User notified successfully"
+                notify = "✅ User notified"
             except Exception as e:
-                unban_status = f"Failed to notify user: {str(e)}"
-            
-            log_msg = (
-                f"✅ User {user_id} unbanned successfully\n"
-                f"🔔 Status: {unban_status}"
+                notify = f"⚠️ Notify failed: {e}"
+
+            await AdminCommands._send_response(
+                message,
+                f"🔓 **User Unbanned**\n\n"
+                f"🆔 ID: `{user_id}`\n"
+                f"{notify}"
             )
-            
-            await AdminCommands._send_response(message, log_msg)
-            logger.info(log_msg)
-            
         except Exception as e:
-            error_msg = f"❌ Unban failed: {str(e)}"
-            await AdminCommands._send_response(message, error_msg)
-            logger.error(error_msg, exc_info=True)
+            await AdminCommands._send_response(message, f"❌ Unban error: {str(e)}")
+            logger.error(f"Unban error: {e}", exc_info=True)
 
+    # ========================
+    # Points Management
+    # ========================
     @staticmethod
-    async def list_banned_users(message: Message):
-        """List all currently banned users"""
+    async def add_points(client: Client, message: Message):
+        """Add points to user balance"""
         try:
-            banned_users = []
-            async for user in hyoshcoder.get_all_banned_users():
-                banned_users.append(
-                    f"👤 **User ID:** `{user['_id']}`\n"
-                    f"⏳ **Duration:** {user['ban_status']['ban_duration']} days\n"
-                    f"📅 **Banned On:** {user['ban_status']['banned_on']}\n"
-                    f"📝 **Reason:** {user['ban_status']['ban_reason']}\n"
+            if len(message.command) < 3:
+                return await AdminCommands._send_response(
+                    message,
+                    "**Usage:** `/addpoints user_id amount [reason]`\n"
+                    "**Example:** `/addpoints 1234567 100 Birthday gift`"
                 )
-            
-            if not banned_users:
-                return await AdminCommands._send_response(message, "ℹ️ No banned users found.")
-            
-            response = f"🚫 **Banned Users ({len(banned_users)})**\n\n" + "\n".join(banned_users)
-            
-            if len(response) > 4000:
-                filename = f"banned_users_{datetime.now().strftime('%Y%m%d')}.txt"
-                with open(filename, 'w') as f:
-                    f.write(response)
-                await message.reply_document(filename, caption="List of banned users")
-                os.remove(filename)
-            else:
-                await AdminCommands._send_response(message, response)
-                
+
+            user_id = int(message.command[1])
+            amount = int(message.command[2])
+            reason = ' '.join(message.command[3:]) or "Admin grant"
+
+            if not await hyoshcoder.add_points(user_id, amount, "admin", reason):
+                return await AdminCommands._send_response(message, "❌ Failed to add points")
+
+            new_balance = await hyoshcoder.get_points(user_id)
+            await AdminCommands._send_response(
+                message,
+                f"🪙 **Points Added**\n\n"
+                f"👤 User: `{user_id}`\n"
+                f"➕ Amount: {amount}\n"
+                f"💳 New Balance: {new_balance}\n"
+                f"📝 Reason: {reason}"
+            )
         except Exception as e:
-            error_msg = f"❌ Failed to get banned users: {str(e)}"
-            await AdminCommands._send_response(message, error_msg)
-            logger.error(error_msg, exc_info=True)
+            await AdminCommands._send_response(message, f"❌ Points error: {str(e)}")
+            logger.error(f"Add points error: {e}", exc_info=True)
 
     @staticmethod
-    async def broadcast_message(client: Client, message: Message):
-        """Broadcast a message to all users"""
-        if not message.reply_to_message:
-            return await AdminCommands._send_response(message, "Please reply to a message to broadcast it.")
-        
-        # Confirmation step
-        confirm = await AdminCommands._send_response(
-            message,
-            "⚠️ **Are you sure you want to broadcast this message to all users?**\n\n"
-            "This action cannot be undone!",
-            delete_after=30
-        )
-        
-        # Add confirmation buttons
-        confirm_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Yes, broadcast", callback_data="broadcast_confirm")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="broadcast_cancel")]
-        ])
-        await confirm.edit_reply_markup(confirm_keyboard)
+    async def generate_points_link(client: Client, message: Message):
+        """Create shareable points link"""
+        try:
+            if len(message.command) < 3:
+                return await AdminCommands._send_response(
+                    message,
+                    "**Usage:** `/genpoints amount max_claims [hours=24] [note]`\n"
+                    "**Example:** `/genpoints 50 10 48 Welcome bonus`"
+                )
 
+            points = int(message.command[1])
+            max_claims = int(message.command[2])
+            hours = int(message.command[3]) if len(message.command) > 3 else 24
+            note = ' '.join(message.command[4:]) if len(message.command) > 4 else None
 
+            code, link = await hyoshcoder.create_points_link(
+                admin_id=message.from_user.id,
+                points=points,
+                max_claims=max_claims,
+                expires_in_hours=hours,
+                note=note
+            )
+
+            if not code:
+                return await AdminCommands._send_response(message, "❌ Failed to create link")
+
+            await AdminCommands._send_response(
+                message,
+                f"🔗 **Points Link Created**\n\n"
+                f"🪙 Points: {points}\n"
+                f"👥 Max Claims: {max_claims}\n"
+                f"⏳ Expires: {hours} hours\n"
+                f"📝 Note: {note or 'None'}\n\n"
+                f"🔗 Link: {link}\n"
+                f"📌 Code: `{code}`"
+            )
+        except Exception as e:
+            await AdminCommands._send_response(message, f"❌ Link error: {str(e)}")
+            logger.error(f"Genpoints error: {e}", exc_info=True)
+
+    # ========================
+    # Premium Management
+    # ========================
     @staticmethod
-    async def execute_broadcast(client: Client, message: Message):
-        """Actually execute the broadcast after confirmation"""
-        broadcast_msg = message.reply_to_message
-        total_users = await hyoshcoder.total_users_count()
-        start_time = time.time()
+    async def make_premium(client: Client, message: Message):
+        """Grant premium status"""
+        try:
+            if len(message.command) < 4:
+                return await AdminCommands._send_response(
+                    message,
+                    "**Usage:** `/premium user_id days plan_name`\n"
+                    "**Example:** `/premium 1234567 30 Gold`"
+                )
 
-        # Log broadcast start
-        await client.send_message(
-            settings.LOG_CHANNEL,
-            f"📢 Broadcast started by {message.from_user.mention}\n"
-            f"Total recipients: {total_users}"
-        )
-        
-        status_msg = await AdminCommands._send_response(
-            message,
-            "📢 **Broadcast Started**\n\n"
-            f"Total Users: {total_users}\n"
-            "Completed: 0\n"
-            "Success: 0\n"
-            "Failed: 0"
-        )
-        
-        success = failed = 0
-        async for user in hyoshcoder.get_all_users():
+            user_id = int(message.command[1])
+            days = int(message.command[2])
+            plan = ' '.join(message.command[3:])
+
+            if not await hyoshcoder.activate_premium(user_id, plan, days):
+                return await AdminCommands._send_response(message, "❌ Failed to activate premium")
+
+            # Notify user
             try:
-                await broadcast_msg.copy(user['_id'])
-                success += 1
-            except (InputUserDeactivated, UserIsBlocked):
-                await hyoshcoder.delete_user(user['_id'])
-                failed += 1
-            except Exception as e:
-                failed += 1
-                logger.error(f"Broadcast failed for {user['_id']}: {str(e)}")
-            
-            # Update status every 20 users
-            if (success + failed) % 20 == 0:
-                await status_msg.edit_text(
-                    "📢 **Broadcast In Progress**\n\n"
-                    f"Total Users: {total_users}\n"
-                    f"Completed: {success + failed}\n"
-                    f"Success: {success}\n"
-                    f"Failed: {failed}"
+                await client.send_message(
+                    user_id,
+                    f"⭐ **You've been upgraded to {plan} Premium!**\n\n"
+                    f"⏳ Duration: {days} days\n"
+                    "Enjoy your exclusive benefits!"
                 )
-        
-        # Final report
-        time_taken = str(timedelta(seconds=int(time.time() - start_time)))
-        await status_msg.edit_text(
-            "✅ **Broadcast Completed**\n\n"
-            f"⏱️ Time Taken: {time_taken}\n"
-            f"👥 Total Users: {total_users}\n"
-            f"✅ Success: {success}\n"
-            f"❌ Failed: {failed}"
-        )
-        
-        # Log completion
-        await client.send_message(
-            settings.LOG_CHANNEL,
-            f"📢 Broadcast completed\n"
-            f"⏱️ Time Taken: {time_taken}\n"
-            f"✅ Success: {success}\n"
-            f"❌ Failed: {failed}"
-        )
+                notify = "✅ User notified"
+            except Exception as e:
+                notify = f"⚠️ Notify failed: {e}"
 
+            await AdminCommands._send_response(
+                message,
+                f"🌟 **Premium Activated**\n\n"
+                f"👤 User: `{user_id}`\n"
+                f"📝 Plan: {plan}\n"
+                f"⏳ Duration: {days} days\n"
+                f"{notify}"
+            )
+        except Exception as e:
+            await AdminCommands._send_response(message, f"❌ Premium error: {str(e)}")
+            logger.error(f"Premium error: {e}", exc_info=True)
 
+    # ========================
+    # Statistics & Reports
+    # ========================
+    @staticmethod
+    async def bot_stats(client: Client, message: Message):
+        """Show comprehensive bot statistics"""
+        try:
+            # Get all stats in parallel
+            stats = await asyncio.gather(
+                hyoshcoder.total_users_count(),
+                hyoshcoder.total_banned_users_count(),
+                hyoshcoder.total_premium_users_count(),
+                hyoshcoder.get_daily_active_users(),
+                hyoshcoder.total_renamed_files(),
+                hyoshcoder.total_points_distributed(),
+                hyoshcoder.get_points_links_stats()
+            )
+
+            img = await get_random_photo()
+            response = (
+                "📊 **Bot Statistics**\n\n"
+                f"👥 Users: {stats[0]}\n"
+                f"🚫 Banned: {stats[1]}\n"
+                f"⭐ Premium: {stats[2]}\n"
+                f"🔄 Active Today: {stats[3]}\n"
+                f"📂 Files Renamed: {stats[4]}\n"
+                f"🪙 Points Distributed: {stats[5]}\n\n"
+                f"🔗 Points Links:\n"
+                f"• Total: {stats[6]['total_links']}\n"
+                f"• Active: {stats[6]['active_links']}\n"
+                f"• Claimed: {stats[6]['claimed_points']}/{stats[6]['total_points']}"
+            )
+
+            await AdminCommands._send_response(
+                message,
+                response,
+                photo=img,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]
+                ])
+            )
+        except Exception as e:
+            await AdminCommands._send_response(message, f"❌ Stats error: {str(e)}")
+            logger.error(f"Stats error: {e}", exc_info=True)
 
     @staticmethod
-    async def list_users(message: Message):
-        """List all bot users"""
+    async def points_report(client: Client, message: Message):
+        """Generate points distribution report"""
         try:
-            users = []
-            async for user in hyoshcoder.get_all_users():
-                premium_status = "⭐" if user.get('premium', {}).get('is_premium') else ""
-                users.append(f"👤 User ID: `{user['_id']}` {premium_status}")
-            
-            response = f"👥 **Total Users: {len(users)}**\n\n" + "\n".join(users)
-            
-            if len(response) > 4000:
-                filename = f"users_{datetime.now().strftime('%Y%m%d')}.txt"
-                with open(filename, 'w') as f:
-                    f.write(response)
-                await message.reply_document(filename, caption="List of users")
-                os.remove(filename)
-            else:
-                await AdminCommands._send_response(message, response)
-                
-        except Exception as e:
-            error_msg = f"❌ Failed to get users: {str(e)}"
-            await AdminCommands._send_response(message, error_msg)
-            logger.error(error_msg, exc_info=True)
+            days = int(message.command[1]) if len(message.command) > 1 else 7
+            report = await hyoshcoder.generate_points_report(days)
 
-# Add these new methods to the AdminCommands class
-
-@staticmethod
-async def admin_commands_panel(client: Client, message: Message):
-    """Show admin commands panel"""
-    try:
-        points_per_rename = await hyoshcoder.get_config("points_per_rename", 2)
-        new_user_points = await hyoshcoder.get_config("new_user_points", 50)
-        referral_reward = await hyoshcoder.get_config("referral_reward", 15)
-        
-        text = (
-            f"🛠️ <b>Admin Commands Panel</b>\n\n"
-            f"Current Configuration:\n"
-            f"• Points per rename: {points_per_rename}\n"
-            f"• New user points: {new_user_points}\n"
-            f"• Referral reward: {referral_reward}\n\n"
-            "Manage the bot with these commands:"
-        )
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚙️ Configure Points", callback_data="admin_config_points")],
-            [InlineKeyboardButton(f"✨ Generate Points Link", callback_data="admin_genpoints")],
-            [InlineKeyboardButton(f"📊 Points Statistics", callback_data="admin_pointstats")],
-            [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
-        ])
-        
-        img = await get_random_photo()
-        msg = await message.reply_photo(
-            photo=img,
-            caption=text,
-            reply_markup=buttons
-        )
-        asyncio.create_task(AdminCommands._auto_delete_message(msg, delay=60))
-    except Exception as e:
-        logger.error(f"Error showing admin panel: {e}")
-        await message.reply_text("❌ Failed to show admin panel")
-
-@staticmethod
-async def bot_stats(client: Client, message: Message):
-    """Show detailed bot statistics (admin version)"""
-    try:
-        start_time = time.time()
-        status_msg = await AdminCommands._send_response(message, "🔄 Gathering bot statistics...")
-
-        # Get all stats
-        total_users = await hyoshcoder.total_users_count()
-        banned_users = await hyoshcoder.total_banned_users_count()
-        premium_users = await hyoshcoder.total_premium_users_count()
-        daily_active = await hyoshcoder.get_daily_active_users()
-        total_renamed = await hyoshcoder.total_renamed_files()
-        points_distributed = await hyoshcoder.total_points_distributed()
-        ping_time = (time.time() - start_time) * 1000
-
-        img = await get_random_photo()
-        stats_text = (
-            "🤖 <b>Bot Statistics (Admin)</b>\n\n"
-            f"👥 Total Users: {total_users}\n"
-            f"🚫 Banned Users: {banned_users}\n"
-            f"⭐ Premium Users: {premium_users}\n"
-            f"📈 Daily Active Users: {daily_active}\n"
-            f"📝 Total Files Renamed: {total_renamed}\n"
-            f"✨ Total Points Distributed: {points_distributed}\n"
-            f"🏓 Ping: {ping_time:.2f} ms"
-        )
-
-        await status_msg.edit_media(
-            media=InputMediaPhoto(
-                media=img,
-                caption=stats_text
+            response = (
+                f"📈 **Points Report ({days} days)**\n\n"
+                f"🪙 Total Distributed: {report['total_points_distributed']}\n\n"
+                "📊 Distribution Breakdown:\n"
             )
-        )
-        await asyncio.sleep(5)
-        await message.delete()
 
-    except Exception as e:
-        logger.error(f"Error in bot_stats: {e}")
-        await message.reply_text("❌ Failed to get stats")
+            for item in report['distribution']:
+                response += f"• {item['_id']}: {item['total_points']} pts ({item['count']}x)\n"
 
-# Update the admin_commands_handler to include the new commands
+            response += "\n🏆 Top Earners:\n"
+            for i, user in enumerate(report['top_earners'][:5], 1):
+                response += f"{i}. {user.get('username', user['user_id'])}: {user['points']} pts\n"
+
+            await AdminCommands._send_response(message, response)
+        except Exception as e:
+            await AdminCommands._send_response(message, f"❌ Report error: {str(e)}")
+            logger.error(f"Report error: {e}", exc_info=True)
+
+    # ========================
+    # Admin Panel
+    # ========================
+    @staticmethod
+    async def admin_panel(client: Client, message: Message):
+        """Interactive admin control panel"""
+        try:
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📊 Stats", callback_data="admin_stats"),
+                    InlineKeyboardButton("🪙 Points", callback_data="admin_points")
+                ],
+                [
+                    InlineKeyboardButton("👤 Users", callback_data="admin_users"),
+                    InlineKeyboardButton("⭐ Premium", callback_data="admin_premium")
+                ],
+                [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
+            ])
+
+            await AdminCommands._send_response(
+                message,
+                "🛠 **Admin Control Panel**\n\n"
+                "Select an option below:",
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            await AdminCommands._send_response(message, f"❌ Panel error: {str(e)}")
+            logger.error(f"Panel error: {e}", exc_info=True)
+
+# ========================
+# Command Handlers
+# ========================
 @Client.on_message(filters.private & filters.command(
-    ["restart", "ban", "unban", "banned_users", "broadcast", "botstats", "users", "admin", "stats"]
+    ["admin", "ban", "unban", "addpoints", "premium", "genpoints", "stats", "report"]
 ) & filters.user(ADMIN_USER_ID))
 async def admin_commands_handler(client: Client, message: Message):
-    """Handle all admin commands"""
-    command = message.command[0].lower()
-    
+    """Main admin command router"""
     try:
-        if command == "restart":
-            await AdminCommands.restart_bot(client, message)
-        elif command == "ban":
+        cmd = message.command[0].lower()
+        
+        if cmd == "admin":
+            await AdminCommands.admin_panel(client, message)
+        elif cmd == "ban":
             await AdminCommands.ban_user(client, message)
-        elif command == "unban":
+        elif cmd == "unban":
             await AdminCommands.unban_user(client, message)
-        elif command in ["banned_users", "banned"]:
-            await AdminCommands.list_banned_users(message)
-        elif command == "broadcast":
-            await AdminCommands.broadcast_message(client, message)
-        elif command in ["botstats", "stats"]:
+        elif cmd == "addpoints":
+            await AdminCommands.add_points(client, message)
+        elif cmd == "premium":
+            await AdminCommands.make_premium(client, message)
+        elif cmd == "genpoints":
+            await AdminCommands.generate_points_link(client, message)
+        elif cmd == "stats":
             await AdminCommands.bot_stats(client, message)
-        elif command == "users":
-            await AdminCommands.list_users(message)
-        elif command in ["admin", "admin_cmds"]:
-            await AdminCommands.admin_commands_panel(client, message)
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-        await admin_commands_handler(client, message)
+        elif cmd == "report":
+            await AdminCommands.points_report(client, message)
+            
     except Exception as e:
-        error_msg = f"❌ Admin command failed: {str(e)}"
-        await message.reply_text(error_msg, quote=True)
-        logger.error(error_msg, exc_info=True)
-@Client.on_callback_query(filters.regex(r"^broadcast_(confirm|cancel)$") & filters.user(ADMIN_USER_ID))
-async def broadcast_confirmation(client: Client, callback_query: CallbackQuery):
-    """Handle broadcast confirmation"""
+        await message.reply_text(f"❌ Command failed: {str(e)}")
+        logger.error(f"Command error: {e}", exc_info=True)
+
+# ========================
+# Callback Handlers
+# ========================
+@Client.on_callback_query(filters.regex(r"^admin_") & filters.user(ADMIN_USER_ID))
+async def admin_callbacks(client: Client, callback: CallbackQuery):
+    """Handle admin panel callbacks"""
     try:
-        action = callback_query.data.split("_")[1]
+        action = callback.data.split("_")[1]
         
-        if action == "confirm":
-            await callback_query.message.edit_text("🚀 Starting broadcast...")
-            message = await client.get_messages(
-                callback_query.message.chat.id,
-                callback_query.message.reply_to_message_id
+        if action == "stats":
+            await AdminCommands.bot_stats(client, callback.message)
+        elif action == "points":
+            await callback.message.edit_text(
+                "🪙 **Points Management**\n\n"
+                "Available commands:\n"
+                "• /addpoints - Grant points\n"
+                "• /genpoints - Create link\n"
+                "• /report - Points report",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="back_admin")]
+                ])
             )
-            await AdminCommands.execute_broadcast(client, message)
-        else:
-            await callback_query.message.edit_text("❌ Broadcast cancelled")
-            await AdminCommands._auto_delete_message(callback_query.message, 5)
+        elif action == "users":
+            await callback.message.edit_text(
+                "👤 **User Management**\n\n"
+                "Available commands:\n"
+                "• /ban - Ban user\n"
+                "• /unban - Unban user",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="back_admin")]
+                ])
+            )
+        elif action == "premium":
+            await callback.message.edit_text(
+                "⭐ **Premium Management**\n\n"
+                "Available commands:\n"
+                "• /premium - Grant premium",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="back_admin")]
+                ])
+            )
             
-        await callback_query.answer()
+        await callback.answer()
     except Exception as e:
-        logger.error(f"Broadcast confirmation error: {e}", exc_info=True)
-        await callback_query.answer("An error occurred", show_alert=True)
-@Client.on_callback_query(filters.regex(r"^refresh_botstats$") & filters.user(ADMIN_USER_ID))
-async def refresh_botstats(client: Client, callback_query: CallbackQuery):
-    await AdminCommands.bot_stats(client, callback_query.message)
-    await callback_query.answer("Stats refreshed")
-@staticmethod
-async def system_stats(client: Client, message: Message):
-    """Advanced system monitoring with visual indicators"""
-    try:
-        if not hasattr(AdminCommands, '_send_auto_delete'):
-            await message.reply_text("❌ System stats unavailable")
-            return
+        logger.error(f"Callback error: {e}", exc_info=True)
+        await callback.answer("❌ Error occurred")
 
-        # System Info
-        uptime = datetime.now() - datetime.fromtimestamp(psutil.boot_time())
-        cpu_usage = psutil.cpu_percent(interval=1)
-        cpu_count = psutil.cpu_count()
-        cpu_freq = psutil.cpu_freq().current / 1000 if psutil.cpu_freq() else "N/A"
-        
-        # Memory
-        mem = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        
-        # Disk
-        disk = psutil.disk_usage('/')
-        disk_io = psutil.disk_io_counters()
-        
-        # Network
-        net_io = psutil.net_io_counters()
-        
-        # Processes
-        processes = len(psutil.pids())
-        
-        # Create visual bars
-        def progress_bar(percent, width=20):
-            filled = int(round(width * percent / 100))
-            return f"[{'█' * filled}{'-' * (width - filled)}] {percent}%"
-        
-        # Prepare message
-        stats_msg = (
-            f"<b>🖥️ SYSTEM STATISTICS</b>\n\n"
-            f"⏳ <b>Uptime:</b> {str(uptime).split('.')[0]}\n"
-            f"🔢 <b>Processes:</b> {processes}\n\n"
-            
-            f"<b>🔥 CPU ({cpu_count} cores)</b>\n"
-            f"{progress_bar(cpu_usage)}\n"
-            f"  - Usage: {cpu_usage}%\n\n"
-            
-            f"<b>🧠 MEMORY</b>\n"
-            f"RAM: {progress_bar(mem.percent)}\n"
-            f"  - Used: {mem.used/1024/1024:.1f}MB\n\n"
-            
-            f"<b>💾 DISK</b>\n"
-            f"Space: {progress_bar(disk.percent)}\n"
-            f"  - Free: {disk.free/1024/1024:.1f}MB"
-        )
-        
-        await AdminCommands._send_auto_delete(
-            message,
-            stats_msg,
-            delete_delay=90,
-            parse_mode="HTML"
-        )
-        
-    except Exception as e:
-        logger.error(f"System stats error: {e}")
-        await message.reply_text(f"❌ Error: {str(e)}")
-
-@staticmethod
-async def _send_auto_delete(message: Message, text: str, delete_delay: int = 60, **kwargs):
-    """Send message that auto-deletes after delay"""
+@Client.on_callback_query(filters.regex(r"^(refresh_stats|close_admin|back_admin)$") & filters.user(ADMIN_USER_ID))
+async def misc_callbacks(client: Client, callback: CallbackQuery):
+    """Miscellaneous callback handlers"""
     try:
-        msg = await message.reply_text(text, **kwargs)
-        asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_delay))
-        return msg
+        action = callback.data
+        
+        if action == "refresh_stats":
+            await AdminCommands.bot_stats(client, callback.message)
+        elif action == "close_admin":
+            await callback.message.delete()
+        elif action == "back_admin":
+            await AdminCommands.admin_panel(client, callback.message)
+            
+        await callback.answer()
     except Exception as e:
-        logger.error(f"Auto-delete message failed: {e}")
-        return None
+        logger.error(f"Callback error: {e}", exc_info=True)
+        await callback.answer("❌ Error occurred")
