@@ -14,6 +14,9 @@ from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, Peer
 from database.data import hyoshcoder
 from config import settings
 from helpers.utils import get_random_photo
+from pyrogram import enums
+from typing import Optional
+from pyrogram.types import Message
 
 # Logging setup
 logger = logging.getLogger(__name__)
@@ -28,30 +31,56 @@ class AdminCommands:
     # ========================
     # Core Utility Methods
     # ========================
-    @staticmethod
-    async def _send_response(
-        message: Message,
-        text: str,
-        photo: str = None,
-        delete_after: int = None,
-        reply_markup=None,
-        parse_mode="html"
-    ):
-        """Smart response sender with auto-delete and media support"""
-        try:
-            if photo:
-                msg = await message.reply_photo(
-                    photo=photo,
-                    caption=text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode
-                )
-            else:
-                msg = await message.reply_text(
-                    text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode
-                )
+
+@staticmethod
+async def _send_response(
+    message: Message,
+    text: str,
+    photo: str = None,
+    delete_after: int = None,
+    reply_markup=None,
+    parse_mode: Optional[enums.ParseMode] = enums.ParseMode.HTML
+):
+    """Smart response sender with auto-delete and media support"""
+    try:
+        if photo:
+            msg = await message.reply_photo(
+                photo=photo,
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        else:
+            msg = await message.reply_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+            
+        if delete_after:
+            await asyncio.sleep(delete_after)
+            await msg.delete()
+            
+        return msg
+        
+    except ValueError as e:
+        # Fallback if HTML parse mode fails
+        if "Invalid parse mode" in str(e):
+            clean_text = re.sub('<[^<]+?>', '', text)  # Strip HTML tags
+            return await message.reply_text(
+                clean_text,
+                reply_markup=reply_markup,
+                parse_mode=None
+            )
+        raise
+        
+    except Exception as e:
+        logger.error(f"Response error: {str(e)}")
+        # Final fallback to basic text
+        await message.reply_text(
+            "An error occurred while processing this message.",
+            parse_mode=None
+        )
             
             if delete_after:
                 asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_after))
