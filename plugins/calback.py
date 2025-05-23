@@ -212,111 +212,122 @@ class CallbackActions:
             }
 
     @staticmethod
-    async def handle_metadata_toggle(client: Client, query: CallbackQuery, user_id: int, data: str):
-        """Handle metadata toggle and customization"""
-        try:
-            if data.startswith("metadata_"):
-                is_enabled = data.split("_")[1] == '1'
-                await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
-                user_metadata = await hyoshcoder.get_metadata_code(user_id) or "Not set"
-                
-                buttons = [
-                    [
-                        InlineKeyboardButton(
-                            f"🔘 {'Metadata Enabled' if is_enabled else 'Metadata Disabled'}",
-                            callback_data=f"metadata_{0 if is_enabled else 1}"
-                        ),
-                        InlineKeyboardButton(
-                            "✅" if is_enabled else "❌", 
-                            callback_data=f"metadata_{0 if is_enabled else 1}"
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton("✏️ Edit Metadata", callback_data="custom_metadata")
-                    ],
-                    [
-                        InlineKeyboardButton("🔙 Back", callback_data="help")
-                    ]
-                ]
-                
-                return {
-                    'caption': (
-                        f"<b>🎛️ Metadata Settings</b>\n\n"
-                        f"<b>Status:</b> {'Enabled' if is_enabled else 'Disabled'}\n"
-                        f"<b>Your Code:</b>\n<code>{user_metadata}</code>\n\n"
-                        f"ℹ️ Modifies MKV video files including audio/subtitles."
-                    ),
-                    'reply_markup': InlineKeyboardMarkup(buttons),
-                    'parse_mode': "HTML"
-                }
+async def handle_metadata_toggle(client: Client, query: CallbackQuery, user_id: int, data: str):
+    """Handle metadata toggle and customization"""
+    try:
+        if data.startswith("metadata_"):
+            # Convert string '1'/'0' to boolean
+            is_enabled = data.split("_")[1] == '1'
+            await hyoshcoder.set_metadata(user_id, bool_meta=is_enabled)
+            user_metadata = await hyoshcoder.get_metadata_code(user_id) or "Not set"
             
-            elif data == "custom_metadata":
-                await query.message.delete()
-                current_meta = await hyoshcoder.get_metadata_code(user_id)
-                
-                request_msg = await client.send_message(
-                    chat_id=user_id,
-                    text=(
-                        f"<b>✏️ Metadata Editor</b>\n\n"
-                        f"<b>Current:</b>\n<code>{current_meta or 'Not set'}</code>\n\n"
-                        f"<b>Send new metadata (max 200 chars):</b>\n"
-                        f"⏳ Timeout: {METADATA_TIMEOUT} seconds\n\n"
-                        f"<i>Example:</i> <code>Telegram : @hyoshassistantbot</code>"
-                    ),
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("❌ Cancel", callback_data="meta")
-                    ]])
+            # Create toggle buttons with clear visual states
+            buttons = [
+                [
+                    InlineKeyboardButton(
+                        f"🟢 ON" if is_enabled else "🔴 OFF",
+                        callback_data=f"metadata_{int(not is_enabled)}"  # Toggles between 1 and 0
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "✏️ Edit Metadata Code",
+                        callback_data="custom_metadata"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back to Settings",
+                        callback_data="settings_back"
+                    )
+                ]
+            ]
+            
+            # Response with proper HTML formatting
+            return {
+                'text': (
+                    f"<b>📝 Metadata Settings</b>\n\n"
+                    f"<b>Status:</b> {'🟢 Enabled' if is_enabled else '🔴 Disabled'}\n"
+                    f"<b>Current Code:</b>\n<code>{html.escape(user_metadata)}</code>\n\n"
+                    f"<i>Metadata will be embedded in processed files</i>"
+                ),
+                'reply_markup': InlineKeyboardMarkup(buttons),
+                'parse_mode': enums.ParseMode.HTML
+            }
+        
+        elif data == "custom_metadata":
+            await query.message.delete()
+            current_meta = await hyoshcoder.get_metadata_code(user_id) or ""
+            
+            # Request new metadata with proper escaping
+            request_msg = await client.send_message(
+                chat_id=user_id,
+                text=(
+                    "<b>✏️ Edit Metadata Code</b>\n\n"
+                    f"<b>Current:</b>\n<code>{html.escape(current_meta)}</code>\n\n"
+                    "📝 <b>Send new metadata text</b> (max 200 characters)\n"
+                    f"⏳ <i>Timeout: {METADATA_TIMEOUT} seconds</i>\n\n"
+                    "<b>Example:</b>\n<code>Processed by @YourBot</code>"
+                ),
+                parse_mode=enums.ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("❌ Cancel", callback_data="metadata_cancel")]
+                ])
+            )
+            
+            try:
+                # Wait for user input
+                metadata_msg = await client.listen.Message(
+                    filters.text & filters.user(user_id),
+                    timeout=METADATA_TIMEOUT
                 )
                 
-                try:
-                    metadata = await client.listen.Message(
-                        filters.text & filters.user(user_id),
-                        timeout=METADATA_TIMEOUT
-                    )
-                    
-                    if len(metadata.text) > 200:
-                        raise ValueError("Metadata too long (max 200 chars)")
-                    
-                    await hyoshcoder.set_metadata_code(user_id, metadata.text)
-                    
-                    success_msg = await client.send_message(
-                        chat_id=user_id,
-                        text=(
-                            "✨ <b>Metadata Updated!</b>\n\n"
-                            f"<code>{metadata.text}</code>"
-                        ),
-                        parse_mode="HTML"
-                    )
-                    
-                    await asyncio.sleep(5)
-                    await request_msg.delete()
-                    await asyncio.sleep(5)
-                    await success_msg.delete()
-                    
-                except asyncio.TimeoutError:
-                    await client.send_message(
-                        chat_id=user_id,
-                        text="⏳ <b>Timed out</b>\nPlease try again.",
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    await client.send_message(
-                        chat_id=user_id,
-                        text=f"❌ <b>Error:</b> {str(e)}",
-                        parse_mode="HTML"
-                    )
+                # Validate length
+                if len(metadata_msg.text) > 200:
+                    raise ValueError("Maximum 200 characters allowed")
                 
-                return None
+                # Update and confirm
+                await hyoshcoder.set_metadata_code(user_id, metadata_msg.text)
                 
-        except Exception as e:
-            logger.error(f"Metadata error: {e}")
-            return {
-                'caption': "❌ An error occurred",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                ])
-            }
+                await client.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "✅ <b>Metadata Updated!</b>\n\n"
+                        f"<code>{html.escape(metadata_msg.text)}</code>"
+                    ),
+                    parse_mode=enums.ParseMode.HTML
+                )
+                
+                # Cleanup after delay
+                await asyncio.sleep(3)
+                await request_msg.delete()
+                if metadata_msg:
+                    await metadata_msg.delete()
+                    
+            except asyncio.TimeoutError:
+                await client.send_message(
+                    chat_id=user_id,
+                    text="⏳ <b>Timed out</b>\nMetadata update cancelled.",
+                    parse_mode=enums.ParseMode.HTML
+                )
+            except Exception as e:
+                await client.send_message(
+                    chat_id=user_id,
+                    text=f"❌ <b>Error:</b>\n{html.escape(str(e))}",
+                    parse_mode=enums.ParseMode.HTML
+                )
+            
+            return None
+            
+    except Exception as e:
+        logger.error(f"Metadata handler error: {e}", exc_info=True)
+        return {
+            'text': "❌ An error occurred while processing metadata settings",
+            'reply_markup': InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="settings_back")]
+            ]),
+            'parse_mode': enums.ParseMode.HTML
+        }
 
     @staticmethod
     async def handle_free_points(client: Client, query: CallbackQuery, user_id: int):
