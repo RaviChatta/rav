@@ -122,7 +122,7 @@ async def send_effect_message(
     """
     additional_params = {
         'disable_web_page_preview': kwargs.pop('disable_web_page_preview', True),
-        'parse_mode': kwargs.pop('parse_mode', "markdown")
+        'parse_mode': kwargs.pop('parse_mode', "html")
     }
     additional_params.update(kwargs)
     
