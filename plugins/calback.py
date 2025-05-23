@@ -9,6 +9,7 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     InputMediaPhoto
 )
+import html
 from typing import Optional, Dict
 from urllib.parse import quote
 from pyrogram.errors import FloodWait, ChatWriteForbidden
