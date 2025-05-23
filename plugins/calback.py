@@ -17,6 +17,7 @@ from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
 import logging
+from pyrogram.errors import ChatWriteForbidden
 
 logger = logging.getLogger(__name__)
 
