@@ -245,40 +245,51 @@ class CallbackActions:
 
     @staticmethod
     async def handle_free_points(client, query, user_id):
-        me = await client.get_me()
-        unique_code = str(uuid.uuid4())[:8]
-        invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
-        points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
-        
-        shortlink = await get_shortlink(
-            settings.SHORTED_LINK, 
-            settings.SHORTED_LINK_API, 
-            points_link
-        )
-        
-        points = random.choice(POINT_RANGE)
-        await hyoshcoder.set_expend_points(user_id, points, unique_code)
-        
-        share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
-        
-        buttons = [
-            [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
-            [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
-            [InlineKeyboardButton("🔙 Back", callback_data="help")]
-        ]
-        
-        caption = (
-            "**✨ Free Points System**\n\n"
-            "Earn points by helping grow our community:\n\n"
-            "🔹 **Share Bot**: Get 5-20 points for each friend who joins\n"
-            "🔹 **Watch Ads**: Earn instant points by viewing sponsored content\n\n"
-            "💎 Premium members earn DOUBLE points!"
-        )
-        
-        return {
-            'caption': caption,
-            'reply_markup': InlineKeyboardMarkup(buttons)
-        }
+        try:
+            me = await client.get_me()
+            unique_code = str(uuid.uuid4())[:8]
+            invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
+            
+            # Generate points link
+            points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
+            shortlink = await get_shortlink(
+                settings.SHORTED_LINK, 
+                settings.SHORTED_LINK_API, 
+                points_link
+            ) if all([settings.SHORTED_LINK, settings.SHORTED_LINK_API]) else points_link
+            
+            points = random.choice(POINT_RANGE)
+            if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
+                raise Exception("Failed to track points expenditure")
+            
+            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
+            
+            buttons = [
+                [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
+                [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
+                [InlineKeyboardButton("🔙 Back", callback_data="help")]
+            ]
+            
+            caption = (
+                "**✨ Free Points System**\n\n"
+                "Earn points by helping grow our community:\n\n"
+                f"🔹 **Share Bot**: Get {POINT_RANGE.start}-{POINT_RANGE.stop} points for each friend who joins\n"
+                "🔹 **Watch Ads**: Earn instant points by viewing sponsored content\n\n"
+                "💎 Premium members earn DOUBLE points!"
+            )
+            
+            return {
+                'caption': caption,
+                'reply_markup': InlineKeyboardMarkup(buttons)
+            }
+        except Exception as e:
+            logger.error(f"Free points error: {e}")
+            return {
+                'caption': "❌ Error processing free points request. Please try again.",
+                'reply_markup': InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                ])
+            }
 
 @Client.on_callback_query()
 async def cb_handler(client, query: CallbackQuery):
