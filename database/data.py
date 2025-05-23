@@ -289,7 +289,12 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting src_info for {user_id}: {e}")
             return False
-
+    async def toggle_src_info(self, user_id: int) -> bool:
+        """Toggle source info preference for a user."""
+        current_setting = await self.get_src_info(user_id)
+        new_setting = "file_name" if current_setting == "metadata" else "metadata"
+        await self.set_src_info(user_id, new_setting)
+        return new_setting
     async def get_src_info(self, user_id: int) -> Optional[str]:
         """Get user's source info preference."""
         try:
