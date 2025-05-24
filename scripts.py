@@ -1,201 +1,162 @@
-class Scripts():
+class Scripts:
     
-    PROGRESS_BAR = """⚡ <b>File Processing Progress</b> ⚡
+    PROGRESS_BAR = """
+⚡ <b>File Processing Progress</b> ⚡
 
+<blockquote>
 ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
 <b>📊 Progress:</b> {0}%
 <b>📦 Size:</b> {1} / {2}
 <b>🚀 Speed:</b> {3}/s
 <b>⏳ Time Left:</b> {4}
+</blockquote>
 
 <b>🔹 Status:</b> Renaming in progress..."""
 
     START_TXT = """
-✨ <b>WELCOME TO THE FUTURE OF FILE MANAGEMENT</b> ✨
+✨ <b>WELCOME TO FILE RENAME PRO</b> ✨
 
-<b>Hello {}!</b>
+<blockquote>
+<b>Hello {}</b>,
 
-I'm <b>AutoRename Pro</b>, your ultimate file transformation assistant. Here's why I'm different:
+Experience the ultimate file renaming solution with:
 
-⚡ <b>Lightning-Fast Processing</b> - Rename 1000s of files in seconds
-🎨 <b>Smart Formatting</b> - Automatic episode/season detection
-🔒 <b>Military-Grade Security</b> - Your files stay private
-💎 <b>Premium Features</b> - Unlimited capabilities for power users
+• Lightning-fast processing
+• Smart pattern recognition
+• Military-grade encryption
+• Premium exclusive features
+</blockquote>
 
-<b>🚀 Ready to experience file management like never before?</b>"""
+<b>🚀 Ready to transform your files?</b>"""
 
     FILE_NAME_TXT = """
-🔮 <b>SMART RENAMING WIZARD</b> 🔮
+🔮 <b>SMART RENAMING GUIDE</b> 🔮
 
-<b>Available Magic Variables:</b>
-✨ <code>[episode]</code> - Auto-detects episode numbers
-✨ <code>[season]</code> - Identifies season information
-✨ <code>[quality]</code> - Extracts quality (1080p, 4K, etc.)
-✨ <code>[date]</code> - Adds current date
-✨ <code>[time]</code> - Includes processing time
+<blockquote>
+<b>Magic Variables:</b>
+• <code>[episode]</code> - Auto-detects episode numbers
+• <code>[season]</code> - Identifies seasons
+• <code>[quality]</code> - Extracts resolution
+• <code>[date]</code> - Adds current date
 
-<b>🔥 Example Power Formats:</b>
-<code>/autorename [Anime] S[season]E[episode] [quality]</code>
-<code>/autorename [Movie] [year] [quality] Dual Audio</code>
-<code>/autorename [Series] S[season] EP[episode] [resolution]</code>
+<b>Premium Examples:</b>
+<code>/autorename [Anime] S[season]E[episode]</code>
+<code>/autorename [Movie] [year] [quality]</code>
+</blockquote>"""
 
-<b>💡 Pro Tip:</b> Combine variables for ultimate customization!"""
+    ABOUT_TXT = """
+🌌 <b>ABOUT FILE RENAME PRO</b> 🌌
 
-    ABOUT_TXT = f"""
-🌌 <b>ABOUT THIS COSMIC TECHNOLOGY</b> 🌌
+<blockquote>
+<b>Core Technology:</b>
+• Python 3.11 + Pyrogram
+• Quantum Cloud Hosting
+• Version 7.1.3
 
-<b>⚡ Power Core:</b> <a href="https://www.python.org/">Python 3.11</a>
-<b>🧠 Neural Network:</b> <a href="https://pyrogram.org/">Pyrogram</a>
-<b>🚀 Host Platform:</b> <a href="https://t.me/REQUETE_ANIME_30sbot">Quantum Cloud</a>
-
-<b>👨‍💻 Master Architect:</b> <a href="https://t.me/altof2">Dr. Al Tofu</a>
-<b>🔮 Version:</b> 7.1.3 (Stable)
-<b>📅 Last Updated:</b> Yesterday at 23:61
-
-<b>💫 Special Thanks:</b> To all cosmic entities who made this possible"""
+<b>Created by:</b> @altof2
+<b>Last Updated:</b> Yesterday
+</blockquote>"""
 
     THUMBNAIL_TXT = """
-🎨 <b>THUMBNAIL CUSTOMIZATION CENTER</b> 🎨
+🎨 <b>THUMBNAIL MANAGER</b> 🎨
 
-<b>Transform your files with stunning visuals:</b>
+<blockquote>
+<b>Commands:</b>
+• Send image to set thumbnail
+• <code>/del_thumb</code> - Remove
+• <code>/view_thumb</code> - Preview
 
-🖼️ <b>Set Thumbnail:</b> Just send any image
-🗑️ <b>Remove:</b> <code>/del_thumb</code>
-👀 <b>Preview:</b> <code>/view_thumb</code>
-
-<b>🌈 Pro Features:</b>
-• Auto-cropping to perfect aspect ratio
-• Smart contrast enhancement
-• Batch thumbnail application
-
-<b>Note:</b> Thumbnails are stored in our quantum encrypted servers"""
+<b>Premium Features:</b>
+• Auto-cropping
+• Smart enhancement
+• Batch processing
+</blockquote>"""
 
     CAPTION_TXT = """
-📝 <b>CAPTION MASTER CONTROL</b> 📝
+📝 <b>CAPTION EDITOR</b> 📝
 
-<b>Available Smart Tags:</b>
-<code>{filesize}</code> - Auto-formatted file size
-<code>{duration}</code> - Clever duration display
-<code>{filename}</code> - Original file name
-<code>{date}</code> - Processing date stamp
+<blockquote>
+<b>Available Tags:</b>
+<code>{filesize}</code> - File size
+<code>{duration}</code> - Duration
+<code>{filename}</code> - File name
 
-<b>🎯 Example Captions:</b>
-<code>/set_caption 🎬 {filename} | ⏱️ {duration}</code>
-<code>/set_caption 📦 {filesize} | 🗓️ {date}</code>
-
-<b>💎 Premium Feature:</b> Dynamic caption templates"""
+<b>Example:</b>
+<code>/set_caption 🎬 {filename}</code>
+</blockquote>"""
 
     DONATE_TXT = """
-💖 <b>SUPPORT OUR COSMIC MISSION</b> 💖
+💖 <b>SUPPORT DEVELOPMENT</b> 💖
 
-<b>Your support fuels our innovation:</b>
+<blockquote>
+<b>Tiers:</b>
+• Stellar: $10
+• Galactic: $25
+• Cosmic: $50+
 
-💰 <b>Donation Tiers:</b>
-• 🌟 Stellar Supporter: $10
-• 🚀 Galactic Patron: $25
-• 🌌 Cosmic Benefactor: $50+
-
-<b>Payment Options:</b>
-• Cryptocurrency (BTC/ETH)
-• PayPal
-• Direct Transfer
-
-<b>📩 Contact:</b> @REQUETE_ANIME_30sbot for details
-
-<b>All donors receive:</b>
-• Priority support
-• Beta feature access
-• Cosmic gratitude"""
+<b>Contact:</b> @REQUETE_ANIME_30sbot
+</blockquote>"""
 
     PREMIUM_TXT = """
-💎 <b>UNLOCK THE COSMIC EDITION</b> 💎
+💎 <b>PREMIUM FEATURES</b> 💎
 
-<b>Premium Features Include:</b>
-⚡ Unlimited parallel processing
-🌌 Advanced metadata editing
-🔮 AI-powered smart renaming
-🚀 Priority queue access
-💎 Exclusive variable tags
+<blockquote>
+• Unlimited processing
+• Advanced metadata
+• AI renaming
+• Priority access
 
-<b>Activation Process:</b>
-1. Choose your plan with /plan
-2. Make payment to @altof2
-3. Send receipt with /bought
-
-<b>⚡ Instant activation guaranteed!</b>"""
+<b>Activate with:</b> /plan
+</blockquote>"""
 
     PREPLANS_TXT = """
-💰 <b>COSMIC PREMIUM PLANS</b> 💰
+💰 <b>PREMIUM PLANS</b> 💰
 
-<b>🚀 BASIC</b> ($3.99/month)
+<blockquote>
+<b>BASIC</b> ($3.99/mo)
 • 1000 renames/day
-• Standard support
 
-<b>💎 PRO</b> ($9.99/month)
+<b>PRO</b> ($9.99/mo)
 • 5000 renames/day
-• Priority support
-• Advanced variables
 
-<b>🌌 ULTIMATE</b> ($19.99/month)
+<b>ULTIMATE</b> ($19.99/mo)
 • Unlimited renames
-• 24/7 VIP support
-• AI SmartNaming™
-• Beta features
-
-<b>Payment:</b> @REQUETE_ANIME_30sbot
-<b>Questions?</b> @altof2"""
+</blockquote>"""
 
     HELP_TXT = """
-🛠️ <b>COMMAND CONTROL CENTER</b> 🛠️
+🛠️ <b>COMMAND LIST</b> 🛠️
 
-<b>Core Commands:</b>
-• /autorename - Smart file transformer
-• /metadata - MKV magic editor
-• /set_dump - Configure output channel
-• /profile - View your stats
+<blockquote>
+<b>Core:</b>
+• /autorename
+• /metadata
+• /profile
 
-<b>⚙️ Settings:</b>
-• /thumbnail - Visual customization
-• /caption - Text formatting
-• /sequential - File ordering
-
-<b>💎 Premium:</b>
-• /premium - Upgrade options
-• /bought - Submit payment
-
-<b>Need help?</b> @REQUETE_ANIME_30sbot"""
+<b>Settings:</b>
+• /thumbnail
+• /caption
+</blockquote>"""
 
     SEND_METADATA = """
-🔮 <b>METADATA MASTERY</b> 🔮
+🔮 <b>METADATA EDITOR</b> 🔮
 
-<b>Advanced MKV Control:</b>
-• Edit all stream titles
-• Modify audio/subtitle tracks
-• Add custom chapters
+<blockquote>
+<b>Features:</b>
+• Edit stream titles
+• Modify audio tracks
 • Embed cover art
 
-<b>Usage:</b>
-<code>/metadata on</code> - Enable magic
-<code>/metadata off</code> - Disable
-
-<b>Note:</b> Works with all MKV/MP4 files"""
+<code>/metadata on</code> - Enable
+</blockquote>"""
 
     SOURCE_TXT = """
-🌠 <b>THE TECHNOLOGY BEHIND THE MAGIC</b> 🌠
+🌠 <b>TECHNOLOGY</b> 🌠
 
+<blockquote>
 <b>Powered by:</b>
-• Quantum Python Core
-• Neural Renaming Algorithms
-• Cloud Processing Matrix
-
-<b>Developed with:</b> 
-• 97% Pure Python
-• 2% Dark Matter
-• 1% Cosmic Energy
-
-<b>⚡ Performance:</b>
-• 0.001ms average response
+• Python + Pyrogram
+• Cloud Processing
 • 99.9999% uptime
-• Infinite scalability"""
+</blockquote>"""
 
 Txt = Scripts()
