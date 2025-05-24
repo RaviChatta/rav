@@ -92,8 +92,9 @@ class AdminCommands:
                 return timedelta(hours=num)
             elif duration_str.endswith('d'):
                 return timedelta(days=num)
-        except:
-            return timedelta(hours=1)
+            return timedelta(hours=1)  # Default to 1 hour if no suffix matched
+        except (ValueError, TypeError):
+            return timedelta(hours=1)  # Default to 1 hour on parse error
 
     @staticmethod
     def _format_timedelta(delta: timedelta) -> str:
@@ -102,6 +103,13 @@ class AdminCommands:
         hours, remainder = divmod(delta.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
         return f"{days}d {hours}h {minutes}m" if days else f"{hours}h {minutes}m"
+
+    @staticmethod
+    def _get_command_args(message: Message) -> List[str]:
+        """Safely get command arguments with None checks"""
+        if not message or not hasattr(message, "command"):
+            return []
+        return getattr(message, "command", []) or []
 
     # ========================
     # Points System Configuration
@@ -138,9 +146,8 @@ class AdminCommands:
         try:
             config = await AdminCommands.setup_points_config()
             
-            # Safely get command arguments
-            command = getattr(message, "command", [])
-            if len(command) < 3:
+            command = AdminCommands._get_command_args(message)
+            if len(command) < 2:
                 response = (
                     "🛠 <b>Points Configuration</b>\n\n"
                     f"• Per Rename: {config['per_rename']}\n"
@@ -154,20 +161,45 @@ class AdminCommands:
                 return await AdminCommands._send_response(message, response)
 
             setting = command[1]
+            
+            if len(command) < 3:
+                return await AdminCommands._send_response(
+                    message, 
+                    f"❌ Missing value for setting {setting}"
+                )
+
             value = command[2]
 
-            if setting not in config or (setting == "ad_watch" and len(command) < 4):
-                return await AdminCommands._send_response(message, "❌ Invalid setting")
+            if setting not in config:
+                return await AdminCommands._send_response(
+                    message, 
+                    "❌ Invalid setting. Available settings:\n" +
+                    "\n".join(f"- {k}" for k in config.keys())
+                )
 
             try:
                 if setting == "ad_watch":
+                    if len(command) < 4:
+                        return await AdminCommands._send_response(
+                            message,
+                            "❌ For ad_watch, specify sub-setting and value\n"
+                            "Example: /pointconfig ad_watch min_points 5"
+                        )
                     sub_setting = command[2]
                     value = command[3]
+                    if sub_setting not in config[setting]:
+                        return await AdminCommands._send_response(
+                            message,
+                            f"❌ Invalid ad_watch setting. Available: {', '.join(config[setting].keys())}"
+                        )
                     config[setting][sub_setting] = int(value)
                 else:
                     config[setting] = int(value) if setting != "premium_multiplier" else float(value)
-            except ValueError:
-                return await AdminCommands._send_response(message, "❌ Invalid value")
+            except ValueError as e:
+                return await AdminCommands._send_response(
+                    message, 
+                    f"❌ Invalid value: {str(e)}"
+                )
 
             await hyoshcoder.db.config.update_one(
                 {"key": "points_config"},
@@ -181,8 +213,11 @@ class AdminCommands:
                 delete_after=10
             )
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Config error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Configuration error: {str(e)}"
+            )
 
     # ========================
     # Points Link Generation
@@ -192,8 +227,7 @@ class AdminCommands:
     async def generate_points_link(client: Client, message: Message):
         """Generate shareable points links"""
         try:
-            # Safely get command arguments
-            command = getattr(message, "command", [])
+            command = AdminCommands._get_command_args(message)
             if len(command) < 4:
                 return await AdminCommands._send_response(
                     message,
@@ -203,15 +237,22 @@ class AdminCommands:
                     "<b>Expires formats:</b> 24h, 7d, 30m"
                 )
 
-            points = int(command[1])
-            max_uses = int(command[2])
-            expires_in = command[3]
+            try:
+                points = int(command[1])
+                max_uses = int(command[2])
+                expires_in = command[3]
+            except (IndexError, ValueError) as e:
+                return await AdminCommands._send_response(
+                    message,
+                    f"❌ Invalid parameters: {str(e)}"
+                )
 
             expires_delta = AdminCommands._parse_duration(expires_in)
             expires_at = datetime.now() + expires_delta
 
             code = secrets.token_urlsafe(8)
-            link = f"https://t.me/{(await client.get_me()).username}?start=points_{code}"
+            bot_username = (await client.get_me()).username
+            link = f"https://t.me/{bot_username}?start=points_{code}"
 
             await hyoshcoder.point_links.insert_one({
                 "code": code,
@@ -228,7 +269,7 @@ class AdminCommands:
                 f"🔗 <b>Points Link Created</b>\n\n"
                 f"🪙 Points: {points}\n"
                 f"🔢 Uses: {max_uses}\n"
-                f"⏳ Expires: {expires_in}\n\n"
+                f"⏳ Expires: {expires_in} ({expires_at.strftime('%Y-%m-%d %H:%M')})\n\n"
                 f"📌 Code: <code>{code}</code>\n"
                 f"🔗 Link: {link}",
                 reply_markup=InlineKeyboardMarkup([
@@ -236,8 +277,11 @@ class AdminCommands:
                 ])
             )
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Link gen error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Error generating link: {str(e)}"
+            )
 
     # ========================
     # User Points Management
@@ -247,8 +291,7 @@ class AdminCommands:
     async def manage_user_points(client: Client, message: Message):
         """Manage user points"""
         try:
-            # Safely get command arguments
-            command = getattr(message, "command", [])
+            command = AdminCommands._get_command_args(message)
             if len(command) < 4:
                 return await AdminCommands._send_response(
                     message,
@@ -258,9 +301,15 @@ class AdminCommands:
                     "<b>Example:</b> <code>/userpoints 123456 add 50</code>"
                 )
 
-            user_id = int(command[1])
-            action = command[2].lower()
-            amount = int(command[3])
+            try:
+                user_id = int(command[1])
+                action = command[2].lower()
+                amount = int(command[3])
+            except (IndexError, ValueError) as e:
+                return await AdminCommands._send_response(
+                    message,
+                    f"❌ Invalid parameters: {str(e)}"
+                )
 
             user = await hyoshcoder.get_user(user_id)
             if not user:
@@ -290,8 +339,11 @@ class AdminCommands:
                 delete_after=10
             )
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Points error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Points management error: {str(e)}"
+            )
 
     # ========================
     # Premium Management
@@ -301,60 +353,91 @@ class AdminCommands:
     async def manage_premium(client: Client, message: Message):
         """Manage premium subscriptions"""
         try:
-            # Safely get command arguments
-            command = getattr(message, "command", [])
-            if len(command) < 3:
+            command = AdminCommands._get_command_args(message)
+            if len(command) < 2:
                 return await AdminCommands._send_response(
                     message,
                     "🌟 <b>Premium Management</b>\n\n"
-                    "<b>Usage:</b> <code>/premium user_id action [duration]</code>\n"
+                    "<b>Usage:</b> <code>/premium user_id action [duration] [plan]</code>\n"
                     "<b>Actions:</b> activate, deactivate, check\n"
-                    "<b>Example:</b> <code>/premium 123456 activate 7d</code>"
+                    "<b>Example:</b> <code>/premium 123456 activate 7d gold</code>"
                 )
 
-            user_id = int(command[1])
-            action = command[2].lower()
+            try:
+                user_id = int(command[1])
+                action = command[2].lower()
+            except (IndexError, ValueError) as e:
+                return await AdminCommands._send_response(
+                    message,
+                    f"❌ Invalid parameters: {str(e)}"
+                )
 
             if action == "check":
                 status = await hyoshcoder.check_premium_status(user_id)
                 response = (
                     f"🌟 <b>Premium Status for {user_id}</b>\n\n"
                     f"Status: {'✅ Active' if status['is_premium'] else '❌ Inactive'}\n"
-                    f"Valid Until: {status.get('until', 'N/A')}"
+                    f"Valid Until: {status.get('until', 'N/A')}\n"
+                    f"Plan: {status.get('plan', 'N/A')}"
                 )
                 return await AdminCommands._send_response(message, response)
 
             elif action == "activate":
                 if len(command) < 4:
-                    return await AdminCommands._send_response(message, "❌ Missing duration")
+                    return await AdminCommands._send_response(
+                        message,
+                        "❌ Missing duration or plan\n"
+                        "Example: /premium 123456 activate 7d gold"
+                    )
                 
                 duration = AdminCommands._parse_duration(command[3])
+                plan = command[4] if len(command) > 4 else "premium"
+                
                 success = await hyoshcoder.activate_premium(
                     user_id=user_id,
+                    plan=plan,
                     duration_days=duration.days
                 )
                 
                 if not success:
-                    return await AdminCommands._send_response(message, "❌ Failed to activate premium")
+                    return await AdminCommands._send_response(
+                        message, 
+                        "❌ Failed to activate premium"
+                    )
                 
                 return await AdminCommands._send_response(
                     message,
                     f"✅ Activated premium for {user_id}\n"
-                    f"⏳ Duration: {AdminCommands._format_timedelta(duration)}"
+                    f"⏳ Duration: {AdminCommands._format_timedelta(duration)}\n"
+                    f"📝 Plan: {plan}",
+                    delete_after=15
                 )
 
             elif action == "deactivate":
                 success = await hyoshcoder.deactivate_premium(user_id)
                 if not success:
-                    return await AdminCommands._send_response(message, "❌ Failed to deactivate premium")
-                return await AdminCommands._send_response(message, f"✅ Deactivated premium for {user_id}")
+                    return await AdminCommands._send_response(
+                        message, 
+                        "❌ Failed to deactivate premium"
+                    )
+                return await AdminCommands._send_response(
+                    message, 
+                    f"✅ Deactivated premium for {user_id}",
+                    delete_after=10
+                )
 
             else:
-                return await AdminCommands._send_response(message, "❌ Invalid action")
+                return await AdminCommands._send_response(
+                    message, 
+                    "❌ Invalid action. Use activate, deactivate or check"
+                )
 
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Premium error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Premium management error: {str(e)}"
+            )
 
     # ========================
     # Bot Statistics
@@ -368,22 +451,29 @@ class AdminCommands:
                 hyoshcoder.total_users_count(),
                 hyoshcoder.total_premium_users_count(),
                 hyoshcoder.total_renamed_files(),
-                hyoshcoder.total_points_distributed()
+                hyoshcoder.total_points_distributed(),
+                hyoshcoder.total_banned_users_count(),
+                hyoshcoder.get_daily_active_users()
             )
 
             response = (
                 "📊 <b>Bot Statistics</b>\n\n"
                 f"⏱ Uptime: {AdminCommands._format_uptime()}\n"
-                f"👥 Users: {stats[0]}\n"
-                f"⭐ Premium: {stats[1]}\n"
+                f"👥 Total Users: {stats[0]}\n"
+                f"⭐ Premium Users: {stats[1]}\n"
+                f"🚫 Banned Users: {stats[4]}\n"
+                f"📈 Active Today: {stats[5]}\n"
                 f"📂 Files Renamed: {stats[2]}\n"
                 f"🪙 Points Distributed: {stats[3]}"
             )
 
             await AdminCommands._send_response(message, response)
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Stats error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Error getting stats: {str(e)}"
+            )
 
     # ========================
     # User Ban Management
@@ -393,8 +483,7 @@ class AdminCommands:
     async def ban_user(client: Client, message: Message):
         """Ban a user"""
         try:
-            # Safely get command arguments
-            command = getattr(message, "command", [])
+            command = AdminCommands._get_command_args(message)
             if len(command) < 2:
                 return await AdminCommands._send_response(
                     message,
@@ -403,10 +492,16 @@ class AdminCommands:
                     "<b>Example:</b> <code>/ban 123456 Spamming</code>"
                 )
 
-            user_id = int(command[1])
-            reason = ' '.join(command[2:]) or "No reason provided"
+            try:
+                user_id = int(command[1])
+                reason = ' '.join(command[2:]) or "No reason provided"
+            except (IndexError, ValueError) as e:
+                return await AdminCommands._send_response(
+                    message,
+                    f"❌ Invalid parameters: {str(e)}"
+                )
 
-            success = await hyoshcoder.ban_user(user_id, reason)
+            success = await hyoshcoder.ban_user(user_id, 30, reason)  # Default 30 day ban
             if not success:
                 return await AdminCommands._send_response(message, "❌ Failed to ban user")
 
@@ -417,15 +512,17 @@ class AdminCommands:
                 delete_after=15
             )
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Ban error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Ban error: {str(e)}"
+            )
 
     @staticmethod
     async def unban_user(client: Client, message: Message):
         """Unban a user"""
         try:
-            # Safely get command arguments
-            command = getattr(message, "command", [])
+            command = AdminCommands._get_command_args(message)
             if len(command) < 2:
                 return await AdminCommands._send_response(
                     message,
@@ -434,8 +531,15 @@ class AdminCommands:
                     "<b>Example:</b> <code>/unban 123456</code>"
                 )
 
-            user_id = int(command[1])
-            success = await hyoshcoder.unban_user(user_id)
+            try:
+                user_id = int(command[1])
+            except (IndexError, ValueError) as e:
+                return await AdminCommands._send_response(
+                    message,
+                    f"❌ Invalid user ID: {str(e)}"
+                )
+
+            success = await hyoshcoder.remove_ban(user_id)
             if not success:
                 return await AdminCommands._send_response(message, "❌ Failed to unban user")
 
@@ -445,8 +549,11 @@ class AdminCommands:
                 delete_after=15
             )
         except Exception as e:
-            await AdminCommands._send_response(message, f"❌ Error: {str(e)}")
             logger.error(f"Unban error: {e}", exc_info=True)
+            await AdminCommands._send_response(
+                message, 
+                f"❌ Unban error: {str(e)}"
+            )
 
     # ========================
     # Admin Panel
@@ -473,8 +580,7 @@ class AdminCommands:
 @Client.on_message(filters.private & filters.command(["admin", "pointconfig", "genlink", "userpoints", "premium", "stats", "ban", "unban"]) & filters.user(ADMIN_USER_ID))
 async def admin_commands_handler(client: Client, message: Message):
     try:
-        # Safely get command
-        command = getattr(message, "command", [])
+        command = AdminCommands._get_command_args(message)
         if not command:
             return
         
@@ -497,7 +603,8 @@ async def admin_commands_handler(client: Client, message: Message):
         elif cmd == "unban":
             await AdminCommands.unban_user(client, message)
     except Exception as e:
-        logger.error(f"Command error: {e}", exc_info=True)
+        logger.error(f"Command handler error: {e}", exc_info=True)
+        await message.reply_text(f"❌ Command error: {str(e)}")
 
 # Callback handlers
 @Client.on_callback_query(filters.user(ADMIN_USER_ID))
@@ -515,7 +622,8 @@ async def admin_callbacks(client: Client, callback: CallbackQuery):
                 "Commands:\n"
                 "<code>/ban user_id [reason]</code>\n"
                 "<code>/unban user_id</code>\n"
-                "<code>/userpoints user_id action amount</code>",
+                "<code>/userpoints user_id action amount</code>\n\n"
+                "<b>Actions:</b> add, deduct, set",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]
                 ])
@@ -524,9 +632,10 @@ async def admin_callbacks(client: Client, callback: CallbackQuery):
             await callback.message.edit_text(
                 "🌟 <b>Premium Management</b>\n\n"
                 "Commands:\n"
-                "<code>/premium user_id activate duration</code>\n"
+                "<code>/premium user_id activate duration plan</code>\n"
                 "<code>/premium user_id deactivate</code>\n"
-                "<code>/premium user_id check</code>",
+                "<code>/premium user_id check</code>\n\n"
+                "<b>Plans:</b> basic, premium, gold",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]
                 ])
@@ -536,7 +645,7 @@ async def admin_callbacks(client: Client, callback: CallbackQuery):
         elif data.startswith("del_link_"):
             code = data.split("_")[2]
             await hyoshcoder.point_links.delete_one({"code": code})
-            await callback.answer("Link deleted")
+            await callback.answer("✅ Link deleted")
             await callback.message.delete()
         elif data == "admin_panel":
             await AdminCommands.admin_panel(client, callback.message)
