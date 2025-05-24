@@ -3,32 +3,35 @@ import math
 import random
 import re
 import time
+import os
+import logging
 from datetime import datetime, timezone
 from typing import Optional, Tuple, List, Dict
 from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import settings
 from scripts import Txt
-import logging
+
 logger = logging.getLogger(__name__)
+
 # Enhanced patterns with priority matching
 MEDIA_PATTERNS = {
     'season': [
-        (re.compile(r'S(\d+)', re.IGNORECASE), 1),  # S01, S1
-        (re.compile(r'Season\s*(\d+)', re.IGNORECASE), 1),
-        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Season', re.IGNORECASE), 1),
+        (re.compile(r'S(\d+)', re.IGNORECASE),  # S01, S1
+        (re.compile(r'Season\s*(\d+)', re.IGNORECASE),
+        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Season', re.IGNORECASE),
     ],
     'episode': [
-        (re.compile(r'E(\d+)', re.IGNORECASE), 1),  # E01, E1
-        (re.compile(r'Episode\s*(\d+)', re.IGNORECASE), 1),
-        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Episode', re.IGNORECASE), 1),
-        (re.compile(r'\[(\d+)\]', re.IGNORECASE), 1),  # [01], [1]
+        (re.compile(r'E(\d+)', re.IGNORECASE),  # E01, E1
+        (re.compile(r'Episode\s*(\d+)', re.IGNORECASE),
+        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Episode', re.IGNORECASE),
+        (re.compile(r'\[(\d+)\]', re.IGNORECASE)),  # [01], [1]
     ],
     'quality': [
-        (re.compile(r'(\d{3,4}p)', re.IGNORECASE), 1),  # 1080p, 720p
-        (re.compile(r'(4K|UHD)', re.IGNORECASE), 1),
-        (re.compile(r'(HD|SD)', re.IGNORECASE), 1),
-        (re.compile(r'(HDR|HDRip|BluRay|WEB-DL|WEBRip)', re.IGNORECASE), 1),
+        (re.compile(r'(\d{3,4}p)', re.IGNORECASE),  # 1080p, 720p
+        (re.compile(r'(4K|UHD)', re.IGNORECASE),
+        (re.compile(r'(HD|SD)', re.IGNORECASE),
+        (re.compile(r'(HDR|HDRip|BluRay|WEB-DL|WEBRip)', re.IGNORECASE),
     ]
 }
 
@@ -39,14 +42,13 @@ class MediaInfoExtractor:
         Extract all media info (season, episode, quality) in one pass
         Returns dict with keys: season, episode, quality
         """
-        result = {'season': None, 'episode': None, 'quality': 'Unknown'}
+        result = {'season': None, 'episode': None, 'quality': None}
         
-        # Combined extraction for better performance
         for pattern_type, patterns in MEDIA_PATTERNS.items():
-            for pattern, group in patterns:
+            for pattern in patterns:
                 match = pattern.search(filename)
                 if match:
-                    result[pattern_type] = match.group(group)
+                    result[pattern_type] = match.group(1)
                     break  # Stop after first match
         
         # Default season if episode exists but no season
@@ -96,7 +98,7 @@ class ProgressTracker:
                 ])
             )
         except Exception as e:
-            print(f"Progress update error: {e}")
+            logger.error(f"Progress update error: {e}")
 
     def _create_progress_bar(self, percentage: float) -> str:
         """Create a smooth animated progress bar"""
@@ -166,8 +168,9 @@ async def get_random_photo() -> Optional[str]:
         photos = [p.strip() for p in settings.IMAGES.split() if p.strip()]
         return random.choice(photos) if photos else None
     except Exception as e:
-        print(f"Error getting random photo: {e}")
+        logger.error(f"Error getting random photo: {e}")
         return None
+
 async def get_random_animation() -> Optional[str]:
     """Get a random animation from configured animations"""
     try:
@@ -177,20 +180,17 @@ async def get_random_animation() -> Optional[str]:
         animations = [a.strip() for a in settings.ANIMATIONS.split() if a.strip()]
         return random.choice(animations) if animations else None
     except Exception as e:
-        print(f"Error getting random animation: {e}")
+        logger.error(f"Error getting random animation: {e}")
         return None
+
 async def get_shortlink(url: str, api: str, link: str) -> str:
     """Get shortlink with retry logic"""
-    shortzy = Shortzy(api_key=api, base_site=url)
-    
-    for attempt in range(3):
-        try:
-            return await shortzy.convert(link)
-        except Exception as e:
-            if attempt == 2:
-                raise
-            await asyncio.sleep(1)
-    return link  # fallback to original link
+    try:
+        shortzy = Shortzy(api_key=api, base_site=url)
+        return await shortzy.convert(link)
+    except Exception as e:
+        logger.error(f"Shortlink error: {e}")
+        return link  # fallback to original link
 
 async def send_log(bot, user) -> None:
     """Send new user log to admin channel"""
@@ -212,7 +212,7 @@ async def send_log(bot, user) -> None:
         
         await bot.send_message(settings.LOG_CHANNEL, log_msg)
     except Exception as e:
-        print(f"Failed to send log: {e}")
+        logger.error(f"Failed to send log: {e}")
 
 def format_duration(seconds: int) -> str:
     """Format duration in HH:MM:SS"""
@@ -244,7 +244,7 @@ async def extract_episode(filename: str) -> Optional[str]:
 
 async def extract_quality(filename: str) -> str:
     """Legacy quality extractor"""
-    return (await MediaInfoExtractor.extract_info(filename))['quality']
+    return (await MediaInfoExtractor.extract_info(filename))['quality'] or "Unknown"
 
 def humanbytes(size: float) -> str:
     """Legacy bytes formatter"""
