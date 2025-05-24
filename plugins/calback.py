@@ -178,7 +178,7 @@ class CallbackActions:
 
     @staticmethod
     async def handle_leaderboard(client: Client, query: CallbackQuery, period: str = "weekly", type: str = "points"):
-        """Handle leaderboard callback"""
+        """Handle leaderboard callback - now showing top 8 only"""
         try:
             leaders = await hyoshcoder.get_leaderboard(period, type)
             if not leaders:
@@ -202,8 +202,8 @@ class CallbackActions:
                 "alltime": "All-Time"
             }.get(period, "Weekly")
             
-            text = f"🏆 {period_display} {type_display} Leaderboard:\n\n"
-            for i, user in enumerate(leaders[:10], 1):
+            text = f"🏆 {period_display} {type_display} Leaderboard (Top 8):\n\n"
+            for i, user in enumerate(leaders[:8], 1):  # Only show top 8
                 username = user.get('username', f"User {user['_id']}")
                 text += f"{i}. {username} - {user['value']} {type_display} {'⭐' if user.get('is_premium') else ''}\n"
             
@@ -332,27 +332,38 @@ class CallbackActions:
 
     @staticmethod
     async def handle_free_points(client: Client, query: CallbackQuery, user_id: int):
-        """Handle free points callback"""
+        """Improved free points verification and distribution"""
         try:
             me = await client.get_me()
             unique_code = str(uuid.uuid4())[:8]
             invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
             
+            # Get points configuration
+            config = await hyoshcoder.get_config("points_config") or {}
+            ad_config = config.get('ad_watch', {})
+            min_points = ad_config.get('min_points', 5)
+            max_points = ad_config.get('max_points', 20)
+            
+            # Generate random points
+            points = random.randint(min_points, max_points)
+            
+            # Check if user is premium for multiplier
+            premium_status = await hyoshcoder.check_premium_status(user_id)
+            if premium_status.get('is_premium', False):
+                multiplier = config.get('premium_multiplier', 2)
+                points = int(points * multiplier)
+            
+            # Track the points distribution
+            if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
+                raise Exception("Failed to track points distribution")
+            
+            # Generate shareable links
             points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
             shortlink = await get_shortlink(
                 settings.SHORTED_LINK, 
                 settings.SHORTED_LINK_API, 
                 points_link
             ) if all([settings.SHORTED_LINK, settings.SHORTED_LINK_API]) else points_link
-            
-            config = await hyoshcoder.get_config("points_config") or {}
-            ad_config = config.get('ad_watch', {})
-            min_points = ad_config.get('min_points', 5)
-            max_points = ad_config.get('max_points', 20)
-            
-            points = random.randint(min_points, max_points)
-            if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
-                raise Exception("Failed to track points")
             
             share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
             
@@ -366,8 +377,9 @@ class CallbackActions:
                 "**✨ Free Points System**\n\n"
                 "Earn points by helping grow our community:\n\n"
                 f"🔹 **Share Bot**: Get {config.get('referral_bonus', 10)} points per referral\n"
-                f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n\n"
-                f"💎 Premium members earn {config.get('premium_multiplier', 2)}x more points!"
+                f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n"
+                f"⭐ **Premium Bonus**: {config.get('premium_multiplier', 2)}x points multiplier\n\n"
+                f"🎁 You can earn up to {points} points right now!"
             )
             
             return {
@@ -377,7 +389,7 @@ class CallbackActions:
         except Exception as e:
             logger.error(f"Free points error: {e}")
             return {
-                'caption': "❌ Error processing request",
+                'caption': "❌ Error processing request. Please try again later.",
                 'reply_markup': InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
@@ -385,7 +397,7 @@ class CallbackActions:
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    """Main callback query handler"""
+    """Main callback query handler with improved error handling"""
     data = query.data
     user_id = query.from_user.id
     
@@ -541,21 +553,22 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
-        if 'thumb' in response:
-            media = InputMediaPhoto(
-                media=response['thumb'] or await get_random_photo(),
-                caption=response['caption']
-            )
-            await query.message.edit_media(
-                media=media,
-                reply_markup=response['reply_markup']
-            )
-        else:
-            await query.message.edit_text(
-                text=response['caption'],
-                reply_markup=response['reply_markup'],
-                disable_web_page_preview=response.get('disable_web_page_preview', False)
-            )
+        if response:
+            if 'thumb' in response:
+                media = InputMediaPhoto(
+                    media=response['thumb'] or await get_random_photo(),
+                    caption=response['caption']
+                )
+                await query.message.edit_media(
+                    media=media,
+                    reply_markup=response['reply_markup']
+                )
+            else:
+                await query.message.edit_text(
+                    text=response['caption'],
+                    reply_markup=response['reply_markup'],
+                    disable_web_page_preview=response.get('disable_web_page_preview', False)
+                )
             
     except FloodWait as e:
         await asyncio.sleep(e.value)
