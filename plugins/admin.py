@@ -138,7 +138,9 @@ class AdminCommands:
         try:
             config = await AdminCommands.setup_points_config()
             
-            if len(message.command) < 3:
+            # Safely get command arguments
+            command = getattr(message, "command", [])
+            if len(command) < 3:
                 response = (
                     "🛠 <b>Points Configuration</b>\n\n"
                     f"• Per Rename: {config['per_rename']}\n"
@@ -151,16 +153,16 @@ class AdminCommands:
                 )
                 return await AdminCommands._send_response(message, response)
 
-            setting = message.command[1]
-            value = message.command[2]
+            setting = command[1]
+            value = command[2]
 
-            if setting not in config or (setting == "ad_watch" and len(message.command) < 4):
+            if setting not in config or (setting == "ad_watch" and len(command) < 4):
                 return await AdminCommands._send_response(message, "❌ Invalid setting")
 
             try:
                 if setting == "ad_watch":
-                    sub_setting = message.command[2]
-                    value = message.command[3]
+                    sub_setting = command[2]
+                    value = command[3]
                     config[setting][sub_setting] = int(value)
                 else:
                     config[setting] = int(value) if setting != "premium_multiplier" else float(value)
@@ -190,7 +192,9 @@ class AdminCommands:
     async def generate_points_link(client: Client, message: Message):
         """Generate shareable points links"""
         try:
-            if len(message.command) < 4:
+            # Safely get command arguments
+            command = getattr(message, "command", [])
+            if len(command) < 4:
                 return await AdminCommands._send_response(
                     message,
                     "🔗 <b>Generate Points Link</b>\n\n"
@@ -199,9 +203,9 @@ class AdminCommands:
                     "<b>Expires formats:</b> 24h, 7d, 30m"
                 )
 
-            points = int(message.command[1])
-            max_uses = int(message.command[2])
-            expires_in = message.command[3]
+            points = int(command[1])
+            max_uses = int(command[2])
+            expires_in = command[3]
 
             expires_delta = AdminCommands._parse_duration(expires_in)
             expires_at = datetime.now() + expires_delta
@@ -243,7 +247,9 @@ class AdminCommands:
     async def manage_user_points(client: Client, message: Message):
         """Manage user points"""
         try:
-            if len(message.command) < 4:
+            # Safely get command arguments
+            command = getattr(message, "command", [])
+            if len(command) < 4:
                 return await AdminCommands._send_response(
                     message,
                     "👤 <b>Manage User Points</b>\n\n"
@@ -252,9 +258,9 @@ class AdminCommands:
                     "<b>Example:</b> <code>/userpoints 123456 add 50</code>"
                 )
 
-            user_id = int(message.command[1])
-            action = message.command[2].lower()
-            amount = int(message.command[3])
+            user_id = int(command[1])
+            action = command[2].lower()
+            amount = int(command[3])
 
             user = await hyoshcoder.get_user(user_id)
             if not user:
@@ -295,7 +301,9 @@ class AdminCommands:
     async def manage_premium(client: Client, message: Message):
         """Manage premium subscriptions"""
         try:
-            if len(message.command) < 3:
+            # Safely get command arguments
+            command = getattr(message, "command", [])
+            if len(command) < 3:
                 return await AdminCommands._send_response(
                     message,
                     "🌟 <b>Premium Management</b>\n\n"
@@ -304,8 +312,8 @@ class AdminCommands:
                     "<b>Example:</b> <code>/premium 123456 activate 7d</code>"
                 )
 
-            user_id = int(message.command[1])
-            action = message.command[2].lower()
+            user_id = int(command[1])
+            action = command[2].lower()
 
             if action == "check":
                 status = await hyoshcoder.check_premium_status(user_id)
@@ -317,10 +325,10 @@ class AdminCommands:
                 return await AdminCommands._send_response(message, response)
 
             elif action == "activate":
-                if len(message.command) < 4:
+                if len(command) < 4:
                     return await AdminCommands._send_response(message, "❌ Missing duration")
                 
-                duration = AdminCommands._parse_duration(message.command[3])
+                duration = AdminCommands._parse_duration(command[3])
                 success = await hyoshcoder.activate_premium(
                     user_id=user_id,
                     duration_days=duration.days
@@ -385,7 +393,9 @@ class AdminCommands:
     async def ban_user(client: Client, message: Message):
         """Ban a user"""
         try:
-            if len(message.command) < 2:
+            # Safely get command arguments
+            command = getattr(message, "command", [])
+            if len(command) < 2:
                 return await AdminCommands._send_response(
                     message,
                     "🚫 <b>Ban User</b>\n\n"
@@ -393,8 +403,8 @@ class AdminCommands:
                     "<b>Example:</b> <code>/ban 123456 Spamming</code>"
                 )
 
-            user_id = int(message.command[1])
-            reason = ' '.join(message.command[2:]) or "No reason provided"
+            user_id = int(command[1])
+            reason = ' '.join(command[2:]) or "No reason provided"
 
             success = await hyoshcoder.ban_user(user_id, reason)
             if not success:
@@ -414,7 +424,9 @@ class AdminCommands:
     async def unban_user(client: Client, message: Message):
         """Unban a user"""
         try:
-            if len(message.command) < 2:
+            # Safely get command arguments
+            command = getattr(message, "command", [])
+            if len(command) < 2:
                 return await AdminCommands._send_response(
                     message,
                     "✅ <b>Unban User</b>\n\n"
@@ -422,7 +434,7 @@ class AdminCommands:
                     "<b>Example:</b> <code>/unban 123456</code>"
                 )
 
-            user_id = int(message.command[1])
+            user_id = int(command[1])
             success = await hyoshcoder.unban_user(user_id)
             if not success:
                 return await AdminCommands._send_response(message, "❌ Failed to unban user")
@@ -461,7 +473,12 @@ class AdminCommands:
 @Client.on_message(filters.private & filters.command(["admin", "pointconfig", "genlink", "userpoints", "premium", "stats", "ban", "unban"]) & filters.user(ADMIN_USER_ID))
 async def admin_commands_handler(client: Client, message: Message):
     try:
-        cmd = message.command[0].lower()
+        # Safely get command
+        command = getattr(message, "command", [])
+        if not command:
+            return
+        
+        cmd = command[0].lower()
         
         if cmd == "admin":
             await AdminCommands.admin_panel(client, message)
