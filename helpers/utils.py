@@ -15,25 +15,27 @@ from scripts import Txt
 logger = logging.getLogger(__name__)
 
 # Enhanced patterns with priority matching
+
 MEDIA_PATTERNS = {
     'season': [
-        (re.compile(r'S(\d+)', re.IGNORECASE),  # S01, S1
-        (re.compile(r'Season\s*(\d+)', re.IGNORECASE),
-        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Season', re.IGNORECASE),
+        (re.compile(r'S(\d+)', re.IGNORECASE)),  # S01, S1
+        (re.compile(r'Season\s*(\d+)', re.IGNORECASE)),
+        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Season', re.IGNORECASE)),
     ],
     'episode': [
-        (re.compile(r'E(\d+)', re.IGNORECASE),  # E01, E1
-        (re.compile(r'Episode\s*(\d+)', re.IGNORECASE),
-        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Episode', re.IGNORECASE),
+        (re.compile(r'E(\d+)', re.IGNORECASE)),  # E01, E1
+        (re.compile(r'Episode\s*(\d+)', re.IGNORECASE)),
+        (re.compile(r'(\d+)(?:st|nd|rd|th)\s*Episode', re.IGNORECASE)),
         (re.compile(r'\[(\d+)\]', re.IGNORECASE)),  # [01], [1]
     ],
     'quality': [
-        (re.compile(r'(\d{3,4}p)', re.IGNORECASE),  # 1080p, 720p
-        (re.compile(r'(4K|UHD)', re.IGNORECASE),
-        (re.compile(r'(HD|SD)', re.IGNORECASE),
-        (re.compile(r'(HDR|HDRip|BluRay|WEB-DL|WEBRip)', re.IGNORECASE),
+        (re.compile(r'(\d{3,4}p)', re.IGNORECASE)),  # 1080p, 720p
+        (re.compile(r'(4K|UHD)', re.IGNORECASE)),
+        (re.compile(r'(HD|SD)', re.IGNORECASE)),
+        (re.compile(r'(HDR|HDRip|BluRay|WEB-DL|WEBRip)', re.IGNORECASE)),
     ]
 }
+
 
 class MediaInfoExtractor:
     @staticmethod
