@@ -2,6 +2,7 @@ import random
 import uuid
 import asyncio
 import logging
+import html
 from urllib.parse import quote
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
@@ -63,40 +64,49 @@ class CallbackActions:
     @staticmethod
     async def handle_help(client: Client, query: CallbackQuery, user_id: int):
         """Handle help menu callback"""
-        sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-        src_info = await hyoshcoder.get_src_info(user_id)
-        
-        btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
-        src_txt = "File name" if src_info == "file_name" else "File caption"
+        try:
+            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+            src_info = await hyoshcoder.get_src_info(user_id)
+            
+            btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
+            src_txt = "File name" if src_info == "file_name" else "File caption"
 
-        buttons = [
-            [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
-            [
-                InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), 
-                InlineKeyboardButton('Caption •', callback_data='caption')
-            ],
-            [
-                InlineKeyboardButton('• Metadata', callback_data='meta'), 
-                InlineKeyboardButton('Set Media •', callback_data='setmedia')
-            ],
-            [
-                InlineKeyboardButton('• Set Dump', callback_data='setdump'), 
-                InlineKeyboardButton('View Dump •', callback_data='viewdump')
-            ],
-            [
-                InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), 
-                InlineKeyboardButton('Premium •', callback_data='premiumx')
-            ],
-            [
-                InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src'),
-            ],
-            [InlineKeyboardButton('• Home', callback_data='home')]
-        ]
-        
-        return {
-            'caption': Txt.HELP_TXT.format(client.mention),
-            'reply_markup': InlineKeyboardMarkup(buttons)
-        }
+            buttons = [
+                [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
+                [
+                    InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), 
+                    InlineKeyboardButton('Caption •', callback_data='caption')
+                ],
+                [
+                    InlineKeyboardButton('• Metadata', callback_data='meta'), 
+                    InlineKeyboardButton('Set Media •', callback_data='setmedia')
+                ],
+                [
+                    InlineKeyboardButton('• Set Dump', callback_data='setdump'), 
+                    InlineKeyboardButton('View Dump •', callback_data='viewdump')
+                ],
+                [
+                    InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), 
+                    InlineKeyboardButton('Premium •', callback_data='premiumx')
+                ],
+                [
+                    InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src'),
+                ],
+                [InlineKeyboardButton('• Home', callback_data='home')]
+            ]
+            
+            return {
+                'caption': Txt.HELP_TXT.format(client.mention),
+                'reply_markup': InlineKeyboardMarkup(buttons)
+            }
+        except Exception as e:
+            logger.error(f"Help menu error: {e}")
+            return {
+                'caption': "❌ Error loading help menu",
+                'reply_markup': InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="home")]
+                ])
+            }
 
     @staticmethod
     async def handle_stats(client: Client, query: CallbackQuery, user_id: int):
@@ -106,19 +116,23 @@ class CallbackActions:
             points = await hyoshcoder.get_points(user_id)
             premium_status = await hyoshcoder.check_premium_status(user_id)
             user_data = await hyoshcoder.read_user(user_id)
+            
+            # Handle referral stats safely
             referral_stats = user_data.get('referral', {})
+            referred_count = referral_stats.get('referred_count', 0)
+            referral_earnings = referral_stats.get('referral_earnings', 0)
             
             text = (
                 f"📊 <b>Your Statistics</b>\n\n"
                 f"✨ <b>Points Balance:</b> {points}\n"
-                f"⭐ <b>Premium Status:</b> {'Active ✅' if premium_status['is_premium'] else 'Inactive ❌'}\n"
-                f"👥 <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
-                f"(Earned {referral_stats.get('referral_earnings', 0)} ✨)\n\n"
+                f"⭐ <b>Premium Status:</b> {'Active ✅' if premium_status.get('is_premium', False) else 'Inactive ❌'}\n"
+                f"👥 <b>Referrals:</b> {referred_count} "
+                f"(Earned {referral_earnings} ✨)\n\n"
                 f"📝 <b>Files Renamed</b>\n"
-                f"• Total: {stats['total_renamed']}\n"
-                f"• Today: {stats['today']}\n"
-                f"• This Week: {stats['this_week']}\n"
-                f"• This Month: {stats['this_month']}\n"
+                f"• Total: {stats.get('total_renamed', 0)}\n"
+                f"• Today: {stats.get('today', 0)}\n"
+                f"• This Week: {stats.get('this_week', 0)}\n"
+                f"• This Month: {stats.get('this_month', 0)}\n"
             )
             
             buttons = InlineKeyboardMarkup([
@@ -178,7 +192,7 @@ class CallbackActions:
 
     @staticmethod
     async def handle_leaderboard(client: Client, query: CallbackQuery, period: str = "weekly", type: str = "points"):
-        """Handle leaderboard callback - now showing top 8 only"""
+        """Handle leaderboard callback - showing top 8"""
         try:
             leaders = await hyoshcoder.get_leaderboard(period, type)
             if not leaders:
@@ -203,9 +217,10 @@ class CallbackActions:
             }.get(period, "Weekly")
             
             text = f"🏆 {period_display} {type_display} Leaderboard (Top 8):\n\n"
-            for i, user in enumerate(leaders[:8], 1):  # Only show top 8
+            for i, user in enumerate(leaders[:8], 1):
                 username = user.get('username', f"User {user['_id']}")
-                text += f"{i}. {username} - {user['value']} {type_display} {'⭐' if user.get('is_premium') else ''}\n"
+                value = user.get('value', 0)
+                text += f"{i}. {username} - {value} {type_display} {'⭐' if user.get('is_premium', False) else ''}\n"
             
             return {
                 'caption': text,
@@ -338,11 +353,13 @@ class CallbackActions:
             unique_code = str(uuid.uuid4())[:8]
             invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
             
-            # Get points configuration
+            # Get points configuration safely
             config = await hyoshcoder.get_config("points_config") or {}
             ad_config = config.get('ad_watch', {})
             min_points = ad_config.get('min_points', 5)
             max_points = ad_config.get('max_points', 20)
+            referral_bonus = config.get('referral_bonus', 10)
+            premium_multiplier = config.get('premium_multiplier', 2)
             
             # Generate random points
             points = random.randint(min_points, max_points)
@@ -350,8 +367,7 @@ class CallbackActions:
             # Check if user is premium for multiplier
             premium_status = await hyoshcoder.check_premium_status(user_id)
             if premium_status.get('is_premium', False):
-                multiplier = config.get('premium_multiplier', 2)
-                points = int(points * multiplier)
+                points = int(points * premium_multiplier)
             
             # Track the points distribution
             if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
@@ -376,9 +392,9 @@ class CallbackActions:
             caption = (
                 "**✨ Free Points System**\n\n"
                 "Earn points by helping grow our community:\n\n"
-                f"🔹 **Share Bot**: Get {config.get('referral_bonus', 10)} points per referral\n"
+                f"🔹 **Share Bot**: Get {referral_bonus} points per referral\n"
                 f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n"
-                f"⭐ **Premium Bonus**: {config.get('premium_multiplier', 2)}x points multiplier\n\n"
+                f"⭐ **Premium Bonus**: {premium_multiplier}x points multiplier\n\n"
                 f"🎁 You can earn up to {points} points right now!"
             )
             
@@ -417,15 +433,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data.startswith("lb_"):
             parts = data.split("_")
             if len(parts) == 3:
-                period = await hyoshcoder.get_leaderboard_period(user_id)
-                type = await hyoshcoder.get_leaderboard_type(user_id)
+                period = parts[2] if parts[1] == "period" else "weekly"
+                type = parts[2] if parts[1] == "type" else "points"
                 
-                if parts[1] == "period":
-                    period = parts[2]
-                    await hyoshcoder.set_leaderboard_period(user_id, period)
-                elif parts[1] == "type":
-                    type = parts[2]
-                    await hyoshcoder.set_leaderboard_type(user_id, type)
+                await hyoshcoder.set_leaderboard_period(user_id, period)
+                await hyoshcoder.set_leaderboard_type(user_id, type)
                 
                 response = await CallbackActions.handle_leaderboard(client, query, period, type)
         
@@ -458,7 +470,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
         
         elif data == "file_names":
-            format_template = await hyoshcoder.get_format_template(user_id)
+            format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
             buttons = [
                 [InlineKeyboardButton("• Close", callback_data="close"), 
                  InlineKeyboardButton("Back •", callback_data="help")]
@@ -565,9 +577,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 )
             else:
                 await query.message.edit_text(
-                    text=response['caption'],
+                    text=response.get('caption', response.get('text', '')),
                     reply_markup=response['reply_markup'],
-                    disable_web_page_preview=response.get('disable_web_page_preview', False)
+                    disable_web_page_preview=response.get('disable_web_page_preview', False),
+                    parse_mode=response.get('parse_mode', enums.ParseMode.HTML)
                 )
             
     except FloodWait as e:
