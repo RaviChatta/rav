@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, ChatWriteForbidden
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from PIL import Image
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
