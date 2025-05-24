@@ -134,7 +134,8 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "view_dump", "viewdump",
-    "del_dump", "deldump", "profile", "leaderboard", "lb", "mystats", "freepoints"
+    "del_dump", "deldump", "profile", "leaderboard", "lb", "mystats", "freepoints",
+    "settitle", "setauthor", "setartist", "setaudio", "setsubtitle", "setvideo"
 ]))
 async def command_handler(client: Client, message: Message):
     user_id = message.from_user.id
@@ -461,46 +462,6 @@ async def command_handler(client: Client, message: Message):
                 caption,
                 photo=img,
                 delete_after=30
-            )
-
-        elif command == "metadata":
-            bool_metadata = await hyoshcoder.get_metadata(user_id)
-            user_metadata = await hyoshcoder.get_metadata_code(user_id) or "Not set"
-            
-            buttons = [
-                [
-                    InlineKeyboardButton(
-                        f"🟢 ON" if bool_metadata else "🔴 OFF",
-                        callback_data=f"metadata_{int(not bool_metadata)}"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "✏️ Edit Metadata Code",
-                        callback_data="custom_metadata"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "🔙 Back to Settings",
-                        callback_data="settings_back"
-                    )
-                ]
-            ]
-            
-            text = (
-                f"📝 <b>Metadata Settings</b>\n\n"
-                f"<b>Status:</b> {'🟢 Enabled' if bool_metadata else '🔴 Disabled'}\n"
-                f"<b>Current Code:</b>\n<code>{user_metadata}</code>\n\n"
-                f"<i>Metadata will be embedded in processed files</i>"
-            )
-            
-            await send_response(
-                client,
-                message.chat.id,
-                text,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                delete_after=60
             )
 
         elif command == "donate":
