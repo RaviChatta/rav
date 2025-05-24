@@ -144,14 +144,19 @@ async def command_handler(client: Client, message: Message):
     animation = await get_random_animation()
     
     try:
-        command = message.command[0][1:].lower()
-        args = message.command[1:]
+        # Safely get command and arguments
+        command = getattr(message, "command", [])
+        if not command:
+            return
+            
+        cmd = command[0][1:].lower() if command[0].startswith('/') else command[0].lower()
+        args = command[1:]
         
         # Auto-delete non-start commands after delay
-        if command != "start":
+        if cmd != "start":
             asyncio.create_task(auto_delete_message(message))
         
-        if command == 'start':
+        if cmd == 'start':
             user = message.from_user
             await hyoshcoder.add_user(user_id)
             
@@ -225,7 +230,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=None  # Don't auto-delete start message
             )
 
-        elif command in ["leaderboard", "lb"]:
+        elif cmd in ["leaderboard", "lb"]:
             try:
                 keyboard = get_leaderboard_keyboard()
                 leaders = await hyoshcoder.get_leaderboard()
@@ -260,7 +265,7 @@ async def command_handler(client: Client, message: Message):
                     delete_after=15
                 )
 
-        elif command in ["mystats"]:
+        elif cmd in ["mystats"]:
             try:
                 stats = await hyoshcoder.get_user_file_stats(user_id)
                 points = await hyoshcoder.get_points(user_id)
@@ -305,7 +310,7 @@ async def command_handler(client: Client, message: Message):
                     delete_after=15
                 )
 
-        elif command == "autorename":
+        elif cmd == "autorename":
             try:
                 config = await hyoshcoder.get_config("points_config") or {}
                 points_per_rename = config.get('per_rename', 2)
@@ -347,7 +352,7 @@ async def command_handler(client: Client, message: Message):
                     delete_after=15
                 )
 
-        elif command == "setmedia":
+        elif cmd == "setmedia":
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton(f"{EMOJI['file']} Document", callback_data="setmedia_document")],
                 [InlineKeyboardButton(f"{EMOJI['video']} Video", callback_data="setmedia_video")]
@@ -362,7 +367,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=30
             )
 
-        elif command == "set_caption":
+        elif cmd == "set_caption":
             try:
                 if len(args) == 0:
                     caption = (
@@ -396,7 +401,7 @@ async def command_handler(client: Client, message: Message):
                     delete_after=15
                 )
 
-        elif command == "del_caption":
+        elif cmd == "del_caption":
             old_caption = await hyoshcoder.get_caption(user_id)
             if not old_caption:
                 caption = "**You don't have any caption ❌**"
@@ -413,7 +418,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=30
             )
 
-        elif command in ['see_caption', 'view_caption']:
+        elif cmd in ['see_caption', 'view_caption']:
             old_caption = await hyoshcoder.get_caption(user_id)
             if old_caption:
                 caption = f"**Your caption:**\n\n`{old_caption}`"
@@ -427,7 +432,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=30
             )
 
-        elif command in ['view_thumb', 'viewthumb']:
+        elif cmd in ['view_thumb', 'viewthumb']:
             thumb = await hyoshcoder.get_thumbnail(user_id)
             if thumb:
                 await client.send_photo(chat_id=message.chat.id, photo=thumb)
@@ -441,7 +446,7 @@ async def command_handler(client: Client, message: Message):
                     delete_after=30
                 )
 
-        elif command in ['del_thumb', 'delthumb']:
+        elif cmd in ['del_thumb', 'delthumb']:
             old_thumb = await hyoshcoder.get_thumbnail(user_id)
             if not old_thumb:
                 caption = "No thumbnail is currently set."
@@ -464,7 +469,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=30
             )
 
-        elif command == "donate":
+        elif cmd == "donate":
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton(text="Back", callback_data="help"),
                  InlineKeyboardButton(text="Owner", url='https://t.me/hyoshassistantBot')]
@@ -478,7 +483,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=300
             )
 
-        elif command == "premium":
+        elif cmd == "premium":
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Owner", url="https://t.me/hyoshassistantBot"),
                  InlineKeyboardButton("Close", callback_data="close")]
@@ -492,7 +497,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=300
             )
 
-        elif command == "plan":
+        elif cmd == "plan":
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Pay Your Subscription", url="https://t.me/hyoshassistantBot"),
                  InlineKeyboardButton("Close", callback_data="close")]
@@ -506,7 +511,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=300
             )
 
-        elif command == "bought":
+        elif cmd == "bought":
             msg = await send_response(client, message.chat.id, "Hold on, I'm verifying...")
             replied = message.reply_to_message
 
@@ -528,7 +533,7 @@ async def command_handler(client: Client, message: Message):
                 )
                 await msg.edit_text("<b>Your screenshot has been sent to the admins.</b>")
         
-        elif command == "help":
+        elif cmd == "help":
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             src_info = await hyoshcoder.get_src_info(user_id)
         
@@ -558,7 +563,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=None  # Don't auto-delete help message
             )
         
-        elif command == "set_dump":
+        elif cmd == "set_dump":
             if len(args) == 0:
                 caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
                 await send_response(client, message.chat.id, caption, delete_after=30)
@@ -592,7 +597,7 @@ async def command_handler(client: Client, message: Message):
                         delete_after=30
                     )
         
-        elif command in ["view_dump", "viewdump"]:
+        elif cmd in ["view_dump", "viewdump"]:
             channel_id = await hyoshcoder.get_user_channel(user_id)
             if channel_id:
                 caption = f"**Channel {channel_id} is currently set as the dump channel.**"
@@ -605,7 +610,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=30
             )
         
-        elif command in ["del_dump", "deldump"]:
+        elif cmd in ["del_dump", "deldump"]:
             channel_id = await hyoshcoder.get_user_channel(user_id)
             if channel_id:
                 await hyoshcoder.set_user_channel(user_id, None)
@@ -619,7 +624,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=30
             )
         
-        elif command == "profile":
+        elif cmd == "profile":
             user = await hyoshcoder.read_user(user_id)
             caption = (
                 f"**User Profile**\n\n"
@@ -638,7 +643,7 @@ async def command_handler(client: Client, message: Message):
                 delete_after=60
             )
 
-        elif command == "freepoints":
+        elif cmd == "freepoints":
             config = await hyoshcoder.get_config("points_config") or {}
             ad_config = config.get('ad_watch', {})
             
@@ -671,7 +676,7 @@ async def command_handler(client: Client, message: Message):
     except FloodWait as e:
         await asyncio.sleep(e.value)
     except Exception as e:
-        logger.error(f"Error in command {command}: {str(e)}")
+        logger.error(f"Error in command {cmd}: {str(e)}")
         await send_response(
             client,
             message.chat.id,
