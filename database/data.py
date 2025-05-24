@@ -3,22 +3,26 @@ import datetime
 import pytz
 import secrets
 from config import settings
-from typing import Optional, Dict, List, Union, Tuple
+from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from bson.objectid import ObjectId
 from urllib.parse import urlencode
-from pyrogram.errors import ChatWriteForbidden
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, ConnectionFailure
 import logging
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 Config = settings
 
 class Database:
     def __init__(self, uri: str, database_name: str):
-        """Initialize database connection."""
+        """Initialize database connection with enhanced settings."""
         self._uri = uri
         self._database_name = database_name
         self._client = None
-        self.db = None
+        self._initialize_collections()
+        
+    def _initialize_collections(self):
+        """Initialize all collection references."""
         self.users = None
         self.premium_codes = None
         self.transactions = None
@@ -26,20 +30,30 @@ class Database:
         self.point_links = None
         self.leaderboards = None
         self.file_stats = None
+        self.config = None
 
-    async def connect(self):
-        """Establish database connection with enhanced error handling."""
+    async def connect(self, max_pool_size: int = 100, min_pool_size: int = 10, max_idle_time_ms: int = 30000):
+        """Establish database connection with enhanced settings and error handling."""
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(
                 self._uri,
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=30000,
-                socketTimeoutMS=30000
+                socketTimeoutMS=30000,
+                maxPoolSize=max_pool_size,
+                minPoolSize=min_pool_size,
+                maxIdleTimeMS=max_idle_time_ms,
+                retryWrites=True,
+                retryReads=True
             )
-            await self._client.admin.command('ping')
-            logging.info("Successfully connected to MongoDB")
             
+            # Test connection
+            await self._client.admin.command('ping')
+            logging.info("✅ Successfully connected to MongoDB")
+            
+            # Initialize database and collections
             self.db = self._client[self._database_name]
+            self._initialize_collections()
             self.users = self.db.users
             self.premium_codes = self.db.premium_codes
             self.transactions = self.db.transactions
@@ -47,43 +61,62 @@ class Database:
             self.point_links = self.db.point_links
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
+            self.config = self.db.config
             
+            # Create indexes
             await self._create_indexes()
             
+            return True
+            
+        except (ServerSelectionTimeoutError, ConnectionFailure) as e:
+            logging.error(f"❌ Failed to connect to MongoDB: {e}")
+            raise ConnectionError(f"Database connection failed: {e}") from e
+        except PyMongoError as e:
+            logging.error(f"❌ MongoDB error: {e}")
+            raise
         except Exception as e:
-            logging.error(f"Failed to connect to MongoDB: {e}")
-            raise e
+            logging.error(f"❌ Unexpected error connecting to MongoDB: {e}")
+            raise
 
+    @asynccontextmanager
+    async def session(self):
+        """Provide a transactional scope around a series of operations."""
+        async with await self._client.start_session() as session:
+            async with session.start_transaction():
+                try:
+                    yield session
+                except Exception as e:
+                    await session.abort_transaction()
+                    raise e
 
     async def _create_indexes(self):
-        """Create necessary indexes for performance optimization."""
+        """Create necessary indexes with enhanced error handling."""
         indexes = [
-            ("users", "referrer_id", False),
-            ("users", "ban_status.is_banned", False),
-            ("point_links", "code", True),
-            ("point_links", "expires_at", False),
-            ("transactions", "user_id", False),
-            ("transactions", "timestamp", False),
-            ("leaderboards", "period", False),
-            ("leaderboards", "type", False),
-            ("leaderboards", "start_date", False),
-            ("leaderboards", "end_date", False),
-            ("file_stats", "user_id", False),
-            ("file_stats", "date", False)
+            ("users", [("referrer_id", False)]),
+            ("users", [("ban_status.is_banned", False)]),
+            ("point_links", [("code", True), ("expires_at", False)]),
+            ("transactions", [("user_id", False), ("timestamp", False)]),
+            ("leaderboards", [("period", False), ("type", False), ("start_date", False), ("end_date", False)]),
+            ("file_stats", [("user_id", False), ("date", False), ("timestamp", -1)]),
+            ("config", [("key", True)])
         ]
         
-        for collection, field, unique in indexes:
+        for collection, fields in indexes:
             try:
-                await self.db[collection].create_index(field, unique=unique)
-                logging.info(f"Created index on {collection}.{field} (unique={unique})")
-            except Exception as e:
-                logging.error(f"Failed to create index on {collection}.{field}: {e}")
+                for field, unique in fields:
+                    await self.db[collection].create_index(field, unique=unique)
+                logging.info(f"Created indexes for {collection}")
+            except PyMongoError as e:
+                logging.error(f"Failed to create indexes for {collection}: {e}")
+                continue
 
-    def new_user(self, id: int) -> Dict:
+    def new_user(self, id: int) -> Dict[str, Any]:
         """Create a new user document with comprehensive default values."""
+        now = datetime.datetime.now(pytz.timezone("Africa/Lubumbashi"))
         return {
             "_id": int(id),
-            "join_date": datetime.datetime.now(pytz.timezone("Africa/Lubumbashi")).isoformat(),
+            "username": None,
+            "join_date": now.isoformat(),
             "file_id": None,
             "caption": None,
             "metadata": True,
@@ -101,7 +134,7 @@ class Database:
                 "balance": 70,
                 "total_earned": 70,
                 "total_spent": 0,
-                "last_earned": datetime.datetime.now().isoformat()
+                "last_earned": now.isoformat()
             },
             "premium": {
                 "is_premium": False,
@@ -121,10 +154,12 @@ class Database:
                 "user_channel": None,
                 "src_info": "file_name",
                 "language": "en",
-                "notifications": True
+                "notifications": True,
+                "leaderboard_period": "weekly",
+                "leaderboard_type": "points"
             },
             "activity": {
-                "last_active": datetime.datetime.now().isoformat(),
+                "last_active": now.isoformat(),
                 "total_files_renamed": 0,
                 "daily_usage": 0,
                 "last_usage_date": None
@@ -133,21 +168,76 @@ class Database:
                 "two_factor": False,
                 "last_login": None,
                 "login_history": []
-            }
+            },
+            "deleted": False,
+            "deleted_at": None
         }
 
     async def add_user(self, id: int) -> bool:
         """Add a new user with comprehensive initialization."""
-        if await self.is_user_exist(id):
-            return False
-            
-        user_data = self.new_user(id)
         try:
+            if await self.is_user_exist(id):
+                return False
+                
+            user_data = self.new_user(id)
             await self.users.insert_one(user_data)
+            logging.info(f"Added new user: {id}")
             return True
-        except Exception as e:
+        except PyMongoError as e:
             logging.error(f"Error adding user {id}: {e}")
             return False
+
+    async def is_user_exist(self, id: int) -> bool:
+        """Check if user exists in database."""
+        try:
+            user = await self.users.find_one({"_id": int(id)}, projection={"_id": 1})
+            return user is not None
+        except PyMongoError as e:
+            logging.error(f"Error checking if user {id} exists: {e}")
+            return False
+
+    async def get_user(self, id: int) -> Optional[Dict[str, Any]]:
+        """Get user document by ID with proper error handling."""
+        try:
+            return await self.users.find_one({"_id": int(id)})
+        except PyMongoError as e:
+            logging.error(f"Error getting user {id}: {e}")
+            return None
+
+    async def update_user_activity(self, user_id: int) -> bool:
+        """Update user's last active timestamp."""
+        try:
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": {"activity.last_active": datetime.datetime.now().isoformat()}}
+            )
+            return True
+        except PyMongoError as e:
+            logging.error(f"Error updating activity for {user_id}: {e}")
+            return False
+
+    async def get_all_users(self, filter_banned: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
+        """Async generator to get all users with optional banned filter."""
+        query = {"deleted": False}
+        if filter_banned:
+            query["ban_status.is_banned"] = False
+            
+        try:
+            async for user in self.users.find(query):
+                yield user
+        except PyMongoError as e:
+            logging.error(f"Error getting users: {e}")
+            raise
+
+    async def close(self):
+        """Close the database connection."""
+        try:
+            if self._client:
+                self._client.close()
+                logging.info("Database connection closed")
+        except Exception as e:
+            logging.error(f"Error closing database connection: {e}")
+
 
     async def is_user_exist(self, id: int) -> bool:
         """Check if user exists in database."""
@@ -1238,14 +1328,23 @@ class Database:
             logging.error(f"Error getting config {key}: {e}")
             return default
     
-    # Initialize database instance
+# Initialize database instance with retry logic
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
     
 async def initialize_database():
-    """Initialize database connection"""
-    try:
-        await hyoshcoder.connect()
-        return hyoshcoder
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
-        raise
+    """Initialize database connection with retry logic."""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            await hyoshcoder.connect()
+            return hyoshcoder
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"❌ Failed to initialize database after {max_retries} attempts: {e}")
+                raise
+            logger.warning(f"⚠️ Database connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
+            import asyncio
+            await asyncio.sleep(retry_delay)
+            retry_delay *= 2  # Exponential backoff
