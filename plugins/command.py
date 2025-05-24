@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from pyrogram.errors import FloodWait, ChatWriteForbidden
 from config import settings
 from scripts import Txt
@@ -145,11 +145,11 @@ async def command_handler(client: Client, message: Message):
     
     try:
         # Safely get command and arguments
-        command = getattr(message, "command", [])
+        command = message.command
         if not command:
             return
             
-        cmd = command[0][1:].lower() if command[0].startswith('/') else command[0].lower()
+        cmd = command[0].lower()
         args = command[1:]
         
         # Auto-delete non-start commands after delay
@@ -181,43 +181,49 @@ async def command_handler(client: Client, message: Message):
             ])
 
             # Handle referral links
-            if args and args[0].startswith("refer_"):
-                referrer_id = int(args[0].replace("refer_", ""))
-                config = await hyoshcoder.get_config("points_config") or {}
-                reward = config.get('referral_bonus', 10)
-                
-                if referrer_id != user_id:
-                    referrer = await hyoshcoder.read_user(referrer_id)
-                    if referrer:
-                        await hyoshcoder.set_referrer(user_id, referrer_id)
-                        await hyoshcoder.add_points(
-                            referrer_id, 
-                            reward, 
-                            "referral", 
-                            f"Referral from {user_id}"
-                        )
-                        
-                        # Notify referrer
-                        cap = (
-                            f"🎉 {user.mention} joined through your referral!\n"
-                            f"You received {reward} {EMOJI['points']}"
-                        )
-                        await send_response(client, referrer_id, cap)
+            if len(args) > 0 and args[0].startswith("refer_"):
+                try:
+                    referrer_id = int(args[0].replace("refer_", ""))
+                    config = await hyoshcoder.get_config("points_config") or {}
+                    reward = config.get('referral_bonus', 10)
+                    
+                    if referrer_id != user_id:
+                        referrer = await hyoshcoder.read_user(referrer_id)
+                        if referrer:
+                            await hyoshcoder.set_referrer(user_id, referrer_id)
+                            await hyoshcoder.add_points(
+                                referrer_id, 
+                                reward, 
+                                "referral", 
+                                f"Referral from {user_id}"
+                            )
+                            
+                            # Notify referrer
+                            cap = (
+                                f"🎉 {user.mention} joined through your referral!\n"
+                                f"You received {reward} {EMOJI['points']}"
+                            )
+                            await send_response(client, referrer_id, cap)
+                except Exception as e:
+                    logger.error(f"Referral error: {e}")
 
             # Handle points links
-            if args and args[0].startswith("points_"):
-                code = args[0][7:]
-                result = await hyoshcoder.claim_points_link(user_id, code)
-                if result["success"]:
-                    await send_response(
-                        client,
-                        message.chat.id,
-                        f"🎉 You claimed {result['points']} {EMOJI['points']}!\n"
-                        f"Remaining claims: {result['remaining_claims']}",
-                        delete_after=10
-                    )
-                else:
-                    await message.reply(f"{EMOJI['error']} {result['reason']}")
+            if len(args) > 0 and args[0].startswith("points_"):
+                try:
+                    code = args[0][7:]
+                    result = await hyoshcoder.claim_points_link(user_id, code)
+                    if result["success"]:
+                        await send_response(
+                            client,
+                            message.chat.id,
+                            f"🎉 You claimed {result['points']} {EMOJI['points']}!\n"
+                            f"Remaining claims: {result['remaining_claims']}",
+                            delete_after=10
+                        )
+                    else:
+                        await message.reply(f"{EMOJI['error']} {result['reason']}")
+                except Exception as e:
+                    logger.error(f"Points claim error: {e}")
 
             # Send start message
             await send_response(
@@ -236,14 +242,23 @@ async def command_handler(client: Client, message: Message):
                 leaders = await hyoshcoder.get_leaderboard()
                 
                 if not leaders:
-                    raise ValueError("No leaderboard data available")
+                    await send_response(
+                        client,
+                        message.chat.id,
+                        "No leaderboard data available yet. Be the first to earn points!",
+                        reply_markup=keyboard,
+                        photo=img,
+                        delete_after=120
+                    )
+                    return
                 
                 text = f"{EMOJI['leaderboard']} Weekly Points Leaderboard:\n\n"
                 for i, user in enumerate(leaders[:10], 1):
+                    username = user.get('username', f"User {user['_id']}")
                     text += (
-                        f"{i}. {user.get('username', user['_id'])} - "
-                        f"{user['value']} {EMOJI['points']} "
-                        f"{EMOJI['premium'] if user.get('is_premium') else ''}\n"
+                        f"{i}. {username} - "
+                        f"{user.get('points', {}).get('balance', 0)} {EMOJI['points']} "
+                        f"{EMOJI['premium'] if user.get('premium', {}).get('is_premium', False) else ''}\n"
                     )
                 
                 await send_response(
@@ -257,7 +272,7 @@ async def command_handler(client: Client, message: Message):
                 )
                 
             except Exception as e:
-                logger.error(f"Leaderboard error: {str(e)}")
+                logger.error(f"Leaderboard error: {e}")
                 await send_response(
                     client,
                     message.chat.id,
@@ -276,14 +291,14 @@ async def command_handler(client: Client, message: Message):
                 text = (
                     f"📊 <b>Your Statistics</b>\n\n"
                     f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
-                    f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status['is_premium'] else 'Inactive ' + EMOJI['error']}\n"
+                    f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
                     f"{EMOJI['referral']} <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
                     f"(Earned {referral_stats.get('referral_earnings', 0)} {EMOJI['points']})\n\n"
                     f"{EMOJI['rename']} <b>Files Renamed</b>\n"
-                    f"• Total: {stats['total_renamed']}\n"
-                    f"• Today: {stats['today']}\n"
-                    f"• This Week: {stats['this_week']}\n"
-                    f"• This Month: {stats['this_month']}\n"
+                    f"• Total: {stats.get('total_renamed', 0)}\n"
+                    f"• Today: {stats.get('today', 0)}\n"
+                    f"• This Week: {stats.get('this_week', 0)}\n"
+                    f"• This Month: {stats.get('this_month', 0)}\n"
                 )
                 
                 buttons = InlineKeyboardMarkup([
@@ -302,7 +317,7 @@ async def command_handler(client: Client, message: Message):
                 )
                 
             except Exception as e:
-                logger.error(f"Stats error: {str(e)}")
+                logger.error(f"Stats error: {e}")
                 await send_response(
                     client,
                     message.chat.id,
@@ -344,7 +359,7 @@ async def command_handler(client: Client, message: Message):
             except ValueError as e:
                 await send_response(client, message.chat.id, f"{EMOJI['error']} {str(e)}", delete_after=15)
             except Exception as e:
-                logger.error(f"Autorename error: {str(e)}")
+                logger.error(f"Autorename error: {e}")
                 await send_response(
                     client,
                     message.chat.id,
@@ -393,7 +408,7 @@ async def command_handler(client: Client, message: Message):
             except ValueError as e:
                 await send_response(client, message.chat.id, f"{EMOJI['error']} {str(e)}", delete_after=15)
             except Exception as e:
-                logger.error(f"Set caption error: {str(e)}")
+                logger.error(f"Set caption error: {e}")
                 await send_response(
                     client,
                     message.chat.id,
@@ -625,58 +640,79 @@ async def command_handler(client: Client, message: Message):
             )
         
         elif cmd == "profile":
-            user = await hyoshcoder.read_user(user_id)
-            caption = (
-                f"**User Profile**\n\n"
-                f"👤 Username: @{message.from_user.username}\n"
-                f"🆔 ID: <code>{user_id}</code>\n"
-                f"📝 First Name: {message.from_user.first_name}\n"
-                f"✨ Points: {user['points']['balance']}\n"
-                f"⭐ Premium: {'Yes' if user.get('premium', {}).get('is_premium', False) else 'No'}\n"
-                f"📅 Member Since: {datetime.fromtimestamp(user['join_date']).strftime('%Y-%m-%d')}"
-            )
-            await send_response(
-                client,
-                message.chat.id,
-                caption,
-                photo=img,
-                delete_after=60
-            )
+            try:
+                user = await hyoshcoder.read_user(user_id)
+                if not user:
+                    raise ValueError("User not found")
+                
+                caption = (
+                    f"**User Profile**\n\n"
+                    f"👤 Username: @{message.from_user.username}\n"
+                    f"🆔 ID: <code>{user_id}</code>\n"
+                    f"📝 First Name: {message.from_user.first_name}\n"
+                    f"✨ Points: {user.get('points', {}).get('balance', 0)}\n"
+                    f"⭐ Premium: {'Yes' if user.get('premium', {}).get('is_premium', False) else 'No'}\n"
+                    f"📅 Member Since: {datetime.fromtimestamp(user.get('join_date', 0)).strftime('%Y-%m-%d')}"
+                )
+                await send_response(
+                    client,
+                    message.chat.id,
+                    caption,
+                    photo=img,
+                    delete_after=60
+                )
+            except Exception as e:
+                logger.error(f"Profile error: {e}")
+                await send_response(
+                    client,
+                    message.chat.id,
+                    f"{EMOJI['error']} Couldn't load profile",
+                    delete_after=15
+                )
 
         elif cmd == "freepoints":
-            config = await hyoshcoder.get_config("points_config") or {}
-            ad_config = config.get('ad_watch', {})
-            
-            min_points = ad_config.get('min_points', 5)
-            max_points = ad_config.get('max_points', 20)
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Bot", callback_data="invite")],
-                [InlineKeyboardButton("💰 Watch Ad", callback_data="watch_ad")],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ])
-            
-            caption = (
-                "**✨ Free Points System**\n\n"
-                "Earn points by helping grow our community:\n\n"
-                f"🔹 **Share Bot**: Get {config.get('referral_bonus', 10)} points per referral\n"
-                f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n\n"
-                f"💎 Premium members earn {config.get('premium_multiplier', 2)}x more points!"
-            )
-            
-            await send_response(
-                client,
-                message.chat.id,
-                caption,
-                reply_markup=buttons,
-                photo=img,
-                delete_after=60
-            )
+            try:
+                config = await hyoshcoder.get_config("points_config") or {}
+                ad_config = config.get('ad_watch', {})
+                
+                min_points = ad_config.get('min_points', 5)
+                max_points = ad_config.get('max_points', 20)
+                
+                buttons = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔗 Share Bot", callback_data="invite")],
+                    [InlineKeyboardButton("💰 Watch Ad", callback_data="watch_ad")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                ])
+                
+                caption = (
+                    "**✨ Free Points System**\n\n"
+                    "Earn points by helping grow our community:\n\n"
+                    f"🔹 **Share Bot**: Get {config.get('referral_bonus', 10)} points per referral\n"
+                    f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n\n"
+                    f"💎 Premium members earn {config.get('premium_multiplier', 2)}x more points!"
+                )
+                
+                await send_response(
+                    client,
+                    message.chat.id,
+                    caption,
+                    reply_markup=buttons,
+                    photo=img,
+                    delete_after=60
+                )
+            except Exception as e:
+                logger.error(f"Free points error: {e}")
+                await send_response(
+                    client,
+                    message.chat.id,
+                    f"{EMOJI['error']} Couldn't load points info",
+                    delete_after=15
+                )
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
     except Exception as e:
-        logger.error(f"Error in command {cmd}: {str(e)}")
+        logger.error(f"Error in command {cmd}: {e}")
         await send_response(
             client,
             message.chat.id,
@@ -693,7 +729,7 @@ async def addthumbs(client, message):
         await mkn.edit("**Thumbnail saved successfully ✅️**")
         asyncio.create_task(auto_delete_message(mkn, delay=30))
     except Exception as e:
-        logger.error(f"Error setting thumbnail: {str(e)}")
+        logger.error(f"Error setting thumbnail: {e}")
         await send_response(
             client,
             message.chat.id,
@@ -712,7 +748,7 @@ async def handle_file_rename(client, message: Message):
         
         # Check premium status for unlimited renames
         premium_status = await hyoshcoder.check_premium_status(user_id)
-        if premium_status['is_premium'] and config.get('premium_unlimited_renames', True):
+        if premium_status.get('is_premium', False) and config.get('premium_unlimited_renames', True):
             points_per_rename = 0
         
         if current_points < points_per_rename:
@@ -747,10 +783,31 @@ async def handle_file_rename(client, message: Message):
             )
             return
         
-        # [Actual file renaming logic would go here]
-        original_name = message.document.file_name if message.document else message.video.file_name
-        new_name = "generated_new_name.ext"  # Replace with actual generated name
+        # Get file info
+        if message.document:
+            file = message.document
+            file_type = "document"
+        else:
+            file = message.video
+            file_type = "video"
         
+        original_name = file.file_name
+        file_size = file.file_size
+        duration = getattr(file, "duration", 0)
+        
+        # Generate new filename using template
+        new_name = template
+        new_name = new_name.replace("[filename]", os.path.splitext(original_name)[0])
+        new_name = new_name.replace("[size]", str(round(file_size / (1024 * 1024), 2)) + "MB")
+        new_name = new_name.replace("[duration]", str(duration // 60) + "m" + str(duration % 60) + "s")
+        new_name = new_name.replace("[date]", datetime.now().strftime("%Y-%m-%d"))
+        new_name = new_name.replace("[time]", datetime.now().strftime("%H:%M"))
+        
+        # Add original extension
+        ext = os.path.splitext(original_name)[1]
+        new_name += ext
+        
+        # Track the rename
         await hyoshcoder.track_file_rename(user_id, original_name, new_name)
         
         # Send success message
@@ -765,8 +822,16 @@ async def handle_file_rename(client, message: Message):
             delete_after=30
         )
         
+        # Send the renamed file back to user
+        await client.send_document(
+            chat_id=message.chat.id,
+            document=file.file_id,
+            file_name=new_name,
+            caption=f"Renamed: {new_name}"
+        )
+        
     except Exception as e:
-        logger.error(f"Error handling file rename: {str(e)}")
+        logger.error(f"Error handling file rename: {e}")
         await send_response(
             client,
             message.chat.id,
