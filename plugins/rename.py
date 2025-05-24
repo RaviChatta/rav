@@ -406,7 +406,7 @@ async def auto_rename_files(client: Client, message: Message):
             f"Your balance: {current_points} points",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎁 Get Free Points", callback_data="freepoints")]
-            )
+            ])
         )
 
     # Check rename template
