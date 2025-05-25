@@ -82,7 +82,7 @@ async def process_file_rename(
     queue_message: Message,
     user_id: int
 ) -> Optional[Tuple[str, str]]:
-    """Handle the complete file renaming process"""
+    """Handle the complete file renaming process with better error handling"""
     try:
         # Get user settings
         user_data = await hyoshcoder.read_user(user_id)
@@ -144,6 +144,26 @@ async def process_file_rename(
             logger.error(f"Download error: {e}")
             await queue_message.edit_text(f"❌ Download failed: {e}")
             return None
+
+        # Apply metadata if enabled
+        metadata_enabled = await hyoshcoder.get_metadata(user_id)
+        metadata_code = await hyoshcoder.get_metadata_code(user_id) if metadata_enabled else None
+
+        final_path = renamed_file_path
+        if metadata_enabled and metadata_code:
+            await queue_message.edit_text("🔄 Applying metadata...")
+            if await apply_metadata(renamed_file_path, metadata_code, metadata_file_path):
+                final_path = metadata_file_path
+                os.remove(renamed_file_path)  # Remove original after metadata applied
+            else:
+                await queue_message.edit_text("⚠️ Metadata application failed, using original file")
+
+        return final_path, renamed_file_name
+
+    except Exception as e:
+        logger.error(f"Error in rename processing: {e}")
+        await queue_message.edit_text(f"❌ Processing error: {e}")
+        return None
 
         # Apply metadata if enabled
         metadata_enabled = await hyoshcoder.get_metadata(user_id)
@@ -434,6 +454,29 @@ async def auto_rename_files(client: Client, message: Message):
             ])
         )
 
+    # Get file info with proper type handling
+    file_id = None
+    file_name = "file"
+    media_type = "document"
+    
+    if message.document:
+        file = message.document
+        file_id = file.file_id
+        file_name = file.file_name or "document"
+        media_type = "document"
+    elif message.video:
+        file = message.video
+        file_id = file.file_id
+        file_name = getattr(file, "file_name", None) or "video.mp4"
+        media_type = "video"
+    elif message.audio:
+        file = message.audio
+        file_id = file.file_id
+        file_name = getattr(file, "file_name", None) or "audio.mp3"
+        media_type = "audio"
+    else:
+        return await message.reply_text("❌ Unsupported file type")
+
     # Check rename template
     format_template = user_data.get("format_template", "")
     if not format_template:
@@ -441,22 +484,6 @@ async def auto_rename_files(client: Client, message: Message):
             "❌ No rename template set!\n"
             "Please set your rename format using /autorename command"
         )
-
-    # Get file info
-    if message.document:
-        file_id = message.document.file_id
-        file_name = message.document.file_name or "document"
-        media_type = "document"
-    elif message.video:
-        file_id = message.video.file_id
-        file_name = getattr(message.video, "file_name", "video.mp4")
-        media_type = "video"
-    elif message.audio:
-        file_id = message.audio.file_id
-        file_name = getattr(message.audio, "file_name", "audio.mp3")
-        media_type = "audio"
-    else:
-        return await message.reply_text("❌ Unsupported file type")
 
     # Check for duplicate processing
     if file_id in renaming_operations:
@@ -494,7 +521,7 @@ async def auto_rename_files(client: Client, message: Message):
         if not premium_status.get("is_premium", False):
             await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
 
-        # Send the renamed file
+        # Send the renamed file with proper media type handling
         success = await send_renamed_file(
             client,
             user_id,
