@@ -172,16 +172,23 @@ async def command_handler(client: Client, message: Message):
             m = await message.reply_sticker("CAACAgIAAxkBAALmzGXSSt3ppnOsSl_spnAP8wHC26jpAAJEGQACCOHZSVKp6_XqghKoHgQ")
             asyncio.create_task(auto_delete_message(m, delay=3))
             
-            """
+            # Custom start buttons
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
-                 InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
-                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints'),
-                 InlineKeyboardButton(f"{EMOJI['premium']} Go Premium", callback_data='premiumx')],
-                [InlineKeyboardButton("🛠️ Help", callback_data='help')]
-            ])  
-            """
-
+                [InlineKeyboardButton("✨ My Commands ✨", callback_data='help')],
+                [
+                    InlineKeyboardButton("💎 My Stats", callback_data='mystats'),
+                    InlineKeyboardButton("🏆 Leaderboard", callback_data='leaderboard')
+                ],
+                [
+                    InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
+                    InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')
+                ],
+                [
+                    InlineKeyboardButton("📜 About", callback_data='about'),
+                    InlineKeyboardButton("🧑‍💻 Source", callback_data='source')
+                ]
+            ])
+            
             # Handle referral links
             if len(args) > 0 and args[0].startswith("refer_"):
                 try:
@@ -208,7 +215,7 @@ async def command_handler(client: Client, message: Message):
                             await send_response(client, referrer_id, cap)
                 except Exception as e:
                     logger.error(f"Referral error: {e}")
-
+        
             # Handle points links
             if len(args) > 0 and args[0].startswith("points_"):
                 try:
@@ -226,7 +233,7 @@ async def command_handler(client: Client, message: Message):
                         await message.reply(f"{EMOJI['error']} {result['reason']}")
                 except Exception as e:
                     logger.error(f"Points claim error: {e}")
-
+        
             # Send start message
             await send_response(
                 client,
