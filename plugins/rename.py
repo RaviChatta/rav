@@ -219,11 +219,6 @@ async def send_renamed_file(
                 pass
         return True
 
-    except Exception as e:
-        logger.error(f"Error sending renamed file: {e}")
-        await queue_message.edit_text(f"❌ Upload failed: {e}")
-        return False
-
 async def process_sequential_upload(client: Client, user_id: int, queue_message: Message):
     """Handle sequential upload of multiple files to user's channel"""
     try:
