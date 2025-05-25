@@ -74,15 +74,7 @@ async def apply_metadata(file_path: str, metadata_code: str, output_path: str) -
         logger.error(f"Metadata application error: {e}")
         return False
 
-async def process_file_rename(
-    client: Client,
-    message: Message,
-    file_name: str,
-    file_id: str,
-    queue_message: Message,
-    user_id: int
-) -> Optional[Tuple[str, str]]:
-    """Handle the complete file renaming process"""
+async def process_file_rename(client, message, file_name, file_id, queue_message, user_id):
     try:
         # Get user settings
         user_data = await hyoshcoder.read_user(user_id)
@@ -90,29 +82,66 @@ async def process_file_rename(
             await queue_message.edit_text("❌ User data not found")
             return None
 
-        format_template = user_data.get("format_template", "")
+        format_template = user_data.get("format_template")
         if not format_template:
             await queue_message.edit_text("❌ No rename template set")
             return None
 
-        # Extract information from filename
-        info = {
-            'episode': await extract_episode(file_name),
-            'season': await extract_season(file_name),
-            'quality': await extract_quality(file_name)
-        }
+        # Create downloads directory if not exists
+        os.makedirs("downloads", exist_ok=True)
 
-        # Apply placeholders to template
-        new_name = format_template
-        for key, value in info.items():
-            if value:
-                new_name = new_name.replace(f'{{{key}}}', value)
-
-        # Generate new file name
-        file_ext = os.path.splitext(file_name)[1]
-        renamed_file_name = f"{new_name}{file_ext}"
-        renamed_file_path = os.path.join("downloads", renamed_file_name)
+        # Download file with progress
+        temp_path = f"downloads/temp_{file_id}"
+        await queue_message.edit_text(f"📥 Downloading: {file_name}")
         
+        file_path = await client.download_media(
+            message,
+            file_name=temp_path,
+            progress=progress_for_pyrogram,
+            progress_args=("Downloading...", queue_message, time.time())
+        )
+
+        if not file_path or not os.path.exists(file_path):
+            await queue_message.edit_text("❌ Download failed")
+            return None
+
+        # Generate new filename
+        new_name = generate_new_filename(file_name, format_template)
+        new_path = os.path.join("downloads", new_name)
+        
+        # Rename file
+        os.rename(file_path, new_path)
+        return new_path, new_name
+
+    except Exception as e:
+        logger.error(f"Rename error: {str(e)}")
+        await queue_message.edit_text(f"❌ Error: {str(e)}")
+        return None
+    finally:
+        # Cleanup temp files
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+def generate_new_filename(original_name, template):
+    """Generate new filename based on template"""
+    # Extract media info
+    season = extract_season(original_name) or "01"
+    episode = extract_episode(original_name) or "01"
+    quality = extract_quality(original_name) or "HD"
+    
+    # Apply template
+    new_name = template
+    new_name = new_name.replace("[season]", season)
+    new_name = new_name.replace("[episode]", episode)
+    new_name = new_name.replace("[quality]", quality)
+    new_name = new_name.replace("[filename]", os.path.splitext(original_name)[0])
+    
+    # Add extension
+    ext = os.path.splitext(original_name)[1]
+    return f"{new_name}{ext}"
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
 
