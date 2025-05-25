@@ -551,9 +551,11 @@ async def command_handler(client: Client, message: Message):
         elif cmd == "help":
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             src_info = await hyoshcoder.get_src_info(user_id)
+            auto_rename_status = await hyoshcoder.get_auto_rename_status(user_id)
         
             btn_seq_text = "Sequential ✅" if sequential_status else "Sequential ❌"
             src_txt = "File name" if src_info == "file_name" else "File caption"
+            auto_rename_text = "Auto-Rename ✅" if auto_rename_status else "Auto-Rename ❌"
         
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Automatic renaming format •", callback_data='file_names')],
@@ -565,7 +567,8 @@ async def command_handler(client: Client, message: Message):
                  InlineKeyboardButton('View Dump •', callback_data='viewdump')],
                 [InlineKeyboardButton(f'• {btn_seq_text}', callback_data='sequential'), 
                  InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
+                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src'),
+                 InlineKeyboardButton(f'• {auto_rename_text}', callback_data='toggle_auto_rename')],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ])
             
@@ -750,6 +753,11 @@ async def handle_file_rename(client, message: Message):
         premium_status = await hyoshcoder.check_premium_status(user_id)
         if premium_status.get('is_premium', False) and config.get('premium_unlimited_renames', True):
             points_per_rename = 0
+        
+        # Check auto-rename status
+        auto_rename_status = await hyoshcoder.get_auto_rename_status(user_id)
+        if not auto_rename_status:
+            return  # Skip processing if auto-rename is disabled
         
         if current_points < points_per_rename:
             msg = await send_response(
