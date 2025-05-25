@@ -644,7 +644,7 @@ async def command_handler(client: Client, message: Message):
         
         elif cmd == "profile":
             try:
-                user = await hyoshcoder.read_user(user_id)
+                user_id = await hyoshcoder.read_user(user_id)
                 if not user:
                     raise ValueError("User not found")
                 
