@@ -414,6 +414,11 @@ async def auto_rename_files(client: Client, message: Message):
     if not user_data:
         return await message.reply_text("❌ Please start the bot first with /start")
 
+    # Check auto-rename status
+    auto_rename_status = await hyoshcoder.get_auto_rename_status(user_id)
+    if not auto_rename_status:
+        return  # Skip processing if auto-rename is disabled
+
     # Check points balance
     points_config = await hyoshcoder.get_config("points_config") or {}
     points_per_rename = points_config.get("per_rename", 1)
