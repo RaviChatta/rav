@@ -749,83 +749,103 @@ async def addthumbs(client, message):
             delete_after=15
         )
 
-@Client.on_message(filters.private & (filters.document | filters.video))
-async def handle_file_rename(client, message: Message):
-    """Handle file renaming with points deduction"""
+@Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def handle_file_rename(client: Client, message: Message):
+    """Comprehensive file renaming handler with proper error handling"""
+    user_id = message.from_user.id
+    
     try:
-        user_id = message.from_user.id
-        config = await hyoshcoder.get_config("points_config") or {}
-        points_per_rename = config.get('per_rename', 2)
+        # Verify user exists
+        if not await hyoshcoder.read_user(user_id):
+            return await message.reply_text("❌ Please start the bot first with /start")
+
+        # Check auto-rename status
+        if not await hyoshcoder.get_auto_rename_status(user_id):
+            return
+
+        # Check points balance
+        points_config = await hyoshcoder.get_config("points_config") or {}
+        points_per_rename = points_config.get("per_rename", 2)
         current_points = await hyoshcoder.get_points(user_id)
         
-        # Check premium status
         premium_status = await hyoshcoder.check_premium_status(user_id)
-        if premium_status.get('is_premium', False) and config.get('premium_unlimited_renames', True):
-            points_per_rename = 0
-        
-        # Check auto-rename status
-        auto_rename_status = await hyoshcoder.get_auto_rename_status(user_id)
-        if not auto_rename_status:
-            return  # Skip processing if auto-rename is disabled
-        
-        if current_points < points_per_rename and points_per_rename > 0:
-            msg = await send_response(
-                client,
-                message.chat.id,
-                f"{EMOJI['error']} Insufficient points!\n"
-                f"Each rename costs {points_per_rename} {EMOJI['points']}\n"
-                f"Your balance: {current_points} {EMOJI['points']}\n\n"
-                "Get more points with /freepoints",
-                delete_after=30
+        if not premium_status.get("is_premium", False) and current_points < points_per_rename:
+            return await message.reply_text(
+                f"❌ Insufficient points! Each rename costs {points_per_rename} points\n"
+                f"Your balance: {current_points} points",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎁 Get Free Points", callback_data="freepoints")]
+                ])
             )
-            return
+
+        # Get file info with proper type handling
+        file = None
+        file_name = "file"
+        media_type = "document"
         
-        # Deduct points (if not premium with unlimited renames)
-        if points_per_rename > 0:
-            await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
-        
-        # Get user's rename template
-        template = await hyoshcoder.get_format_template(user_id)
-        if not template:
-            # Refund points if no template set
-            if points_per_rename > 0:
-                await hyoshcoder.add_points(user_id, points_per_rename, "refund", "No rename template set")
-            msg = await send_response(
-                client,
-                message.chat.id,
-                f"{EMOJI['error']} No rename template set!\n"
-                "Use /autorename to set your template first\n\n"
-                f"{points_per_rename} points refunded" if points_per_rename > 0 else "",
-                delete_after=30
-            )
-            return
-        
-        # Get file info
         if message.document:
             file = message.document
-            file_type = "document"
-        else:
+            file_name = file.file_name or "document"
+            media_type = "document"
+        elif message.video:
             file = message.video
-            file_type = "video"
-        
-        original_name = file.file_name
-        file_size = file.file_size
-        duration = getattr(file, "duration", 0)
-        
-        # Generate new filename using template
-        new_name = template
-        new_name = new_name.replace("[filename]", os.path.splitext(original_name)[0])
-        new_name = new_name.replace("[size]", str(round(file_size / (1024 * 1024), 2)) + "MB")
-        new_name = new_name.replace("[duration]", str(duration // 60) + "m" + str(duration % 60) + "s")
-        new_name = new_name.replace("[date]", datetime.now().strftime("%Y-%m-%d"))
-        new_name = new_name.replace("[time]", datetime.now().strftime("%H:%M"))
-        
-        # Add original extension
-        ext = os.path.splitext(original_name)[1]
-        new_name += ext
-        
-        # Track the rename
-        await hyoshcoder.track_file_rename(user_id, original_name, new_name)
+            file_name = getattr(file, "file_name", None) or "video.mp4"
+            media_type = "video"
+        elif message.audio:
+            file = message.audio
+            file_name = getattr(file, "file_name", None) or "audio.mp3"
+            media_type = "audio"
+
+        if not file:
+            return await message.reply_text("❌ Unsupported file type")
+
+        # Check rename template
+        format_template = await hyoshcoder.get_format_template(user_id)
+        if not format_template:
+            return await message.reply_text(
+                "❌ No rename template set!\n"
+                "Please set your rename format using /autorename command"
+            )
+
+        # Create processing message
+        processing_msg = await message.reply_text(
+            "🔄 Processing your file...",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{file.file_id}")]
+            ])
+        )
+
+        try:
+            # Process the file
+            result = await process_file_rename(
+                client, message, file_name, file.file_id, processing_msg, user_id
+            )
+            if not result:
+                return
+
+            final_path, renamed_file_name = result
+
+            # Deduct points if not premium
+            if not premium_status.get("is_premium", False):
+                await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
+
+            # Send the renamed file
+            await send_renamed_file(
+                client,
+                user_id,
+                final_path,
+                renamed_file_name,
+                message,
+                processing_msg,
+                media_type
+            )
+
+            # Track successful rename
+            await hyoshcoder.track_file_rename(user_id, file_name, renamed_file_name)
+
+        except Exception as e:
+            logger.error(f"File processing error: {e}")
+            await processing_msg.edit_text(f"❌ Error processing file: {e}")
         
         # Send success message
         success_msg = await send_response(
