@@ -32,8 +32,8 @@ class Database:
         self.file_stats = None
         self.config = None
 
-    async def connect(self, max_pool_size: int = 100, min_pool_size: int = 10, max_idle_time_ms: int = 30000):
-        """Establish database connection with enhanced settings and error handling."""
+    # Updated database connection with better error handling
+    async def connect(self, max_pool_size=100, min_pool_size=10, max_idle_time_ms=30000):
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(
                 self._uri,
@@ -47,37 +47,19 @@ class Database:
                 retryReads=True
             )
             
-            # Test connection
+            # Verify connection
             await self._client.admin.command('ping')
-            logging.info("✅ Successfully connected to MongoDB")
+            logger.info("✅ Database connection established")
             
-            # Initialize database and collections
+            # Initialize collections
             self.db = self._client[self._database_name]
             self._initialize_collections()
-            self.users = self.db.users
-            self.premium_codes = self.db.premium_codes
-            self.transactions = self.db.transactions
-            self.rewards = self.db.rewards
-            self.point_links = self.db.point_links
-            self.leaderboards = self.db.leaderboards
-            self.file_stats = self.db.file_stats
-            self.config = self.db.config
-            
-            # Create indexes
             await self._create_indexes()
             
             return True
-            
-        except (ServerSelectionTimeoutError, ConnectionFailure) as e:
-            logging.error(f"❌ Failed to connect to MongoDB: {e}")
-            raise ConnectionError(f"Database connection failed: {e}") from e
-        except PyMongoError as e:
-            logging.error(f"❌ MongoDB error: {e}")
-            raise
         except Exception as e:
-            logging.error(f"❌ Unexpected error connecting to MongoDB: {e}")
-            raise
-
+            logger.error(f"❌ Database connection failed: {str(e)}")
+            raise ConnectionError(f"Failed to connect to MongoDB: {str(e)}")
     @asynccontextmanager
     async def session(self):
         """Provide a transactional scope around a series of operations."""
