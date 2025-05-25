@@ -393,6 +393,16 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting src_info for {user_id}: {e}")
             return None
+    async def get_auto_rename_status(self, user_id: int) -> bool:
+        """Check if auto-rename is enabled for user"""
+        user = await self.read_user(user_id)
+        return user.get('auto_rename', True)  # Default to True if not set
+
+    async def toggle_auto_rename(self, user_id: int):
+        """Toggle auto-rename status"""
+        user = await self.read_user(user_id)
+        current = user.get('auto_rename', True)
+        await self.update_user(user_id, {'auto_rename': not current})
 
     async def set_format_template(self, user_id: int, format_template: str) -> bool:
         """Set user's auto-rename format template."""
