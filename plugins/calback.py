@@ -67,9 +67,11 @@ class CallbackActions:
         try:
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             src_info = await hyoshcoder.get_src_info(user_id)
+            auto_rename_status = await hyoshcoder.get_auto_rename_status(user_id)
             
             btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
             src_txt = "File name" if src_info == "file_name" else "File caption"
+            auto_rename_text = "Auto-Rename ✅" if auto_rename_status else "Auto-Rename ❌"
 
             buttons = [
                 [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
@@ -91,6 +93,7 @@ class CallbackActions:
                 ],
                 [
                     InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src'),
+                    InlineKeyboardButton(f'• {auto_rename_text}', callback_data='toggle_auto_rename')
                 ],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ]
@@ -495,7 +498,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = {
                 'caption': Txt.THUMBNAIL_TXT,
                 'reply_markup': InlineKeyboardMarkup(buttons),
-                'photo': thumb  # Changed from 'thumb' to 'photo' for clarity
+                'photo': thumb
             }
         
         elif data == "showThumb":
@@ -555,6 +558,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
         
         elif data == "toggle_src":
             await hyoshcoder.toggle_src_info(user_id)
+            response = await CallbackActions.handle_help(client, query, user_id)
+        
+        elif data == "toggle_auto_rename":
+            await hyoshcoder.toggle_auto_rename(user_id)
             response = await CallbackActions.handle_help(client, query, user_id)
         
         elif data == "close":
