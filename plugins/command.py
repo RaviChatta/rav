@@ -758,7 +758,7 @@ async def handle_file_rename(client, message: Message):
         points_per_rename = config.get('per_rename', 2)
         current_points = await hyoshcoder.get_points(user_id)
         
-        # Check premium status for unlimited renames
+        # Check premium status
         premium_status = await hyoshcoder.check_premium_status(user_id)
         if premium_status.get('is_premium', False) and config.get('premium_unlimited_renames', True):
             points_per_rename = 0
@@ -768,7 +768,7 @@ async def handle_file_rename(client, message: Message):
         if not auto_rename_status:
             return  # Skip processing if auto-rename is disabled
         
-        if current_points < points_per_rename:
+        if current_points < points_per_rename and points_per_rename > 0:
             msg = await send_response(
                 client,
                 message.chat.id,
