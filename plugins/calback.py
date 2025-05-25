@@ -413,7 +413,6 @@ class CallbackActions:
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
             }
-
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     """Main callback query handler with improved error handling"""
@@ -426,50 +425,37 @@ async def cb_handler(client: Client, query: CallbackQuery):
         
         response = None
         
-        # Home button handler
         if data == "home":
             response = await CallbackActions.handle_home(client, query)
         
-        # Help menu handler
         elif data == "help":
             response = await CallbackActions.handle_help(client, query, user_id)
         
-        # User stats handler
         elif data == "mystats":
             response = await CallbackActions.handle_stats(client, query, user_id)
         
-        # Leaderboard handler
         elif data == "leaderboard":
             response = await CallbackActions.handle_leaderboard(client, query)
         
-        # Leaderboard period/type handlers
         elif data.startswith("lb_"):
             parts = data.split("_")
-            period = "weekly"
-            lb_type = "points"
-            
-            if len(parts) >= 3:
-                if parts[1] == "period":
-                    period = parts[2]
-                elif parts[1] == "type":
-                    lb_type = parts[2]
-            
-            await hyoshcoder.set_leaderboard_period(user_id, period)
-            await hyoshcoder.set_leaderboard_type(user_id, lb_type)
-            
-            response = await CallbackActions.handle_leaderboard(client, query, period, lb_type)
+            if len(parts) == 3:
+                period = parts[2] if parts[1] == "period" else "weekly"
+                type = parts[2] if parts[1] == "type" else "points"
+                
+                await hyoshcoder.set_leaderboard_period(user_id, period)
+                await hyoshcoder.set_leaderboard_type(user_id, type)
+                
+                response = await CallbackActions.handle_leaderboard(client, query, period, type)
         
-        # Metadata handlers
         elif data in ["metadata_1", "metadata_0", "custom_metadata"]:
             response = await CallbackActions.handle_metadata_toggle(client, query, user_id, data)
             if not response:
                 return
         
-        # Free points handler
         elif data == "freepoints":
             response = await CallbackActions.handle_free_points(client, query, user_id)
         
-        # Caption handler
         elif data == "caption":
             buttons = [
                 [InlineKeyboardButton("• Support", url='https://t.me/Raaaaavi'), 
@@ -480,7 +466,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': InlineKeyboardMarkup(buttons)
             }
         
-        # Metadata info handler
         elif data == "meta":
             buttons = [
                 [InlineKeyboardButton("• Close", callback_data="close"), 
@@ -491,7 +476,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': InlineKeyboardMarkup(buttons)
             }
         
-        # File naming format handler
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
             buttons = [
@@ -503,7 +487,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': InlineKeyboardMarkup(buttons)
             }
         
-        # Thumbnail handlers
         elif data == "thumbnail":
             thumb = await hyoshcoder.get_thumbnail(user_id)
             buttons = [
@@ -517,7 +500,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': thumb
             }
         
-        # Show thumbnail handler
         elif data == "showThumb":
             thumb = await hyoshcoder.get_thumbnail(user_id)
             caption = "Here is your current thumbnail" if thumb else "No thumbnail set"
@@ -531,7 +513,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': thumb
             }
         
-        # Source code handler
         elif data == "source":
             buttons = [
                 [InlineKeyboardButton("• Close", callback_data="close"), 
@@ -542,7 +523,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': InlineKeyboardMarkup(buttons)
             }
         
-        # Premium info handler
         elif data == "premiumx":
             buttons = [
                 [InlineKeyboardButton("• Free Points", callback_data="freepoints")],
@@ -553,7 +533,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': InlineKeyboardMarkup(buttons)
             }
         
-        # About handler
         elif data == "about":
             buttons = [
                 [
@@ -572,22 +551,18 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'disable_web_page_preview': True
             }
         
-        # Sequential mode toggle
         elif data == "sequential":
             await hyoshcoder.toggle_sequential_mode(user_id)
             response = await CallbackActions.handle_help(client, query, user_id)
         
-        # Source info toggle
         elif data == "toggle_src":
             await hyoshcoder.toggle_src_info(user_id)
             response = await CallbackActions.handle_help(client, query, user_id)
         
-        # Auto-rename toggle
         elif data == "toggle_auto_rename":
             await hyoshcoder.toggle_auto_rename(user_id)
             response = await CallbackActions.handle_help(client, query, user_id)
         
-        # Close handler
         elif data == "close":
             try:
                 await query.message.delete()
@@ -597,7 +572,13 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 logger.warning(f"Error deleting message: {e}")
             return
         
-        # Unknown callback
+        elif data.startswith("cancel_"):
+            file_id = data.split("_", 1)[1]
+            if file_id in renaming_operations:
+                del renaming_operations[file_id]
+            await query.message.edit_text("❌ Processing cancelled by user")
+            return
+        
         else:
             await query.answer("Unknown callback", show_alert=True)
             return
