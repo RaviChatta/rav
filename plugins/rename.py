@@ -1,200 +1,188 @@
-# rename.py (expanded with more features)
 import os
+import re
+import time
+import uuid
 import logging
 import asyncio
 from datetime import datetime
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Tuple
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.errors import FloodWait, ChatWriteForbidden
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from hachoir.metadata import extractMetadata
+from hachoir.parser import createParser
+from helpers.utils import (
+    progress_for_pyrogram,
+    humanbytes,
+    extract_season,
+    extract_episode,
+    extract_quality,
+    sanitize_filename
+)
 from database.data import hyoshcoder
-from helpers.utils import progress_for_pyrogram, humanbytes
 from config import settings
-from scripts import Txt
 
 logger = logging.getLogger(__name__)
 
-class RenameHandler:
-    def __init__(self):
-        self.active_operations: Dict[int, bool] = {}
-        self.emoji = {
-            'file': "📁", 'video': "🎥", 'audio': "🎵",
-            'success': "✅", 'error': "❌", 'progress': "⏳"
-        }
+# Global state management
+renaming_operations: Dict[str, datetime] = {}
+user_semaphores: Dict[int, asyncio.Semaphore] = {}
+user_queue_messages: Dict[int, List[Message]] = {}
 
-    async def _cleanup_temp_files(self, *paths):
-        """Clean up temporary files"""
-        for path in paths:
-            try:
-                if path and os.path.exists(path):
-                    os.remove(path)
-            except Exception as e:
-                logger.error(f"Cleanup error: {e}")
+async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
+    """Manage concurrent operations per user"""
+    return user_semaphores.setdefault(user_id, asyncio.Semaphore(3))
 
-    async def process_rename(
-        self, 
-        client: Client, 
-        message: Message, 
-        new_name: str,
-        deduct_points: bool = True
-    ) -> Union[bool, str]:
-        """Core rename operation with enhanced features"""
-        user_id = message.from_user.id
-        if user_id in self.active_operations:
-            return "❗ You already have an active operation"
-            
-        self.active_operations[user_id] = True
-        
-        try:
-            # File type detection
-            if message.document:
-                file = message.document
-                file_type = "document"
-            elif message.video:
-                file = message.video
-                file_type = "video"
-            elif message.audio:
-                file = message.audio
-                file_type = "audio"
-            else:
-                return False
-
-            original_name = getattr(file, "file_name", "unknown")
-            file_size = file.file_size
-
-            # Points handling
-            if deduct_points:
-                points_config = await hyoshcoder.get_config("points_config") or {}
-                points_per_rename = points_config.get("per_rename", 2)
-                premium_status = await hyoshcoder.check_premium_status(user_id)
-                
-                if not premium_status.get("is_premium", False):
-                    current_points = await hyoshcoder.get_points(user_id)
-                    if current_points < points_per_rename:
-                        return f"❌ Insufficient points! Need {points_per_rename} points"
-                    
-                    await hyoshcoder.deduct_points(user_id, points_per_rename, "file_rename")
-
-            # File operations
-            temp_dir = f"downloads/{user_id}"
-            os.makedirs(temp_dir, exist_ok=True)
-            temp_path = f"{temp_dir}/{file.file_id}"
-
-            processing_msg = await message.reply_text(
-                f"{self.emoji['progress']} <b>Processing file...</b>\n"
-                f"Original: <code>{original_name}</code>\n"
-                f"New: <code>{new_name}</code>",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{message.id}")]
-                ])
-            )
-
-            # Download with progress
-            file_path = await client.download_media(
-                message,
-                file_name=temp_path,
-                progress=progress_for_pyrogram,
-                progress_args=("Downloading...", processing_msg, datetime.now().timestamp())
-            )
-
-            if not file_path:
-                await processing_msg.edit_text("❌ Download failed")
-                return False
-
-            # Rename file
-            new_path = os.path.join(temp_dir, new_name)
-            os.rename(file_path, new_path)
-
-            # Upload with progress
-            await processing_msg.edit_text(f"{self.emoji['progress']} <b>Uploading renamed file...</b>")
-            
-            upload_method = {
-                "document": client.send_document,
-                "video": client.send_video,
-                "audio": client.send_audio
-            }[file_type]
-
-            await upload_method(
-                chat_id=user_id,
-                file=new_path,
-                file_name=new_name,
-                progress=progress_for_pyrogram,
-                progress_args=("Uploading...", processing_msg, datetime.now().timestamp())
-            )
-
-            # Track in database
-            await hyoshcoder.track_file_rename(
-                user_id=user_id,
-                original_name=original_name,
-                new_name=new_name,
-                file_type=file_type,
-                file_size=file_size
-            )
-
-            await processing_msg.delete()
-            return True
-
-        except Exception as e:
-            logger.error(f"File processing error: {e}")
-            return f"❌ Error: {str(e)}"
-        finally:
-            self.active_operations.pop(user_id, None)
-            await self._cleanup_temp_files(file_path, new_path)
-
-    async def handle_auto_rename(self, client: Client, message: Message):
-        """Handle automatic renaming based on template"""
-        user_id = message.from_user.id
-        template = await hyoshcoder.get_format_template(user_id)
-        
-        if not template:
-            return await message.reply(
-                "No auto-rename template set!\n"
-                "Use /autorename to set a template",
-                quote=True
-            )
-            
-        file = message.document or message.video or message.audio
+async def process_file_rename(
+    client: Client,
+    message: Message,
+    queue_message: Message,
+    user_id: int
+) -> Optional[Tuple[str, str]]:
+    """Main file processing pipeline"""
+    try:
+        file, media_type = await _get_file_info(message)
         if not file:
-            return
+            return None
 
-        original_name = getattr(file, "file_name", "unknown")
-        ext = os.path.splitext(original_name)[1]
+        original_name = sanitize_filename(file.file_name)
+        format_template = await _get_user_template(user_id)
+        metadata_enabled = await hyoshcoder.get_metadata(user_id)
+
+        # Download file
+        file_path = await _download_file(
+            client, message, queue_message, user_id, original_name
+        )
+        if not file_path:
+            return None
+
+        # Generate new filename
+        new_name = _generate_filename(original_name, format_template)
+        new_path = os.path.join("downloads", new_name)
+        os.rename(file_path, new_path)
+
+        # Apply metadata if enabled
+        if metadata_enabled:
+            metadata_code = await hyoshcoder.get_metadata_code(user_id) or ""
+            new_path = await _apply_metadata(new_path, new_name, metadata_code)
+
+        return new_path, new_name
+
+    except Exception as e:
+        logger.error(f"Processing error: {e}")
+        await queue_message.edit_text(f"❌ Error: {str(e)}")
+        return None
+    finally:
+        await _cleanup_temp_files(file_path)
+
+async def _apply_metadata(input_path: str, output_name: str, metadata_code: str) -> str:
+    """Apply metadata using FFmpeg"""
+    output_path = f"processed/{uuid.uuid4().hex}_{output_name}"
+    cmd = [
+        'ffmpeg', '-i', input_path, '-map', '0', '-c', 'copy',
+        '-metadata', f'comment={metadata_code}', '-y', output_path
+    ]
+    
+    proc = await asyncio.create_subprocess_exec(*cmd)
+    await proc.wait()
+    return output_path if proc.returncode == 0 else input_path
+
+def _generate_filename(original: str, template: str) -> str:
+    """Generate filename using pattern matching"""
+    replacements = {
+        '[season]': extract_season(original) or "01",
+        '[episode]': extract_episode(original) or "01",
+        '[quality]': extract_quality(original) or "HD",
+        '[filename]': os.path.splitext(original)[0]
+    }
+    for ph, val in replacements.items():
+        template = template.replace(ph, val)
+    return f"{sanitize_filename(template)}{os.path.splitext(original)[1]}"
+
+async def _download_file(client, message, queue_msg, user_id, filename) -> Optional[str]:
+    """Download file with progress tracking"""
+    dl_path = f"downloads/{user_id}/{uuid.uuid4().hex}{os.path.splitext(filename)[1]}"
+    os.makedirs(os.path.dirname(dl_path), exist_ok=True)
+    
+    return await client.download_media(
+        message,
+        file_name=dl_path,
+        progress=progress_for_pyrogram,
+        progress_args=("📥 Downloading...", queue_msg, time.time())
+    )
+
+async def _cleanup_temp_files(*paths):
+    """Clean temporary files"""
+    for path in paths:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
+
+@Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def handle_file(client: Client, message: Message):
+    user_id = message.from_user.id
+    user_data = await hyoshcoder.read_user(user_id)
+    
+    # Validate user and settings
+    if not user_data or not await hyoshcoder.get_auto_rename_status(user_id):
+        return
+    
+    # Check processing limits
+    file_id = message.document.file_id if message.document else message.video.file_id
+    if file_id in renaming_operations:
+        return
+    
+    # Process file
+    queue_msg = await message.reply("🔄 Starting processing...")
+    async with await get_user_semaphore(user_id):
+        result = await process_file_rename(client, message, queue_msg, user_id)
+        if result:
+            await _send_final_file(client, user_id, *result, message, queue_msg)
+
+async def _send_final_file(client, user_id, file_path, file_name, orig_msg, queue_msg):
+    """Send processed file back to user"""
+    try:
+        caption = await _generate_caption(user_id, file_path, file_name)
+        thumb = await _get_thumbnail(user_id)
         
-        # Enhanced template processing
-        new_name = template
-        if "[filename]" in template:
-            base_name = os.path.splitext(original_name)[0]
-            new_name = new_name.replace("[filename]", base_name)
-        if "[ext]" in template:
-            new_name = new_name.replace("[ext]", ext[1:] if ext else "")
-        
-        if not new_name.endswith(ext):
-            new_name += ext
+        await client.send_document(
+            orig_msg.chat.id,
+            file_path,
+            file_name=file_name,
+            caption=caption,
+            thumb=thumb,
+            progress=progress_for_pyrogram,
+            progress_args=("📤 Uploading...", queue_msg, time.time())
+        )
+        await queue_msg.delete()
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        await queue_msg.edit_text(f"❌ Upload error: {e}")
+    finally:
+        await _cleanup_temp_files(file_path)
 
-        result = await self.process_rename(client, message, new_name)
-        if isinstance(result, str):
-            await message.reply(result, quote=True)
+async def _generate_caption(user_id: int, file_path: str, file_name: str) -> str:
+    """Generate dynamic caption"""
+    template = await hyoshcoder.get_caption(user_id) or "**{filename}**"
+    return template.format(
+        filename=file_name,
+        filesize=humanbytes(os.path.getsize(file_path)),
+        duration=format_duration(await _get_duration(file_path))
+    )
 
-    async def handle_manual_rename(self, client: Client, message: Message):
-        """Handle manual rename command"""
-        if len(message.text.split()) < 2:
-            return await message.reply(
-                "Please provide the new filename\n"
-                "Example: <code>/rename New File Name.mp4</code>",
-                quote=True
-            )
-            
-        new_name = message.text.split(" ", 1)[1]
-        result = await self.process_rename(client, message, new_name)
-        if isinstance(result, str):
-            await message.reply(result, quote=True)
+async def _get_duration(file_path: str) -> Optional[int]:
+    """Get media duration using hachoir"""
+    try:
+        with createParser(file_path) as parser:
+            metadata = extractMetadata(parser)
+            return metadata.get('duration').seconds if metadata else None
+    except Exception as e:
+        logger.error(f"Duration error: {e}")
+        return None
 
-rename_handler = RenameHandler()
-
-@Client.on_message(filters.document | filters.video | filters.audio)
-async def auto_rename(client: Client, message: Message):
-    if await hyoshcoder.get_auto_rename_status(message.from_user.id):
-        await rename_handler.handle_auto_rename(client, message)
-
-@Client.on_message(filters.command("rename") & (filters.document | filters.video | filters.audio))
-async def manual_rename(client: Client, message: Message):
-    await rename_handler.handle_manual_rename(client, message)
+async def _get_thumbnail(user_id: int) -> Optional[str]:
+    """Get user's thumbnail"""
+    thumb_id = await hyoshcoder.get_thumbnail(user_id)
+    return thumb_id if thumb_id else None
