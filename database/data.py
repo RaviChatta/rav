@@ -346,6 +346,22 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting caption for {user_id}: {e}")
             return None
+            
+    async def set_metadata(self, id, bool_meta):
+        try:
+            await self.col.update_one(
+                {"_id": int(id)}, {"$set": {"metadata": bool_meta}}
+            )
+        except Exception as e:
+            logging.error(f"Error setting metadata for user {id}: {e}")
+
+    async def get_metadata(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("metadata", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting metadata for user {id}: {e}")
+            return None
 
     async def set_metadata_code(self, user_id: int, metadata_code: str) -> bool:
         """Set user's metadata code."""
@@ -546,7 +562,14 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting points for {user_id}: {e}")
             return 0
-
+    async def get_expend_points(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("expend_points", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting points for user {id}: {e}")
+            return None
+        
     async def get_points_history(self, user_id: int, limit: int = 10) -> List[Dict]:
         """Get user's points transaction history."""
         try:
@@ -1296,7 +1319,13 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting referrer for {user_id}: {e}")
             return False
-    
+    async def is_refferer(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("referrer_id", None)
+        except Exception as e:
+            logging.error(f"Error getting reffer for user {id}: {e}")
+            return None
     async def total_renamed_files(self) -> int:
         """Get total number of files renamed across all users."""
         try:
