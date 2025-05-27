@@ -40,6 +40,7 @@ METADATA_OFF = [
      InlineKeyboardButton('❌', callback_data='metadata_0')],
     [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
      InlineKeyboardButton('Back', callback_data='help')]
+]
 SHARE_MESSAGE = """
 🚀 *Discover This Amazing Bot!* 🚀
 
