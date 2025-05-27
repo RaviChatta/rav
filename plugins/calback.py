@@ -11,7 +11,7 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     InputMediaPhoto
 )
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, Message
 from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait
 from helpers.utils import get_random_photo, get_shortlink
