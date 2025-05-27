@@ -57,7 +57,7 @@ async def set_metadata_callback(client, query: CallbackQuery):
         chat_id=query.from_user.id,
         text=(
             "✏️ <b>Please send your new metadata text</b>\n\n"
-            "Example: <code>Lakshmi Ganapathi Filmst</code>\n"
+            "Example: <code>Lakshmi Ganapathi Films</code>\n"
             f"Current: {await hyoshcoder.get_metadata_code(query.from_user.id) or 'None'}\n\n"
             "You have 2 minutes to respond.\n"
             "Type /cancel to abort."
