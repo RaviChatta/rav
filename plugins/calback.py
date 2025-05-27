@@ -16,6 +16,7 @@ from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBu
 from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
+from collections import defaultdict
 from database.data import hyoshcoder
 from config import settings
 
