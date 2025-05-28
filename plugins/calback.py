@@ -21,7 +21,7 @@ from database.data import hyoshcoder
 from config import settings
 
 logger = logging.getLogger(__name__)
-
+ADMIN_USER_ID = settings.ADMIN
 # Constants
 #METADATA_TIMEOUT = 60  # seconds
 POINT_RANGE = range(5, 21)  # 5-20 points
