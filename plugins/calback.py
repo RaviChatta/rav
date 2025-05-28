@@ -101,31 +101,25 @@ class CallbackActions:
             
             btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
             src_txt = "File name" if src_info == "file_name" else "File caption"
-
+    
             buttons = [
-                [InlineKeyboardButton("• Automatic Renaming Format •", callback_data='file_names')],
                 [
-                    InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), 
-                    InlineKeyboardButton('Caption •', callback_data='caption')
+                    InlineKeyboardButton("AutoRename", callback_data='file_names'),
+                    InlineKeyboardButton('Thumbnail', callback_data='thumbnail'),
+                    InlineKeyboardButton('Caption', callback_data='caption')
                 ],
                 [
-                    InlineKeyboardButton('• Metadata', callback_data='meta'), 
-                    InlineKeyboardButton('Set Media •', callback_data='setmedia')
+                    InlineKeyboardButton('Metadata', callback_data='meta'),
+                    InlineKeyboardButton('Set Media', callback_data='setmedia'),
+                    InlineKeyboardButton('Set Dump', callback_data='setdump')
                 ],
                 [
-                    InlineKeyboardButton('• Set Dump', callback_data='setdump'), 
-                    InlineKeyboardButton('View Dump •', callback_data='viewdump')
-                ],
-                [
-                    InlineKeyboardButton(f'• {btn_sec_text}', callback_data='sequential'), 
-                    InlineKeyboardButton('Premium •', callback_data='premiumx')
-                ],
-                [
-                    InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src'),
+                    InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
+                    InlineKeyboardButton('Premium', callback_data='premiumx'),
+                    InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')
                 ],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ]
-            
             return {
                 'caption': Txt.HELP_TXT.format(client.mention),
                 'reply_markup': InlineKeyboardMarkup(buttons)
@@ -428,40 +422,40 @@ async def cb_handler(client: Client, query: CallbackQuery):
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Back •", callback_data='help')]
             ])
-            
-            elif data == "set_dump":
-            if len(args) == 0:
-                caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
-                await send_response(client, message.chat.id, caption, delete_after=30)
-            else:
-                channel_id = args[0]
-                try:
-                    channel_info = await client.get_chat(channel_id)
-                    if channel_info:
-                        await hyoshcoder.set_user_channel(user_id, channel_id)
-                        caption = f"**Channel {channel_id} has been set as the dump channel.**"
-                        await send_response(
-                            client,
-                            message.chat.id,
-                            caption,
-                            delete_after=30
-                        )
-                    else:
-                        caption = "The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel."
-                        await send_response(
-                            client,
-                            message.chat.id,
-                            caption,
-                            delete_after=30
-                        )
-                except Exception as e:
-                    caption = f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`"
-                    await send_response(
-                        client,
-                        message.chat.id,
-                        caption,
-                        delete_after=30
-                    )
+                  
+       elif data == "set_dump":
+                  if len(args) == 0:
+                      caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
+                      await send_response(client, message.chat.id, caption, delete_after=30)
+                  else:
+                      channel_id = args[0]
+                      try:
+                          channel_info = await client.get_chat(channel_id)
+                          if channel_info:
+                              await hyoshcoder.set_user_channel(user_id, channel_id)
+                              caption = f"**Channel {channel_id} has been set as the dump channel.**"
+                              await send_response(
+                                  client,
+                                  message.chat.id,
+                                  caption,
+                                  delete_after=30
+                              )
+                          else:
+                              caption = "The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel."
+                              await send_response(
+                                  client,
+                                  message.chat.id,
+                                  caption,
+                                  delete_after=30
+                              )
+                      except Exception as e:
+                          caption = f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`"
+                          await send_response(
+                              client,
+                              message.chat.id,
+                              caption,
+                              delete_after=30
+                          )
         
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
