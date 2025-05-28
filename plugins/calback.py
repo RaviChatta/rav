@@ -10,10 +10,10 @@ from pyrogram.types import (
     CallbackQuery, 
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
-    InputMediaPhoto
+    InputMediaPhoto,
+    Message
 )
 from typing import Optional, Dict, Any
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, Message
 from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait, ChatWriteForbidden
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
@@ -75,7 +75,7 @@ Join me using this link: {invite_link}
 """
 
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
-async def process_metadata_text(client, message: Message):
+async def process_metadata_text(client: Client, message: Message):
     user_id = message.from_user.id
     
     if user_id not in metadata_states:
@@ -436,6 +436,42 @@ class CallbackActions:
             'reply_markup': buttons
         }
 
+    @staticmethod
+    async def handle_file_names(client: Client, query: CallbackQuery, user_id: int):
+        """Handle autorename template display"""
+        try:
+            format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
+            buttons = [
+                [InlineKeyboardButton("• Close", callback_data="close"), 
+                 InlineKeyboardButton("Back •", callback_data="help")]
+            ]
+            
+            caption = (
+                f"📝 <b>Auto-Rename Template</b>\n\n"
+                f"Current template: <code>{format_template}</code>\n\n"
+                "Available variables:\n"
+                "[episode] - Auto-detects episode numbers\n"
+                "[season] - Identifies seasons\n"
+                "[quality] - Extracts resolution\n"
+                "[date] - Adds current date\n\n"
+                "Premium Examples:\n"
+                "<code>/autorename [Anime] S[season]E[episode]</code>\n"
+                "<code>/autorename [Movie] [year] [quality]</code>"
+            )
+            
+            return {
+                'caption': caption,
+                'reply_markup': InlineKeyboardMarkup(buttons)
+            }
+        except Exception as e:
+            logger.error(f"File names error: {e}")
+            return {
+                'caption': "❌ Error loading rename template",
+                'reply_markup': InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Back", callback_data="help")]
+                ])
+            }
+
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     """Main callback query handler with improved error handling"""
@@ -543,15 +579,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
         
         elif data == "file_names":
-            format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
-            buttons = [
-                [InlineKeyboardButton("• Close", callback_data="close"), 
-                 InlineKeyboardButton("Back •", callback_data="help")]
-            ]
-            response = {
-                'caption': Txt.FILE_NAME_TXT.format(format_template=format_template),
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
+            response = await CallbackActions.handle_file_names(client, query, user_id)
         
         elif data == "thumbnail":
             thumb = await hyoshcoder.get_thumbnail(user_id)
