@@ -1,15 +1,76 @@
 import random
 import uuid
 from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, Message
 from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait
 from urllib.parse import quote
+from typing import Dict, Any
 import asyncio
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
 from pyrogram import enums 
+from collections import defaultdict
+from typing import Dict, Any
+import asyncio
+import time
+
+# Global state tracker
+metadata_states: Dict[int, Dict[str, Any]] = {}
+metadata_waiting = defaultdict(dict)
+set_metadata_state = {}  # Global state tracker
+METADATA_ON = [
+    [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
+     InlineKeyboardButton('✅', callback_data='metadata_1')],
+    [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+     InlineKeyboardButton('Back', callback_data='help')]
+]
+
+METADATA_OFF = [
+    [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
+     InlineKeyboardButton('❌', callback_data='metadata_0')],
+    [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+     InlineKeyboardButton('Back', callback_data='help')]
+]
+# Add this right after your imports but before @Client.on_callback_query()
+
+@Client.on_message(filters.private & filters.text & ~filters.command(['start']))
+async def process_metadata_text(client, message: Message):
+    user_id = message.from_user.id
+    
+    if user_id not in metadata_states:
+        return
+        
+    try:
+        if message.text.lower() == "/cancel":
+            await message.reply("🚫 Metadata update cancelled", 
+                            reply_markup=InlineKeyboardMarkup(
+                                [[InlineKeyboardButton("Back to Metadata", callback_data="meta")]]
+                            ))
+        else:
+            await hyoshcoder.set_metadata_code(user_id, message.text)
+            bool_meta = await hyoshcoder.get_metadata(user_id)
+            
+            await message.reply(
+                f"✅ <b>Success!</b>\nMetadata set to:\n<code>{message.text}</code>",
+                reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
+            )
+            
+        metadata_states.pop(user_id, None)
+        
+    except Exception as e:
+        await message.reply(f"❌ Error: {str(e)}")
+        metadata_states.pop(user_id, None)
+async def cleanup_metadata_states():
+    while True:
+        await asyncio.sleep(300)  # Clean every 5 minutes
+        current_time = time.time()
+        expired = [uid for uid, state in metadata_states.items() 
+                    if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired:
+            metadata_states.pop(uid, None)
+
 
 @Client.on_callback_query()
 async def cb_handler(client, query: CallbackQuery):
@@ -58,11 +119,44 @@ async def cb_handler(client, query: CallbackQuery):
             ])
             caption = Txt.HELP_TXT.format(client.mention)
         
-        elif data == "meta":
-            btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Back •", callback_data="help")]
-            ])
-            caption = Txt.SEND_METADATA
+        # Metadata toggle handler
+        elif data in ["meta", "metadata_0", "metadata_1"]:
+            if data.startswith("metadata_"):
+                enable = data.endswith("_1")
+                await hyoshcoder.set_metadata(user_id, enable)
+            
+            bool_meta = await hyoshcoder.get_metadata(user_id)
+            meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
+            
+            await query.message.edit_text(
+                f"<b>Current Metadata:</b>\n\n➜ {meta_code}",
+                reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
+            )
+            await query.answer(f"Metadata {'enabled' if bool_meta else 'disabled'}")
+        elif data == "set_metadata":
+            try:
+                metadata_states[user_id] = {
+                    "waiting": True,
+                    "timestamp": time.time(),
+                    "original_msg": query.message.id
+                }
+                
+                prompt = await query.message.edit_text(
+                    "📝 <b>Send new metadata text</b>\n\n"
+                    "Example: <code>Telegram : @REQUETE_ANIME_30sbot</code>\n"
+                    f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
+                    "Reply with text or /cancel",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
+                    )
+                )
+                
+                metadata_states[user_id]["prompt_id"] = prompt.id
+                
+            except Exception as e:
+                metadata_states.pop(user_id, None)
+                await query.answer(f"Error: {str(e)}", show_alert=True)
+
         
         elif data == "donate":
             btn = InlineKeyboardMarkup([
@@ -81,12 +175,6 @@ async def cb_handler(client, query: CallbackQuery):
             caption = Txt.THUMBNAIL_TXT
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• View Thumbnail", callback_data="showThumb")],
-                [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Back •", callback_data="help")]
-            ])
-        
-        elif data == "metadatax":
-            caption = Txt.SEND_METADATA,
-            btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Back •", callback_data="help")]
             ])
             
@@ -126,74 +214,6 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• Close", callback_data="close"), InlineKeyboardButton("Back •", callback_data="help")]
             ])
         
-        elif data in ["custom_metadata", "metadata_1", "metadata_0"]:
-            ON = InlineKeyboardMarkup([
-                [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'), InlineKeyboardButton('✅', callback_data='metadata_1')],
-                [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]
-            ])
-            
-            OFF = InlineKeyboardMarkup([
-                [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'), InlineKeyboardButton('❌', callback_data='metadata_0')],
-                [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]
-            ])
-            
-            if data.startswith("metadata_"):
-                _bool = data.split("_")[1] == '1'
-                user_metadata = await hyoshcoder.get_metadata_code(user_id)
-                if _bool:
-                    await hyoshcoder.set_metadata(user_id, bool_meta=False)
-                    caption = f"<b>Your Current Metadata:</b>\n\n➜ {user_metadata} "
-                    btn = OFF
-                else:
-                    await hyoshcoder.set_metadata(user_id, bool_meta=True)
-                    caption = f"<b>Your Current Metadata:</b>\n\n➜ {user_metadata} "
-                    btn = ON
-            elif data == "custom_metadata":
-                await query.message.delete()
-                try:
-                    user_metadata = await hyoshcoder.get_metadata_code(query.from_user.id)
-                    metadata_message = f"""
-        <b>--Metadata Settings:--</b>
-
-        ➜ <b>Current Metadata:</b> {user_metadata}
-
-        <b>Description</b>: Metadata will modify MKV video files, including all audio, streams, and subtitles.
-
-        <b>➲ Send the metadata title. Timeout: 60 sec</b>
-        """
-
-                    metadata = await client.ask(
-                        text=metadata_message,
-                        chat_id=query.from_user.id,
-                        filters=filters.text,
-                        timeout=60,
-                        disable_web_page_preview=True,
-                    )
-                except asyncio.TimeoutError:
-                    await client.send_message(
-                        chat_id=query.from_user.id,
-                        text="⚠️ Error!!\n\n**Request timed out.**\nRestart using /metadata",
-                    )
-                    return
-                
-                try:
-                    ms = await client.send_message(
-                        chat_id=query.from_user.id,
-                        text="**Please wait...**",
-                        reply_to_message_id=query.message.id,
-                    )
-                    await hyoshcoder.set_metadata_code(
-                        query.from_user.id, metadata_code=metadata.text
-                    )
-                    await ms.edit("**Your metadata code has been set successfully ✅**")
-                    return
-                except Exception as e:
-                    await client.send_message(
-                        chat_id=query.from_user.id,
-                        text=f"**An error occurred:** {str(e)}",
-                    )
-                    return  
-            
         elif data == "free_points":
             me = await client.get_me()
             me_username = me.username
@@ -311,6 +331,7 @@ async def cb_handler(client, query: CallbackQuery):
         else:
             await query.message.edit_text(text=caption, reply_markup=btn, disable_web_page_preview=disable_web_page_preview)
             
+
     except FloodWait as e:
         await asyncio.sleep(e.value)
         await cb_handler(client, query)
