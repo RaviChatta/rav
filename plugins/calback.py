@@ -70,38 +70,43 @@ Join me using this link: {invite_link}
 """
 
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
-async def process_metadata_text(client: Client, message: Message):
+async def process_metadata_text(client, message: Message):
     user_id = message.from_user.id
-    if user_id not in metadata_states:
-        return
-        
-    try:
-        if message.text.lower() == "/cancel":
-            await message.reply("🚫 Metadata update cancelled", 
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Back to Metadata", callback_data="meta")]]
-                ))
-        else:
-            await hyoshcoder.set_metadata_code(user_id, message.text)
-            bool_meta = await hyoshcoder.get_metadata(user_id)
-            await message.reply(
-                f"✅ <b>Success!</b>\nMetadata set to:\n<code>{message.text}</code>",
-                reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
-            )
-        metadata_states.pop(user_id, None)
-    except Exception as e:
-        await message.reply(f"❌ Error: {str(e)}")
-        metadata_states.pop(user_id, None)
+    
+    # Check if user is in metadata state and the message isn't a command
+    if user_id in metadata_states and not message.text.startswith('/'):
+        try:
+            if message.text.lower() == "/cancel":
+                await message.reply("🚫 Metadata update cancelled", 
+                                reply_markup=InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton("Back to Metadata", callback_data="meta")]]
+                                ))
+            else:
+                await hyoshcoder.set_metadata_code(user_id, message.text)
+                bool_meta = await hyoshcoder.get_metadata(user_id)
+                
+                await message.reply(
+                    f"✅ <b>Success!</b>\nMetadata set to:\n<code>{message.text}</code>",
+                    reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
+                )
+                
+            metadata_states.pop(user_id, None)
+            
+        except Exception as e:
+            await message.reply(f"❌ Error: {str(e)}")
+            metadata_states.pop(user_id, None)
+    else:
+        # Let other handlers process the message
+        message.continue_propagation()
 
 async def cleanup_metadata_states():
     while True:
-        await asyncio.sleep(300)
+        await asyncio.sleep(300)  # Clean every 5 minutes
         current_time = time.time()
         expired = [uid for uid, state in metadata_states.items() 
-                  if current_time - state.get('timestamp', 0) > 300]
+                    if current_time - state.get('timestamp', 0) > 300]
         for uid in expired:
             metadata_states.pop(uid, None)
-
 def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     periods = {
         "daily": f"{EMOJI['clock']} Daily",
