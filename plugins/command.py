@@ -173,11 +173,14 @@ async def command_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_message(m, delay=3))
             
             buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
                 [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
                  InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
                 [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints'),
                  InlineKeyboardButton(f"{EMOJI['premium']} Go Premium", callback_data='premiumx')],
-                [InlineKeyboardButton("🛠️ Help", callback_data='help')]
+                [InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
+                 InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')]
+             
             ])
 
             # Handle referral links
