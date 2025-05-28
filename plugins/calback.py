@@ -3,6 +3,7 @@ import uuid
 import asyncio
 import logging
 import html
+import time
 from urllib.parse import quote
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
@@ -13,7 +14,7 @@ from pyrogram.types import (
 )
 from typing import Optional, Dict, Any
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, Message
-from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait
+from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait, ChatWriteForbidden
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
 from collections import defaultdict
@@ -54,6 +55,7 @@ I'm using this awesome file renaming bot with these features:
 
 Join me using this link: {invite_link}
 """
+
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
 async def process_metadata_text(client, message: Message):
     user_id = message.from_user.id
@@ -81,6 +83,7 @@ async def process_metadata_text(client, message: Message):
     except Exception as e:
         await message.reply(f"❌ Error: {str(e)}")
         metadata_states.pop(user_id, None)
+
 async def cleanup_metadata_states():
     while True:
         await asyncio.sleep(300)  # Clean every 5 minutes
@@ -260,8 +263,6 @@ class CallbackActions:
                 ])
             }
 
- 
-
     @staticmethod
     async def handle_free_points(client: Client, query: CallbackQuery, user_id: int):
         """Improved free points verification and distribution"""
@@ -328,6 +329,59 @@ class CallbackActions:
                 ])
             }
 
+    @staticmethod
+    async def handle_set_media(client: Client, query: CallbackQuery, user_id: int):
+        """Handle media preference setting"""
+        try:
+            current_pref = await hyoshcoder.get_media_preference(user_id)
+            buttons = [
+                [
+                    InlineKeyboardButton("Video" + (" ✅" if current_pref == "video" else ""), 
+                                      callback_data="setmedia_video"),
+                    InlineKeyboardButton("Document" + (" ✅" if current_pref == "document" else ""), 
+                                      callback_data="setmedia_document")
+                ],
+                [InlineKeyboardButton("Back", callback_data="help")]
+            ]
+            
+            return {
+                'caption': "📁 <b>Set Media Preference</b>\n\n"
+                          "Choose how you want media files to be sent:",
+                'reply_markup': InlineKeyboardMarkup(buttons)
+            }
+        except Exception as e:
+            logger.error(f"Set media error: {e}")
+            return {
+                'caption': "❌ Error loading media settings",
+                'reply_markup': InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Back", callback_data="help")]
+                ])
+            }
+
+    @staticmethod
+    async def handle_set_dump(client: Client, query: CallbackQuery, user_id: int):
+        """Handle dump channel setting"""
+        try:
+            current_dump = await hyoshcoder.get_user_channel(user_id)
+            buttons = [
+                [InlineKeyboardButton("Set Dump Channel", callback_data="setdump_channel")],
+                [InlineKeyboardButton("Back", callback_data="help")]
+            ]
+            
+            return {
+                'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
+                          "You can set a channel where renamed files will be automatically forwarded.",
+                'reply_markup': InlineKeyboardMarkup(buttons)
+            }
+        except Exception as e:
+            logger.error(f"Set dump error: {e}")
+            return {
+                'caption': "❌ Error loading dump settings",
+                'reply_markup': InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Back", callback_data="help")]
+                ])
+            }
+
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     """Main callback query handler with improved error handling"""
@@ -377,6 +431,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
             )
             await query.answer(f"Metadata {'enabled' if bool_meta else 'disabled'}")
+            return
+        
         elif data == "set_metadata":
             try:
                 metadata_states[user_id] = {
@@ -396,11 +452,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 )
                 
                 metadata_states[user_id]["prompt_id"] = prompt.id
+                return
                 
             except Exception as e:
                 metadata_states.pop(user_id, None)
                 await query.answer(f"Error: {str(e)}", show_alert=True)
-        
+                return
         
         elif data == "freepoints":
             response = await CallbackActions.handle_free_points(client, query, user_id)
@@ -416,46 +473,21 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
         
         elif data.startswith("setmedia"):
-            media_type = data.split("_")[1]
-            await hyoshcoder.set_media_preference(user_id, media_type)
-            caption = f"**Media preference set to:** {media_type} ✅"
-            btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Back •", callback_data='help')]
-            ])
-                  
-       elif data == "set_dump":
-                  if len(args) == 0:
-                      caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
-                      await send_response(client, message.chat.id, caption, delete_after=30)
-                  else:
-                      channel_id = args[0]
-                      try:
-                          channel_info = await client.get_chat(channel_id)
-                          if channel_info:
-                              await hyoshcoder.set_user_channel(user_id, channel_id)
-                              caption = f"**Channel {channel_id} has been set as the dump channel.**"
-                              await send_response(
-                                  client,
-                                  message.chat.id,
-                                  caption,
-                                  delete_after=30
-                              )
-                          else:
-                              caption = "The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel."
-                              await send_response(
-                                  client,
-                                  message.chat.id,
-                                  caption,
-                                  delete_after=30
-                              )
-                      except Exception as e:
-                          caption = f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`"
-                          await send_response(
-                              client,
-                              message.chat.id,
-                              caption,
-                              delete_after=30
-                          )
+            if "_" in data:
+                media_type = data.split("_")[1]
+                await hyoshcoder.set_media_preference(user_id, media_type)
+                await query.answer(f"Media preference set to {media_type}")
+                response = await CallbackActions.handle_set_media(client, query, user_id)
+            else:
+                response = await CallbackActions.handle_set_media(client, query, user_id)
+        
+        elif data == "setdump":
+            response = await CallbackActions.handle_set_dump(client, query, user_id)
+        
+        elif data.startswith("setdump_channel"):
+            # This would be handled by a message handler for /set_dump command
+            await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
+            return
         
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
@@ -600,3 +632,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.answer("❌ An error occurred", show_alert=True)
         except:
             pass
+
+# Start the cleanup task
+asyncio.create_task(cleanup_metadata_states())
