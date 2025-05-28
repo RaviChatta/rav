@@ -166,29 +166,47 @@ async def auto_rename_files(client, message):
             if _bool_metadata:
                 metadata = await hyoshcoder.get_metadata_code(user_id)
                 if metadata:
-                    cmd = f'ffmpeg -i "{renamed_file_path}"  -map 0 -c:s copy -c:a copy -c:v copy -metadata title="{metadata}" -metadata author="{metadata}" -metadata:s:s title="{metadata}" -metadata:s:a title="{metadata}" -metadata:s:v title="{metadata}"  "{metadata_file_path}"'
+                    # Replace your current FFmpeg command with this:
+                    cmd = [
+                        'ffmpeg',
+                        '-i', f'"{renamed_file_path}"',
+                        '-map', '0',
+                        '-c:s', 'copy',
+                        '-c:a', 'copy', 
+                        '-c:v', 'copy',
+                        '-metadata', f'title="{metadata}"',
+                        '-metadata', f'author="{metadata}"',
+                        '-metadata:s:s', f'title="{metadata}"',
+                        '-metadata:s:a', f'title="{metadata}"',
+                        '-metadata:s:v', f'title="{metadata}"',
+                        '-y',  # Overwrite without asking
+                        f'"{metadata_file_path}"'
+                    ]
+
                     try:
                         process = await asyncio.create_subprocess_shell(
-                            cmd,
+                            ' '.join(cmd),
                             stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
                         )
-                        stdout, stderr = await process.communicate()
-                        if process.returncode == 0:
-                            metadata_added = True
-                            path = metadata_file_path
-                        else:
-                            error_message = stderr.decode()
-                            await queue_message.edit_text(f"**Metadata error:**\n{error_message}")
-                    except asyncio.TimeoutError:
-                        await queue_message.edit_text("**FFmpeg command timed out.**")
-                        return
+                        
+                        # Add 2 minute timeout
+                        try:
+                            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+                        except asyncio.TimeoutError:
+                            process.kill()
+                            await process.communicate()  # Cleanup
+                            raise Exception("FFmpeg timed out after 2 minutes")
+                        
+                        if process.returncode != 0:
+                            error_msg = stderr.decode().strip()
+                            raise Exception(f"FFmpeg failed with error: {error_msg}")
+                        
+                        metadata_added = True
+                        path = metadata_file_path
                     except Exception as e:
-                        await queue_message.edit_text(f"**Exception occurred:**\n{str(e)}")
-                        return
-            else:
-                metadata_added = True
-
+                        await queue_message.edit_text(f"❌ Metadata error: {str(e)}")
+                        metadata_added = False
             if not metadata_added:
                 await queue_message.edit_text(
                     "Adding metadata failed. Uploading renamed file."
