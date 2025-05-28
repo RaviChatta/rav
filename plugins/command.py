@@ -558,19 +558,24 @@ async def command_handler(client: Client, message: Message):
             btn_seq_text = "Sequential ✅" if sequential_status else "Sequential ❌"
             src_txt = "File name" if src_info == "file_name" else "File caption"
         
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("• Automatic renaming format •", callback_data='file_names')],
-                [InlineKeyboardButton('• Thumbnail', callback_data='thumbnail'), 
-                 InlineKeyboardButton('Caption •', callback_data='caption')],
-                [InlineKeyboardButton('• Metadata', callback_data='meta'), 
-                 InlineKeyboardButton('Set Media •', callback_data='setmedia')],
-                [InlineKeyboardButton('• Set Dump', callback_data='setdump'), 
-                 InlineKeyboardButton('View Dump •', callback_data='viewdump')],
-                [InlineKeyboardButton(f'• {btn_seq_text}', callback_data='sequential'), 
-                 InlineKeyboardButton('Premium •', callback_data='premiumx')],
-                [InlineKeyboardButton(f'• Extract from: {src_txt}', callback_data='toggle_src')],
+            buttons = [
+                [
+                    InlineKeyboardButton("AutoRename", callback_data='file_names'),
+                    InlineKeyboardButton('Thumbnail', callback_data='thumbnail'),
+                    InlineKeyboardButton('Caption', callback_data='caption')
+                ],
+                [
+                    InlineKeyboardButton('Metadata', callback_data='meta'),
+                    InlineKeyboardButton('Set Media', callback_data='setmedia'),
+                    InlineKeyboardButton('Set Dump', callback_data='setdump')
+                ],
+                [
+                    InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
+                    InlineKeyboardButton('Premium', callback_data='premiumx'),
+                    InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')
+                ],
                 [InlineKeyboardButton('• Home', callback_data='home')]
-            ])
+            ]
             
             await send_response(
                 client,
