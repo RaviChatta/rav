@@ -120,7 +120,7 @@ class Database:
             "file_id": None,
             "caption": None,
             "metadata": True,
-            "metadata_code": "Telegram : @REQUETE_ANIME_30sbot",
+            "metadata_code":None,
             "format_template": None,
             "ban_status": {
                 "is_banned": False,
@@ -359,15 +359,71 @@ class Database:
             logging.error(f"Error setting metadata code for {user_id}: {e}")
             return False
 
-    async def get_metadata_code(self, user_id: int) -> Optional[str]:
-        """Get user's metadata code."""
+
+    async def set_format_template(self, id, format_template):
         try:
-            user = await self.users.find_one({"_id": user_id})
-            return user.get("metadata_code") if user else None
+            await self.col.update_one(
+                {"_id": int(id)}, {"$set": {"format_template": format_template}}
+            )
         except Exception as e:
-            logging.error(f"Error getting metadata code for {user_id}: {e}")
+            logging.error(f"Error setting format template for user {id}: {e}")
+
+    async def get_format_template(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("format_template", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting format template for user {id}: {e}")
             return None
 
+    async def set_media_preference(self, id, media_type):
+        try:
+            await self.col.update_one(
+                {"_id": int(id)}, {"$set": {"media_type": media_type}}
+            )
+        except Exception as e:
+            logging.error(f"Error setting media preference for user {id}: {e}")
+
+    async def get_media_preference(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("media_type", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting media preference for user {id}: {e}")
+            return None
+
+    
+    async def set_metadata(self, id, bool_meta):
+        try:
+            await self.col.update_one(
+                {"_id": int(id)}, {"$set": {"metadata": bool_meta}}
+            )
+        except Exception as e:
+            logging.error(f"Error setting metadata for user {id}: {e}")
+
+    async def get_metadata(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("metadata", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting metadata for user {id}: {e}")
+            return None
+
+    async def set_metadata_code(self, id, metadata_code):
+        try:
+            await self.col.update_one(
+                {"_id": int(id)}, {"$set": {"metadata_code": metadata_code}}
+            )
+        except Exception as e:
+            logging.error(f"Error setting metadata code for user {id}: {e}")
+
+    async def get_metadata_code(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("metadata_code", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting metadata code for user {id}: {e}")
+            return None
     async def set_src_info(self, user_id: int, src_info: str) -> bool:
         """Set user's source info preference."""
         try:
@@ -406,14 +462,7 @@ class Database:
             logging.error(f"Error setting format template for {user_id}: {e}")
             return False
 
-    async def get_format_template(self, user_id: int) -> Optional[str]:
-        """Get user's auto-rename format template."""
-        try:
-            user = await self.users.find_one({"_id": user_id})
-            return user.get("format_template") if user else None
-        except Exception as e:
-            logging.error(f"Error getting format template for {user_id}: {e}")
-            return None
+ 
 
     async def track_file_rename(self, user_id: int, file_name: str, new_name: str) -> bool:
         """Track a file rename operation."""
@@ -1296,7 +1345,14 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting referrer for {user_id}: {e}")
             return False
-    
+    async def is_refferer(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("referrer_id", None)
+        except Exception as e:
+            logging.error(f"Error getting reffer for user {id}: {e}")
+            return None
+
     async def total_renamed_files(self) -> int:
         """Get total number of files renamed across all users."""
         try:
