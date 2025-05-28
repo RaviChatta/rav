@@ -23,13 +23,30 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 ADMIN_USER_ID = settings.ADMIN
-# Constants
-#METADATA_TIMEOUT = 60  # seconds
-POINT_RANGE = range(5, 21)  # 5-20 points
+
+# Emoji Constants
+EMOJI = {
+    'points': "✨",
+    'premium': "⭐",
+    'referral': "👥",
+    'rename': "📝",
+    'stats': "📊",
+    'leaderboard': "🏆",
+    'admin': "🛠️",
+    'success': "✅",
+    'error': "❌",
+    'clock': "⏳",
+    'link': "🔗",
+    'money': "💰",
+    'file': "📁",
+    'video': "🎥"
+}
+
 # Global state tracker
 metadata_states: Dict[int, Dict[str, Any]] = {}
 metadata_waiting = defaultdict(dict)
-set_metadata_state = {}  # Global state tracker
+set_metadata_state = {}
+
 METADATA_ON = [
     [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
      InlineKeyboardButton('✅', callback_data='metadata_1')],
@@ -43,6 +60,7 @@ METADATA_OFF = [
     [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
      InlineKeyboardButton('Back', callback_data='help')]
 ]
+
 SHARE_MESSAGE = """
 🚀 *Discover This Amazing Bot!* 🚀
 
@@ -96,6 +114,34 @@ async def cleanup_metadata_states():
 class CallbackActions:
 
     @staticmethod
+    async def handle_home(client: Client, query: CallbackQuery):
+        """Handle home menu callback"""
+        try:
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
+                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
+                 InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
+                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints'),
+                 InlineKeyboardButton(f"{EMOJI['premium']} Go Premium", callback_data='premiumx')],
+                [InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
+                 InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')]
+            ])
+            
+            return {
+                'caption': Txt.START_TXT.format(client.mention),
+                'reply_markup': buttons,
+                'photo': await get_random_photo()
+            }
+        except Exception as e:
+            logger.error(f"Home menu error: {e}")
+            return {
+                'caption': "❌ Error loading home menu",
+                'reply_markup': InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Try Again", callback_data="home")]
+                ])
+            }
+
+    @staticmethod
     async def handle_help(client: Client, query: CallbackQuery, user_id: int):
         """Handle help menu callback"""
         try:
@@ -123,6 +169,7 @@ class CallbackActions:
                 ],
                 [InlineKeyboardButton('• Home', callback_data='home')]
             ]
+            
             return {
                 'caption': Txt.HELP_TXT.format(client.mention),
                 'reply_markup': InlineKeyboardMarkup(buttons)
@@ -145,18 +192,17 @@ class CallbackActions:
             premium_status = await hyoshcoder.check_premium_status(user_id)
             user_data = await hyoshcoder.read_user(user_id)
             
-            # Handle referral stats safely
             referral_stats = user_data.get('referral', {})
             referred_count = referral_stats.get('referred_count', 0)
             referral_earnings = referral_stats.get('referral_earnings', 0)
             
             text = (
                 f"📊 <b>Your Statistics</b>\n\n"
-                f"✨ <b>Points Balance:</b> {points}\n"
-                f"⭐ <b>Premium Status:</b> {'Active ✅' if premium_status.get('is_premium', False) else 'Inactive ❌'}\n"
-                f"👥 <b>Referrals:</b> {referred_count} "
-                f"(Earned {referral_earnings} ✨)\n\n"
-                f"📝 <b>Files Renamed</b>\n"
+                f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
+                f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
+                f"{EMOJI['referral']} <b>Referrals:</b> {referred_count} "
+                f"(Earned {referral_earnings} {EMOJI['points']})\n\n"
+                f"{EMOJI['rename']} <b>Files Renamed</b>\n"
                 f"• Total: {stats.get('total_renamed', 0)}\n"
                 f"• Today: {stats.get('today', 0)}\n"
                 f"• This Week: {stats.get('this_week', 0)}\n"
@@ -164,8 +210,8 @@ class CallbackActions:
             )
             
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard")],
-                [InlineKeyboardButton("👥 Invite Friends", callback_data="invite")],
+                [InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data="leaderboard")],
+                [InlineKeyboardButton(f"{EMOJI['referral']} Invite Friends", callback_data="invite")],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
             
@@ -186,30 +232,30 @@ class CallbackActions:
     def get_leaderboard_keyboard(selected_period: str = "weekly", selected_type: str = "points"):
         """Generate leaderboard navigation keyboard"""
         periods = {
-            "daily": "⏳ Daily",
-            "weekly": "📆 Weekly", 
-            "monthly": "🗓 Monthly",
-            "alltime": "🏆 All-Time"
+            "daily": f"{EMOJI['clock']} Daily",
+            "weekly": f"📆 Weekly", 
+            "monthly": f"🗓 Monthly",
+            "alltime": f"{EMOJI['leaderboard']} All-Time"
         }
         types = {
-            "points": "✨ Points",
-            "renames": "📝 Files",
-            "referrals": "👥 Referrals"
+            "points": f"{EMOJI['points']} Points",
+            "renames": f"{EMOJI['rename']} Files",
+            "referrals": f"{EMOJI['referral']} Referrals"
         }
         
-        period_buttons = []
-        for period, text in periods.items():
-            if period == selected_period:
-                period_buttons.append(InlineKeyboardButton(f"• {text} •", callback_data=f"lb_period_{period}"))
-            else:
-                period_buttons.append(InlineKeyboardButton(text, callback_data=f"lb_period_{period}"))
+        period_buttons = [
+            InlineKeyboardButton(
+                f"• {text} •" if period == selected_period else text,
+                callback_data=f"lb_period_{period}"
+            ) for period, text in periods.items()
+        ]
         
-        type_buttons = []
-        for lb_type, text in types.items():
-            if lb_type == selected_type:
-                type_buttons.append(InlineKeyboardButton(f"• {text} •", callback_data=f"lb_type_{lb_type}"))
-            else:
-                type_buttons.append(InlineKeyboardButton(text, callback_data=f"lb_type_{lb_type}"))
+        type_buttons = [
+            InlineKeyboardButton(
+                f"• {text} •" if lb_type == selected_type else text,
+                callback_data=f"lb_type_{lb_type}"
+            ) for lb_type, text in types.items()
+        ]
         
         return InlineKeyboardMarkup([
             period_buttons[:2],
@@ -271,7 +317,6 @@ class CallbackActions:
             unique_code = str(uuid.uuid4())[:8]
             invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
             
-            # Get points configuration safely
             config = await hyoshcoder.get_config("points_config") or {}
             ad_config = config.get('ad_watch', {})
             min_points = ad_config.get('min_points', 5)
@@ -279,19 +324,15 @@ class CallbackActions:
             referral_bonus = config.get('referral_bonus', 10)
             premium_multiplier = config.get('premium_multiplier', 2)
             
-            # Generate random points
             points = random.randint(min_points, max_points)
             
-            # Check if user is premium for multiplier
             premium_status = await hyoshcoder.check_premium_status(user_id)
             if premium_status.get('is_premium', False):
                 points = int(points * premium_multiplier)
             
-            # Track the points distribution
             if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
                 raise Exception("Failed to track points distribution")
             
-            # Generate shareable links
             points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
             shortlink = await get_shortlink(
                 settings.SHORTED_LINK, 
@@ -381,6 +422,19 @@ class CallbackActions:
                     [InlineKeyboardButton("Back", callback_data="help")]
                 ])
             }
+
+    @staticmethod
+    async def handle_premium(client: Client, query: CallbackQuery):
+        """Handle premium information"""
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Owner", url="https://t.me/hyoshassistantBot"),
+             InlineKeyboardButton("Close", callback_data="close")]
+        ])
+        
+        return {
+            'caption': Txt.PREMIUM_TXT,
+            'reply_markup': buttons
+        }
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -485,7 +539,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = await CallbackActions.handle_set_dump(client, query, user_id)
         
         elif data.startswith("setdump_channel"):
-            # This would be handled by a message handler for /set_dump command
             await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
             return
         
@@ -510,7 +563,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = {
                 'caption': Txt.THUMBNAIL_TXT,
                 'reply_markup': InlineKeyboardMarkup(buttons),
-                'photo': thumb  # Changed from 'thumb' to 'photo' for clarity
+                'photo': thumb
             }
         
         elif data == "showThumb":
@@ -537,17 +590,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
         
         elif data == "premiumx":
-            buttons = [
-                [InlineKeyboardButton("• Free Points", callback_data="freepoints")],
-                [InlineKeyboardButton("• Back", callback_data="help")]
-            ]
-            response = {
-                'caption': Txt.PREMIUM_TXT,
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
+            response = await CallbackActions.handle_premium(client, query)
         
         elif data == "about":
-            buttons = [
+            buttons = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("• Support", url='https://t.me/Raaaaavi'), 
                     InlineKeyboardButton("Commands •", callback_data="help")
@@ -557,10 +603,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("Network •", url='https://t.me/Raaaaavi')
                 ],
                 [InlineKeyboardButton("• Back •", callback_data="home")]
-            ]
+            ])
             response = {
                 'caption': Txt.ABOUT_TXT,
-                'reply_markup': InlineKeyboardMarkup(buttons),
+                'reply_markup': buttons,
                 'disable_web_page_preview': True
             }
         
@@ -589,9 +635,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         if response:
             try:
                 if 'photo' in response:
-                    # Handle media messages
                     if query.message.photo:
-                        # Editing existing photo message
                         await query.message.edit_media(
                             media=InputMediaPhoto(
                                 media=response['photo'] or await get_random_photo(),
@@ -600,7 +644,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                             reply_markup=response['reply_markup']
                         )
                     else:
-                        # Converting text message to photo
                         await query.message.delete()
                         await client.send_photo(
                             chat_id=query.message.chat.id,
@@ -609,7 +652,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                             reply_markup=response['reply_markup']
                         )
                 else:
-                    # Handle text messages
                     await query.message.edit_text(
                         text=response.get('caption', response.get('text', '')),
                         reply_markup=response['reply_markup'],
