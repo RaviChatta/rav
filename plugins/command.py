@@ -18,13 +18,7 @@ logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
 is_restarting = False
 
-ON = [[InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
-       InlineKeyboardButton('✅', callback_data='metadata_1')],
-      [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]]
 
-OFF = [[InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
-        InlineKeyboardButton('❌', callback_data='metadata_0')],
-       [InlineKeyboardButton('Set Custom Metadata', callback_data='custom_metadata')]]
 
 @Client.on_message(filters.private & filters.command([
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
@@ -53,6 +47,7 @@ async def command(client, message: Message):
                     [InlineKeyboardButton('• About', callback_data='about'),
                      InlineKeyboardButton('Source •', callback_data='source')]
                 ])
+                
 
                 if args and args[0].startswith("refer_"):
                     referrer_id = int(args[0].replace("refer_", ""))
@@ -99,28 +94,39 @@ async def command(client, message: Message):
                     )
 
             elif command == "autorename":
-                command_parts = message.text.split("/autorename", 1)
-                if len(command_parts) < 2 or not command_parts[1].strip():
-                    caption = (
-                        "**Please provide a new name after the /autorename command**\n\n"
-                        "To begin using:\n"
-                        "**Example Format:** `MyAwesomeVideo [season] [episode] [quality]`"
-                    )
-                    await message.reply_text(caption)
-                    return
+                try:
+                    # Get everything after the command
+                    if len(message.command) < 2:
+                        caption = (
+                            "**Please provide a new name after the /autorename command**\n\n"
+                            "To begin using:\n"
+                            "**Example Format:** `MyAwesomeVideo [season] [episode] [quality]`"
+                        )
+                        await message.reply_text(caption)
+                        return
 
-                format_template = command_parts[1].strip()
-                await hyoshcoder.set_format_template(user_id, format_template)
-                caption = (
-                    f"**🌟 Fantastic! You are now ready to auto-rename your files.**\n\n"
-                    "📩 Just send the files you want renamed.\n\n"
-                    f"**Your saved template:** `{format_template}`\n\n"
-                    "Remember, I may rename slowly, but I make your files perfect! ✨"
-                )
-                if img:
-                    await message.reply_photo(photo=img, caption=caption)
-                else:
-                    await message.reply_text(text=caption)
+                    format_template = message.text.split(None, 1)[1].strip()
+                    
+                    # Save the template
+                    success = await hyoshcoder.set_format_template(user_id, format_template)
+                    if not success:
+                        raise Exception("Failed to save template to database")
+                        
+                    caption = (
+                        f"**🌟 Fantastic! You are now ready to auto-rename your files.**\n\n"
+                        "📩 Just send the files you want renamed.\n\n"
+                        f"**Your saved template:** `{format_template}`\n\n"
+                        "Remember, I may rename slowly, but I make your files perfect! ✨"
+                    )
+                    
+                    if img:
+                        await message.reply_photo(photo=img, caption=caption)
+                    else:
+                        await message.reply_text(text=caption)
+                        
+                except Exception as e:
+                    logger.error(f"Error in autorename: {e}", exc_info=True)
+                    await message.reply_text("❌ An error occurred while processing your request. Please try again.")
 
             elif command == "setmedia":
                 keyboard = InlineKeyboardMarkup([
@@ -196,22 +202,6 @@ async def command(client, message: Message):
                     await message.reply_photo(photo=img, caption=caption)
                 else:
                     await message.reply_text(text=caption)
-
-            elif command == "metadata":
-                ms = await message.reply_text("**Please wait...**", reply_to_message_id=message.id)
-                bool_metadata = await hyoshcoder.get_metadata(message.from_user.id)
-                user_metadata = await hyoshcoder.get_metadata_code(message.from_user.id)
-                await ms.delete()
-                if bool_metadata:
-                    await message.reply_text(
-                        f"<b>Your current metadata:</b>\n\n➜ {user_metadata} ",
-                        reply_markup=InlineKeyboardMarkup(ON),
-                    )
-                else:
-                    await message.reply_text(
-                        f"<b>Your current metadata:</b>\n\n➜ {user_metadata} ",
-                        reply_markup=InlineKeyboardMarkup(OFF),
-                    )
 
             elif command == "donate":
                 buttons = InlineKeyboardMarkup([
@@ -365,3 +355,4 @@ async def addthumbs(client, message):
     mkn = await message.reply_text("Please wait...")
     await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
     await mkn.edit("**Thumbnail saved successfully ✅️**")
+
