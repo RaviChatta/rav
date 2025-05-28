@@ -1,59 +1,25 @@
 import random
 import uuid
 import asyncio
-import logging
-import html
 import time
-from urllib.parse import quote
 from pyrogram import Client, filters, enums
-from pyrogram.types import (
-    CallbackQuery, 
-    InlineKeyboardMarkup, 
-    InlineKeyboardButton, 
-    InputMediaPhoto,
-    Message
-)
-from typing import Optional, Dict, Any
-from pyrogram.errors import ChannelInvalid, ChannelPrivate, ChatAdminRequired, FloodWait, ChatWriteForbidden
+from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, Message
+from pyrogram.errors import FloodWait
+from urllib.parse import quote
 from helpers.utils import get_random_photo, get_shortlink
 from scripts import Txt
-from collections import defaultdict
 from database.data import hyoshcoder
 from config import settings
-
-logger = logging.getLogger(__name__)
-ADMIN_USER_ID = settings.ADMIN
-
-# Emoji Constants
-EMOJI = {
-    'points': "✨",
-    'premium': "⭐",
-    'referral': "👥",
-    'rename': "📝",
-    'stats': "📊",
-    'leaderboard': "🏆",
-    'admin': "🛠️",
-    'success': "✅",
-    'error': "❌",
-    'clock': "⏳",
-    'link': "🔗",
-    'money': "💰",
-    'file': "📁",
-    'video': "🎥"
-}
+from collections import defaultdict
 
 # Global state tracker
-metadata_states: Dict[int, Dict[str, Any]] = {}
-metadata_waiting = defaultdict(dict)
-set_metadata_state = {}
-
+metadata_states = defaultdict(dict)
 METADATA_ON = [
     [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
      InlineKeyboardButton('✅', callback_data='metadata_1')],
     [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
      InlineKeyboardButton('Back', callback_data='help')]
 ]
-
 METADATA_OFF = [
     [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
      InlineKeyboardButton('❌', callback_data='metadata_0')],
@@ -61,647 +27,159 @@ METADATA_OFF = [
      InlineKeyboardButton('Back', callback_data='help')]
 ]
 
-SHARE_MESSAGE = """
-🚀 *Discover This Amazing Bot!* 🚀
-
-I'm using this awesome file renaming bot with these features:
-- Automatic file renaming
-- Custom metadata editing
-- Thumbnail customization
-- Sequential file processing
-- And much more!
-
-Join me using this link: {invite_link}
-"""
-
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
 async def process_metadata_text(client: Client, message: Message):
     user_id = message.from_user.id
-    
     if user_id not in metadata_states:
         return
         
     try:
         if message.text.lower() == "/cancel":
             await message.reply("🚫 Metadata update cancelled", 
-                            reply_markup=InlineKeyboardMarkup(
-                                [[InlineKeyboardButton("Back to Metadata", callback_data="meta")]]
-                            ))
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("Back to Metadata", callback_data="meta")]]
+                ))
         else:
             await hyoshcoder.set_metadata_code(user_id, message.text)
             bool_meta = await hyoshcoder.get_metadata(user_id)
-            
             await message.reply(
                 f"✅ <b>Success!</b>\nMetadata set to:\n<code>{message.text}</code>",
                 reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
             )
-            
         metadata_states.pop(user_id, None)
-        
     except Exception as e:
         await message.reply(f"❌ Error: {str(e)}")
         metadata_states.pop(user_id, None)
 
 async def cleanup_metadata_states():
     while True:
-        await asyncio.sleep(300)  # Clean every 5 minutes
+        await asyncio.sleep(300)
         current_time = time.time()
         expired = [uid for uid, state in metadata_states.items() 
-                    if current_time - state.get('timestamp', 0) > 300]
+                  if current_time - state.get('timestamp', 0) > 300]
         for uid in expired:
             metadata_states.pop(uid, None)
 
-class CallbackActions:
-
-    @staticmethod
-    async def handle_home(client: Client, query: CallbackQuery):
-        """Handle home menu callback"""
-        try:
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
-                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
-                 InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
-                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints'),
-                 InlineKeyboardButton(f"{EMOJI['premium']} Go Premium", callback_data='premiumx')],
-                [InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
-                 InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')]
-            ])
-            
-            return {
-                'caption': Txt.START_TXT.format(client.mention),
-                'reply_markup': buttons,
-                'photo': await get_random_photo()
-            }
-        except Exception as e:
-            logger.error(f"Home menu error: {e}")
-            return {
-                'caption': "❌ Error loading home menu",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Try Again", callback_data="home")]
-                ])
-            }
-
-    @staticmethod
-    async def handle_help(client: Client, query: CallbackQuery, user_id: int):
-        """Handle help menu callback"""
-        try:
-            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-            src_info = await hyoshcoder.get_src_info(user_id)
-            
-            btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
-            src_txt = "File name" if src_info == "file_name" else "File caption"
-    
-            buttons = [
-                [
-                    InlineKeyboardButton("AutoRename", callback_data='file_names'),
-                    InlineKeyboardButton('Thumbnail', callback_data='thumbnail'),
-                    InlineKeyboardButton('Caption', callback_data='caption')
-                ],
-                [
-                    InlineKeyboardButton('Metadata', callback_data='meta'),
-                    InlineKeyboardButton('Set Media', callback_data='setmedia'),
-                    InlineKeyboardButton('Set Dump', callback_data='setdump')
-                ],
-                [
-                    InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
-                    InlineKeyboardButton('Premium', callback_data='premiumx'),
-                    InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')
-                ],
-                [InlineKeyboardButton('• Home', callback_data='home')]
-            ]
-            
-            return {
-                'caption': Txt.HELP_TXT.format(client.mention),
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
-        except Exception as e:
-            logger.error(f"Help menu error: {e}")
-            return {
-                'caption': "❌ Error loading help menu",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="home")]
-                ])
-            }
-
-    @staticmethod
-    async def handle_stats(client: Client, query: CallbackQuery, user_id: int):
-        """Handle user stats callback"""
-        try:
-            stats = await hyoshcoder.get_user_file_stats(user_id)
-            points = await hyoshcoder.get_points(user_id)
-            premium_status = await hyoshcoder.check_premium_status(user_id)
-            user_data = await hyoshcoder.read_user(user_id)
-            
-            referral_stats = user_data.get('referral', {})
-            referred_count = referral_stats.get('referred_count', 0)
-            referral_earnings = referral_stats.get('referral_earnings', 0)
-            
-            text = (
-                f"📊 <b>Your Statistics</b>\n\n"
-                f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
-                f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
-                f"{EMOJI['referral']} <b>Referrals:</b> {referred_count} "
-                f"(Earned {referral_earnings} {EMOJI['points']})\n\n"
-                f"{EMOJI['rename']} <b>Files Renamed</b>\n"
-                f"• Total: {stats.get('total_renamed', 0)}\n"
-                f"• Today: {stats.get('today', 0)}\n"
-                f"• This Week: {stats.get('this_week', 0)}\n"
-                f"• This Month: {stats.get('this_month', 0)}\n"
-            )
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data="leaderboard")],
-                [InlineKeyboardButton(f"{EMOJI['referral']} Invite Friends", callback_data="invite")],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ])
-            
-            return {
-                'caption': text,
-                'reply_markup': buttons
-            }
-        except Exception as e:
-            logger.error(f"Stats error: {e}")
-            return {
-                'caption': "❌ Failed to load statistics",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                ])
-            }
-
-    @staticmethod
-    def get_leaderboard_keyboard(selected_period: str = "weekly", selected_type: str = "points"):
-        """Generate leaderboard navigation keyboard"""
-        periods = {
-            "daily": f"{EMOJI['clock']} Daily",
-            "weekly": f"📆 Weekly", 
-            "monthly": f"🗓 Monthly",
-            "alltime": f"{EMOJI['leaderboard']} All-Time"
-        }
-        types = {
-            "points": f"{EMOJI['points']} Points",
-            "renames": f"{EMOJI['rename']} Files",
-            "referrals": f"{EMOJI['referral']} Referrals"
-        }
-        
-        period_buttons = [
-            InlineKeyboardButton(
-                f"• {text} •" if period == selected_period else text,
-                callback_data=f"lb_period_{period}"
-            ) for period, text in periods.items()
-        ]
-        
-        type_buttons = [
-            InlineKeyboardButton(
-                f"• {text} •" if lb_type == selected_type else text,
-                callback_data=f"lb_type_{lb_type}"
-            ) for lb_type, text in types.items()
-        ]
-        
-        return InlineKeyboardMarkup([
-            period_buttons[:2],
-            period_buttons[2:],
-            type_buttons,
-            [InlineKeyboardButton("🔙 Back", callback_data="help")]
-        ])
-
-    @staticmethod
-    async def handle_leaderboard(client: Client, query: CallbackQuery, period: str = "weekly", type: str = "points"):
-        """Handle leaderboard callback - showing top 8"""
-        try:
-            leaders = await hyoshcoder.get_leaderboard(period, type)
-            if not leaders:
-                return {
-                    'caption': "📭 No leaderboard data available yet",
-                    'reply_markup': InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                    ])
-                }
-            
-            type_display = {
-                "points": "Points",
-                "renames": "Files Renamed",
-                "referrals": "Referrals"
-            }.get(type, "Points")
-            
-            period_display = {
-                "daily": "Daily",
-                "weekly": "Weekly",
-                "monthly": "Monthly", 
-                "alltime": "All-Time"
-            }.get(period, "Weekly")
-            
-            text = f"🏆 {period_display} {type_display} Leaderboard (Top 8):\n\n"
-            for i, user in enumerate(leaders[:8], 1):
-                username = user.get('username', f"User {user['_id']}")
-                value = user.get('value', 0)
-                text += f"{i}. {username} - {value} {type_display} {'⭐' if user.get('is_premium', False) else ''}\n"
-            
-            return {
-                'caption': text,
-                'reply_markup': CallbackActions.get_leaderboard_keyboard(period, type)
-            }
-        except Exception as e:
-            logger.error(f"Leaderboard error: {e}")
-            return {
-                'caption': "❌ Failed to load leaderboard",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                ])
-            }
-
-    @staticmethod
-    async def handle_free_points(client: Client, query: CallbackQuery, user_id: int):
-        """Improved free points verification and distribution"""
-        try:
-            me = await client.get_me()
-            unique_code = str(uuid.uuid4())[:8]
-            invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
-            
-            config = await hyoshcoder.get_config("points_config") or {}
-            ad_config = config.get('ad_watch', {})
-            min_points = ad_config.get('min_points', 5)
-            max_points = ad_config.get('max_points', 20)
-            referral_bonus = config.get('referral_bonus', 10)
-            premium_multiplier = config.get('premium_multiplier', 2)
-            
-            points = random.randint(min_points, max_points)
-            
-            premium_status = await hyoshcoder.check_premium_status(user_id)
-            if premium_status.get('is_premium', False):
-                points = int(points * premium_multiplier)
-            
-            if not await hyoshcoder.set_expend_points(user_id, points, unique_code):
-                raise Exception("Failed to track points distribution")
-            
-            points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
-            shortlink = await get_shortlink(
-                settings.SHORTED_LINK, 
-                settings.SHORTED_LINK_API, 
-                points_link
-            ) if all([settings.SHORTED_LINK, settings.SHORTED_LINK_API]) else points_link
-            
-            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
-                [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ])
-            
-            caption = (
-                "**✨ Free Points System**\n\n"
-                "Earn points by helping grow our community:\n\n"
-                f"🔹 **Share Bot**: Get {referral_bonus} points per referral\n"
-                f"🔹 **Watch Ads**: Earn {min_points}-{max_points} points per ad\n"
-                f"⭐ **Premium Bonus**: {premium_multiplier}x points multiplier\n\n"
-                f"🎁 You can earn up to {points} points right now!"
-            )
-            
-            return {
-                'caption': caption,
-                'reply_markup': buttons
-            }
-        except Exception as e:
-            logger.error(f"Free points error: {e}")
-            return {
-                'caption': "❌ Error processing request. Please try again later.",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                ])
-            }
-
-    @staticmethod
-    async def handle_set_media(client: Client, query: CallbackQuery, user_id: int):
-        """Handle media preference setting"""
-        try:
-            current_pref = await hyoshcoder.get_media_preference(user_id)
-            buttons = [
-                [
-                    InlineKeyboardButton("Video" + (" ✅" if current_pref == "video" else ""), 
-                                      callback_data="setmedia_video"),
-                    InlineKeyboardButton("Document" + (" ✅" if current_pref == "document" else ""), 
-                                      callback_data="setmedia_document")
-                ],
-                [InlineKeyboardButton("Back", callback_data="help")]
-            ]
-            
-            return {
-                'caption': "📁 <b>Set Media Preference</b>\n\n"
-                          "Choose how you want media files to be sent:",
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
-        except Exception as e:
-            logger.error(f"Set media error: {e}")
-            return {
-                'caption': "❌ Error loading media settings",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Back", callback_data="help")]
-                ])
-            }
-
-    @staticmethod
-    async def handle_set_dump(client: Client, query: CallbackQuery, user_id: int):
-        """Handle dump channel setting"""
-        try:
-            current_dump = await hyoshcoder.get_user_channel(user_id)
-            buttons = [
-                [InlineKeyboardButton("Set Dump Channel", callback_data="setdump_channel")],
-                [InlineKeyboardButton("Back", callback_data="help")]
-            ]
-            
-            return {
-                'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
-                          "You can set a channel where renamed files will be automatically forwarded.",
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
-        except Exception as e:
-            logger.error(f"Set dump error: {e}")
-            return {
-                'caption': "❌ Error loading dump settings",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Back", callback_data="help")]
-                ])
-            }
-
-    @staticmethod
-    async def handle_premium(client: Client, query: CallbackQuery):
-        """Handle premium information"""
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Owner", url="https://t.me/hyoshassistantBot"),
-             InlineKeyboardButton("Close", callback_data="close")]
-        ])
-        
-        return {
-            'caption': Txt.PREMIUM_TXT,
-            'reply_markup': buttons
-        }
-
-    @staticmethod
-    async def handle_file_names(client: Client, query: CallbackQuery, user_id: int):
-        """Handle autorename template display"""
-        try:
-            format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
-            buttons = [
-                [InlineKeyboardButton("• Close", callback_data="close"), 
-                 InlineKeyboardButton("Back •", callback_data="help")]
-            ]
-            
-            caption = (
-                f"📝 <b>Auto-Rename Template</b>\n\n"
-                f"Current template: <code>{format_template}</code>\n\n"
-                "Available variables:\n"
-                "[episode] - Auto-detects episode numbers\n"
-                "[season] - Identifies seasons\n"
-                "[quality] - Extracts resolution\n"
-                "[date] - Adds current date\n\n"
-                "Premium Examples:\n"
-                "<code>/autorename [Anime] S[season]E[episode]</code>\n"
-                "<code>/autorename [Movie] [year] [quality]</code>"
-            )
-            
-            return {
-                'caption': caption,
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
-        except Exception as e:
-            logger.error(f"File names error: {e}")
-            return {
-                'caption': "❌ Error loading rename template",
-                'reply_markup': InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Back", callback_data="help")]
-                ])
-            }
-
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    """Main callback query handler with improved error handling"""
     data = query.data
     user_id = query.from_user.id
     
     try:
-        # Always answer the callback first to prevent client-side issues
         await query.answer()
         
-        response = None
-        
+        # Get common resources
+        img = await get_random_photo()
+        thumb = await hyoshcoder.get_thumbnail(user_id)
+        sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+        src_info = await hyoshcoder.get_src_info(user_id)
+        src_txt = "File name" if src_info == "file_name" else "File caption"
+        btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
+
         if data == "home":
-            response = await CallbackActions.handle_home(client, query)
-        
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
+                [InlineKeyboardButton("My Stats", callback_data='mystats'),
+                 InlineKeyboardButton("Leaderboard", callback_data='leaderboard')],
+                [InlineKeyboardButton("Earn Points", callback_data='freepoints'),
+                 InlineKeyboardButton("Go Premium", callback_data='premiumx')],
+                [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
+                 InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
+            ])
+            caption = Txt.START_TXT.format(query.from_user.mention)
+
         elif data == "help":
-            response = await CallbackActions.handle_help(client, query, user_id)
-        
-        elif data == "mystats":
-            response = await CallbackActions.handle_stats(client, query, user_id)
-        
-        elif data == "leaderboard":
-            response = await CallbackActions.handle_leaderboard(client, query)
-        
-        elif data.startswith("lb_"):
-            parts = data.split("_")
-            if len(parts) == 3:
-                period = parts[2] if parts[1] == "period" else "weekly"
-                type = parts[2] if parts[1] == "type" else "points"
-                
-                await hyoshcoder.set_leaderboard_period(user_id, period)
-                await hyoshcoder.set_leaderboard_type(user_id, type)
-                
-                response = await CallbackActions.handle_leaderboard(client, query, period, type)
-        
-        # Metadata toggle handler
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("AutoRename", callback_data='file_names'),
+                 InlineKeyboardButton('Thumbnail', callback_data='thumbnail'),
+                 InlineKeyboardButton('Caption', callback_data='caption')],
+                [InlineKeyboardButton('Metadata', callback_data='meta'),
+                 InlineKeyboardButton('Set Media', callback_data='setmedia'),
+                 InlineKeyboardButton('Set Dump', callback_data='setdump')],
+                [InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
+                 InlineKeyboardButton('Premium', callback_data='premiumx'),
+                 InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')],
+                [InlineKeyboardButton('Home', callback_data='home')]
+            ])
+            caption = Txt.HELP_TXT.format(client.mention)
+
         elif data in ["meta", "metadata_0", "metadata_1"]:
             if data.startswith("metadata_"):
-                enable = data.endswith("_1")
-                await hyoshcoder.set_metadata(user_id, enable)
+                await hyoshcoder.set_metadata(user_id, data.endswith("_1"))
             
             bool_meta = await hyoshcoder.get_metadata(user_id)
             meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
-            
             await query.message.edit_text(
                 f"<b>Current Metadata:</b>\n\n➜ {meta_code}",
                 reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
             )
-            await query.answer(f"Metadata {'enabled' if bool_meta else 'disabled'}")
             return
-        
+
         elif data == "set_metadata":
-            try:
-                metadata_states[user_id] = {
-                    "waiting": True,
-                    "timestamp": time.time(),
-                    "original_msg": query.message.id
-                }
-                
-                prompt = await query.message.edit_text(
-                    "📝 <b>Send new metadata text</b>\n\n"
-                    "Example: <code>Lakshmi Ganapathi Films</code>\n"
-                    f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
-                    "Reply with text or /cancel",
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
-                    )
+            metadata_states[user_id] = {
+                "waiting": True,
+                "timestamp": time.time(),
+                "original_msg": query.message.id
+            }
+            prompt = await query.message.edit_text(
+                "📝 <b>Send new metadata text</b>\n\n"
+                "Example: <code>Telegram : @REQUETE_ANIME_30sbot</code>\n"
+                f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
+                "Reply with text or /cancel",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
                 )
-                
-                metadata_states[user_id]["prompt_id"] = prompt.id
-                return
-                
-            except Exception as e:
-                metadata_states.pop(user_id, None)
-                await query.answer(f"Error: {str(e)}", show_alert=True)
-                return
-        
-        elif data == "freepoints":
-            response = await CallbackActions.handle_free_points(client, query, user_id)
-        
-        elif data == "caption":
-            buttons = [
-                [InlineKeyboardButton("• Support", url='https://t.me/Raaaaavi'), 
-                 InlineKeyboardButton("Back •", callback_data="help")]
-            ]
-            response = {
-                'caption': Txt.CAPTION_TXT,
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
-        
-        elif data.startswith("setmedia"):
-            if "_" in data:
-                media_type = data.split("_")[1]
-                await hyoshcoder.set_media_preference(user_id, media_type)
-                await query.answer(f"Media preference set to {media_type}")
-                response = await CallbackActions.handle_set_media(client, query, user_id)
-            else:
-                response = await CallbackActions.handle_set_media(client, query, user_id)
-        
-        elif data == "setdump":
-            response = await CallbackActions.handle_set_dump(client, query, user_id)
-        
-        elif data.startswith("setdump_channel"):
-            await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
+            )
+            metadata_states[user_id]["prompt_id"] = prompt.id
             return
-        
+
         elif data == "file_names":
-            response = await CallbackActions.handle_file_names(client, query, user_id)
-        
-        elif data == "thumbnail":
-            thumb = await hyoshcoder.get_thumbnail(user_id)
-            buttons = [
-                [InlineKeyboardButton("• View Thumbnail", callback_data="showThumb")],
-                [InlineKeyboardButton("• Close", callback_data="close"), 
-                 InlineKeyboardButton("Back •", callback_data="help")]
-            ]
-            response = {
-                'caption': Txt.THUMBNAIL_TXT,
-                'reply_markup': InlineKeyboardMarkup(buttons),
-                'photo': thumb
-            }
-        
-        elif data == "showThumb":
-            thumb = await hyoshcoder.get_thumbnail(user_id)
-            caption = "Here is your current thumbnail" if thumb else "No thumbnail set"
-            buttons = [
-                [InlineKeyboardButton("• Close", callback_data="close"), 
-                 InlineKeyboardButton("Back •", callback_data="help")]
-            ]
-            response = {
-                'caption': caption,
-                'reply_markup': InlineKeyboardMarkup(buttons),
-                'photo': thumb
-            }
-        
-        elif data == "source":
-            buttons = [
-                [InlineKeyboardButton("• Close", callback_data="close"), 
-                 InlineKeyboardButton("Back •", callback_data="home")]
-            ]
-            response = {
-                'caption': Txt.SOURCE_TXT,
-                'reply_markup': InlineKeyboardMarkup(buttons)
-            }
-        
-        elif data == "premiumx":
-            response = await CallbackActions.handle_premium(client, query)
-        
-        elif data == "about":
-            buttons = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("• Support", url='https://t.me/Raaaaavi'), 
-                    InlineKeyboardButton("Commands •", callback_data="help")
-                ],
-                [
-                    InlineKeyboardButton("• Developer", url='https://t.me/Raaaaavi'), 
-                    InlineKeyboardButton("Network •", url='https://t.me/Raaaaavi')
-                ],
-                [InlineKeyboardButton("• Back •", callback_data="home")]
+            format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Close", callback_data="close"), 
+                 InlineKeyboardButton("Back", callback_data="help")]
             ])
-            response = {
-                'caption': Txt.ABOUT_TXT,
-                'reply_markup': buttons,
-                'disable_web_page_preview': True
-            }
-        
-        elif data == "sequential":
-            await hyoshcoder.toggle_sequential_mode(user_id)
-            response = await CallbackActions.handle_help(client, query, user_id)
-        
-        elif data == "toggle_src":
-            await hyoshcoder.toggle_src_info(user_id)
-            response = await CallbackActions.handle_help(client, query, user_id)
-        
+            caption = Txt.FILE_NAME_TXT.format(format_template=format_template)
+
+        elif data.startswith("setmedia_"):
+            media_type = data.split("_")[1]
+            await hyoshcoder.set_media_preference(user_id, media_type)
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='help')]])
+            caption = f"**Media preference set to:** {media_type} ✅"
+
+        elif data in ["sequential", "toggle_src"]:
+            if data == "sequential":
+                await hyoshcoder.toggle_sequential_mode(user_id)
+            else:
+                await hyoshcoder.toggle_src_info(user_id)
+            # Refresh the help menu
+            response = await cb_handler(client, query)
+            return
+
         elif data == "close":
             try:
                 await query.message.delete()
                 if query.message.reply_to_message:
                     await query.message.reply_to_message.delete()
-            except Exception as e:
-                logger.warning(f"Error deleting message: {e}")
-            return
-        
-        else:
-            await query.answer("Unknown callback", show_alert=True)
+            except:
+                pass
             return
 
-        # Send response
-        if response:
-            try:
-                if 'photo' in response:
-                    if query.message.photo:
-                        await query.message.edit_media(
-                            media=InputMediaPhoto(
-                                media=response['photo'] or await get_random_photo(),
-                                caption=response['caption']
-                            ),
-                            reply_markup=response['reply_markup']
-                        )
-                    else:
-                        await query.message.delete()
-                        await client.send_photo(
-                            chat_id=query.message.chat.id,
-                            photo=response['photo'] or await get_random_photo(),
-                            caption=response['caption'],
-                            reply_markup=response['reply_markup']
-                        )
-                else:
-                    await query.message.edit_text(
-                        text=response.get('caption', response.get('text', '')),
-                        reply_markup=response['reply_markup'],
-                        disable_web_page_preview=response.get('disable_web_page_preview', False),
-                        parse_mode=response.get('parse_mode', enums.ParseMode.HTML)
-                    )
-            except Exception as e:
-                logger.error(f"Failed to update message: {e}")
-                await query.answer("Failed to update - please try again", show_alert=True)
-            
+        # Edit message with response
+        if data in ["showThumb", "thumbnail"] and thumb:
+            media = InputMediaPhoto(media=thumb, caption=caption)
+            await query.message.edit_media(media=media, reply_markup=btn)
+        elif img:
+            media = InputMediaPhoto(media=img, caption=caption)
+            await query.message.edit_media(media=media, reply_markup=btn)
+        else:
+            await query.message.edit_text(text=caption, reply_markup=btn)
+
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        await cb_handler(client, query)
-    except ChatWriteForbidden:
-        logger.warning(f"Can't write in chat with {user_id}")
-        await query.answer("I don't have permission to send messages here", show_alert=True)
     except Exception as e:
-        logger.error(f"Callback error: {e}", exc_info=True)
-        try:
-            await query.answer("❌ An error occurred", show_alert=True)
-        except:
-            pass
+        logger.error(f"Callback error: {e}")
+        await query.answer("An error occurred", show_alert=True)
 
-# Start the cleanup task
+# Start cleanup task
 asyncio.create_task(cleanup_metadata_states())
