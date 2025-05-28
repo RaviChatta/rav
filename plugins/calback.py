@@ -91,29 +91,6 @@ async def cleanup_metadata_states():
             metadata_states.pop(uid, None)
 
 class CallbackActions:
-    @staticmethod
-    async def handle_home(client: Client, query: CallbackQuery):
-        """Handle home button callback"""
-        buttons = [
-            [InlineKeyboardButton("✨ My Commands ✨", callback_data='help')],
-            [
-                InlineKeyboardButton("💎 My Stats", callback_data='mystats'),
-                InlineKeyboardButton("🏆 Leaderboard", callback_data='leaderboard')
-            ],
-            [
-                InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
-                InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')
-            ],
-            [
-                InlineKeyboardButton("📜 About", callback_data='about'),
-                InlineKeyboardButton("🧑‍💻 Source", callback_data='source')
-            ]
-        ]
-        
-        return {
-            'caption': Txt.START_TXT.format(query.from_user.mention),
-            'reply_markup': InlineKeyboardMarkup(buttons)
-        }
 
     @staticmethod
     async def handle_help(client: Client, query: CallbackQuery, user_id: int):
@@ -429,7 +406,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             except Exception as e:
                 metadata_states.pop(user_id, None)
                 await query.answer(f"Error: {str(e)}", show_alert=True)
-
+        
         
         elif data == "freepoints":
             response = await CallbackActions.handle_free_points(client, query, user_id)
@@ -444,7 +421,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': InlineKeyboardMarkup(buttons)
             }
         
-        elif data.startswith("setmedia_"):
+        elif data.startswith("setmedia"):
             media_type = data.split("_")[1]
             await hyoshcoder.set_media_preference(user_id, media_type)
             caption = f"**Media preference set to:** {media_type} ✅"
@@ -452,7 +429,39 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("Back •", callback_data='help')]
             ])
             
-        
+            elif data == "set_dump":
+            if len(args) == 0:
+                caption = "Please enter the dump channel ID after the command.\nExample: `/set_dump -1001234567890`"
+                await send_response(client, message.chat.id, caption, delete_after=30)
+            else:
+                channel_id = args[0]
+                try:
+                    channel_info = await client.get_chat(channel_id)
+                    if channel_info:
+                        await hyoshcoder.set_user_channel(user_id, channel_id)
+                        caption = f"**Channel {channel_id} has been set as the dump channel.**"
+                        await send_response(
+                            client,
+                            message.chat.id,
+                            caption,
+                            delete_after=30
+                        )
+                    else:
+                        caption = "The specified channel doesn't exist or is not accessible.\nMake sure I'm an admin in the channel."
+                        await send_response(
+                            client,
+                            message.chat.id,
+                            caption,
+                            delete_after=30
+                        )
+                except Exception as e:
+                    caption = f"Error: {e}. Please enter a valid channel ID.\nExample: `/set_dump -1001234567890`"
+                    await send_response(
+                        client,
+                        message.chat.id,
+                        caption,
+                        delete_after=30
+                    )
         
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
