@@ -387,7 +387,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 
                 prompt = await query.message.edit_text(
                     "📝 <b>Send new metadata text</b>\n\n"
-                    "Example: <code>Telegram : @REQUETE_ANIME_30sbot</code>\n"
+                    "Example: <code>Lakshmi Ganapathi Films</code>\n"
                     f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
                     "Reply with text or /cancel",
                     reply_markup=InlineKeyboardMarkup(
