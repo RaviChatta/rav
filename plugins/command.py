@@ -14,7 +14,7 @@ from database.data import hyoshcoder
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-#ADMIN_USER_ID = settings.ADMIN
+ADMIN_USER_ID = settings.ADMIN
 AUTO_DELETE_DELAY = 30  # Seconds before auto-deleting messages
 
 # Emoji Constants
