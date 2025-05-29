@@ -400,6 +400,119 @@ async def cb_handler(client: Client, query: CallbackQuery):
             # Refresh the help menu
             await cb_handler(client, query)
             return
+        elif data == "caption":
+            current_caption = await hyoshcoder.get_caption(user_id) or "Not set"
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
+                [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': f"📝 <b>Current Caption:</b>\n{current_caption}\n\n"
+                          "You can set a custom caption that will be added to all your renamed files.",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "set_caption":
+            metadata_states[user_id] = {
+                "waiting": True,
+                "type": "caption",
+                "timestamp": time.time(),
+                "original_msg": query.message.id
+            }
+            prompt = await query.message.edit_text(
+                "📝 <b>Send your new caption</b>\n\n"
+                "You can use HTML formatting and include:\n"
+                "- {filename} - Original file name\n"
+                "- {size} - File size\n"
+                "- {duration} - For video/audio\n\n"
+                f"Current caption: {await hyoshcoder.get_caption(user_id) or 'None'}\n\n"
+                "Reply with text or /cancel",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("❌ Cancel", callback_data="caption")]
+                ])
+            )
+            metadata_states[user_id]["prompt_id"] = prompt.id
+            return
+
+        elif data == "remove_caption":
+            await hyoshcoder.set_caption(user_id, None)
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="caption")]
+            ])
+            response = {
+                'caption': "✅ Caption removed successfully",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "premiumx":
+            premium_status = await hyoshcoder.check_premium_status(user_id)
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
+                [InlineKeyboardButton("Premium Benefits", callback_data="premium_benefits")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': Txt.PREMIUM_TXT.format(
+                    status="ACTIVE ✅" if premium_status.get('is_premium', False) else "INACTIVE ❌",
+                    expiry=premium_status.get('expiry_date', 'Not active')
+                ),
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "premium_benefits":
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="premiumx")]
+            ])
+            response = {
+                'caption': Txt.PREMIUM_BENEFITS_TXT,
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "buy_premium":
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("1 Month - 50₹", callback_data="premium_1month")],
+                [InlineKeyboardButton("3 Months - 120₹", callback_data="premium_3months")],
+                [InlineKeyboardButton("6 Months - 200₹", callback_data="premium_6months")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="premiumx")]
+            ])
+            response = {
+                'caption': "💰 <b>Premium Plans</b>\n\n"
+                          "Choose your premium plan to unlock exclusive features:",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data.startswith("premium_"):
+            plan = data.split("_")[1]
+            prices = {
+                "1week": "20₹",
+                "1month": "60₹",
+                "3months": "150₹"
+            }
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Pay Now", url="https://yourpaymentlink.com")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="buy_premium")]
+            ])
+            response = {
+                'caption': f"💳 <b>Payment for {plan} Premium Plan</b>\n\n"
+                          f"Plan: {plan.replace('months', ' months').replace('month', ' month')}\n"
+                          f"Price: {prices.get(plan, 'N/A')}\n\n"
+                          "Click 'Pay Now' to complete your purchase",
+                'reply_markup': btn,
+                'photo': img
+            }
 
         elif data == "thumbnail":
             btn = InlineKeyboardMarkup([
