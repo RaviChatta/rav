@@ -621,3 +621,5 @@ try:
     asyncio.create_task(cleanup_metadata_states())
 except Exception as e:
     logger.error(f"Failed to start cleanup task: {e}")
+finally:
+    logger.info("Attempted to start cleanup task.")
