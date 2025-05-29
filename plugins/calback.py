@@ -618,8 +618,5 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         # Start cleanup task with error handling
         # Start cleanup task with error handling
-        try:
-            asyncio.create_task(cleanup_metadata_states())
-        except Exception as e:
-            logger.error(f"Failed to start cleanup task: {e}")
+asyncio.create_task(cleanup_metadata_states())
 
