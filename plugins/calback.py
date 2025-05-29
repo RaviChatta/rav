@@ -618,6 +618,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     pass  # Already handled earlier
         
         # ✅ Start cleanup task with proper placement outside try-except
-        asyncio.create_task(cleanup_metadata_states())
+asyncio.create_task(cleanup_metadata_states())
         
         
