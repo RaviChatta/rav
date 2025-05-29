@@ -20,14 +20,8 @@ class Database:
         self._database_name = database_name
         self._client = None
         self.db = None
-        self.users = None  # Initialize all collections here
-        self.premium_codes = None
-        self.transactions = None
         self._is_connected = False
-        self._initialize_collections()
-        
-    def _initialize_collections(self):
-        """Initialize all collection references."""
+        # Initialize collection references as None
         self.users = None
         self.premium_codes = None
         self.transactions = None
@@ -359,7 +353,7 @@ class Database:
             return False
     async def get_metadata_code(self, user_id: int) -> Optional[str]:
         try:
-            if not await self.is_connected():
+            if not self._is_connected:
                 return None
             user = await self.users.find_one({"_id": user_id})
             return user.get("metadata_code") if user else None
