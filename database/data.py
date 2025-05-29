@@ -99,7 +99,6 @@ class Database:
             ("leaderboards", [("period", False), ("type", False), ("start_date", False), ("end_date", False)]),
             ("file_stats", [("user_id", False), ("date", False), ("timestamp", -1)]),
             ("config", [("key", True)])
-        ]
         
         for collection, fields in indexes:
             try:
@@ -120,7 +119,7 @@ class Database:
             "file_id": None,
             "caption": None,
             "metadata": True,
-            "metadata_code":None,
+            "metadata_code": None,
             "format_template": None,
             "ban_status": {
                 "is_banned": False,
@@ -190,9 +189,9 @@ class Database:
     async def is_user_exist(self, id: int) -> bool:
         """Check if user exists in database."""
         try:
-            user = await self.users.find_one({"_id": int(id)}, projection={"_id": 1})
-            return user is not None
-        except PyMongoError as e:
+            user = await self.users.find_one({"_id": int(id)})
+            return bool(user)
+        except Exception as e:
             logging.error(f"Error checking if user {id} exists: {e}")
             return False
 
@@ -237,16 +236,6 @@ class Database:
                 logging.info("Database connection closed")
         except Exception as e:
             logging.error(f"Error closing database connection: {e}")
-
-
-    async def is_user_exist(self, id: int) -> bool:
-        """Check if user exists in database."""
-        try:
-            user = await self.users.find_one({"_id": int(id)})
-            return bool(user)
-        except Exception as e:
-            logging.error(f"Error checking if user {id} exists: {e}")
-            return False
 
     async def total_users_count(self) -> int:
         """Get total number of users."""
@@ -359,71 +348,69 @@ class Database:
             logging.error(f"Error setting metadata code for {user_id}: {e}")
             return False
 
-
-    async def set_format_template(self, id, format_template):
+    async def set_format_template(self, user_id: int, format_template: str) -> bool:
+        """Set user's format template."""
         try:
-            await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"format_template": format_template}}
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": {"format_template": format_template}}
             )
+            return True
         except Exception as e:
-            logging.error(f"Error setting format template for user {id}: {e}")
+            logging.error(f"Error setting format template for user {user_id}: {e}")
+            return False
 
-    async def get_format_template(self, id):
+    async def get_format_template(self, user_id: int) -> Optional[str]:
+        """Get user's format template."""
         try:
-            user = await self.col.find_one({"_id": int(id)})
-            return user.get("format_template", None) if user else None
+            user = await self.users.find_one({"_id": user_id})
+            return user.get("format_template") if user else None
         except Exception as e:
-            logging.error(f"Error getting format template for user {id}: {e}")
+            logging.error(f"Error getting format template for user {user_id}: {e}")
             return None
 
-    async def set_media_preference(self, id, media_type):
+    async def set_media_preference(self, user_id: int, media_type: str) -> bool:
+        """Set user's media preference."""
         try:
-            await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"media_type": media_type}}
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": {"media_type": media_type}}
             )
+            return True
         except Exception as e:
-            logging.error(f"Error setting media preference for user {id}: {e}")
+            logging.error(f"Error setting media preference for user {user_id}: {e}")
+            return False
 
-    async def get_media_preference(self, id):
+    async def get_media_preference(self, user_id: int) -> Optional[str]:
+        """Get user's media preference."""
         try:
-            user = await self.col.find_one({"_id": int(id)})
-            return user.get("media_type", None) if user else None
+            user = await self.users.find_one({"_id": user_id})
+            return user.get("media_type") if user else None
         except Exception as e:
-            logging.error(f"Error getting media preference for user {id}: {e}")
+            logging.error(f"Error getting media preference for user {user_id}: {e}")
             return None
 
-    
-    async def set_metadata(self, id, bool_meta):
+    async def set_metadata(self, user_id: int, bool_meta: bool) -> bool:
+        """Set user's metadata setting."""
         try:
-            await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"metadata": bool_meta}}
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": {"metadata": bool_meta}}
             )
+            return True
         except Exception as e:
-            logging.error(f"Error setting metadata for user {id}: {e}")
+            logging.error(f"Error setting metadata for user {user_id}: {e}")
+            return False
 
-    async def get_metadata(self, id):
+    async def get_metadata(self, user_id: int) -> bool:
+        """Get user's metadata setting."""
         try:
-            user = await self.col.find_one({"_id": int(id)})
-            return user.get("metadata", None) if user else None
+            user = await self.users.find_one({"_id": user_id})
+            return user.get("metadata", True) if user else True
         except Exception as e:
-            logging.error(f"Error getting metadata for user {id}: {e}")
-            return None
+            logging.error(f"Error getting metadata for user {user_id}: {e}")
+            return True
 
-    async def set_metadata_code(self, id, metadata_code):
-        try:
-            await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"metadata_code": metadata_code}}
-            )
-        except Exception as e:
-            logging.error(f"Error setting metadata code for user {id}: {e}")
-
-    async def get_metadata_code(self, id):
-        try:
-            user = await self.col.find_one({"_id": int(id)})
-            return user.get("metadata_code", None) if user else None
-        except Exception as e:
-            logging.error(f"Error getting metadata code for user {id}: {e}")
-            return None
     async def set_src_info(self, user_id: int, src_info: str) -> bool:
         """Set user's source info preference."""
         try:
@@ -435,12 +422,14 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting src_info for {user_id}: {e}")
             return False
+
     async def toggle_src_info(self, user_id: int) -> bool:
         """Toggle source info preference for a user."""
         current_setting = await self.get_src_info(user_id)
         new_setting = "file_name" if current_setting == "metadata" else "metadata"
         await self.set_src_info(user_id, new_setting)
         return new_setting
+
     async def get_src_info(self, user_id: int) -> Optional[str]:
         """Get user's source info preference."""
         try:
@@ -449,20 +438,6 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting src_info for {user_id}: {e}")
             return None
-
-    async def set_format_template(self, user_id: int, format_template: str) -> bool:
-        """Set user's auto-rename format template."""
-        try:
-            await self.users.update_one(
-                {"_id": user_id},
-                {"$set": {"format_template": format_template}}
-            )
-            return True
-        except Exception as e:
-            logging.error(f"Error setting format template for {user_id}: {e}")
-            return False
-
- 
 
     async def track_file_rename(self, user_id: int, file_name: str, new_name: str) -> bool:
         """Track a file rename operation."""
@@ -746,6 +721,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error claiming points link {code} by {user_id}: {e}")
             return {"success": False, "reason": "Internal error"}
+
     async def set_expend_points(self, user_id: int, points: int, code: str) -> bool:
         """Track points expenditure"""
         try:
@@ -760,6 +736,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error tracking points expenditure: {e}")
             return False
+
     async def update_leaderboards(self):
         """Update all leaderboards (run periodically)."""
         await self._update_daily_leaderboard()
@@ -1164,18 +1141,7 @@ class Database:
                 "distribution": [],
                 "top_earners": []
             }
-    async def get_all_users(self, filter_banned: bool = False):
-        """Async generator to get all users with optional banned filter."""
-        try:
-            query = {}
-            if filter_banned:
-                query["ban_status.is_banned"] = False
-                
-            async for user in self.users.find(query):
-                yield user
-        except Exception as e:
-            logging.error(f"Error getting users: {e}")
-            
+
     async def get_all_banned_users(self) -> List[Dict]:
         """Get all banned users."""
         try:
@@ -1184,6 +1150,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting banned users: {e}")
             return []
+
     async def get_sequential_mode(self, user_id: int) -> bool:
         """Get user's sequential mode setting."""
         try:
@@ -1225,27 +1192,6 @@ class Database:
             return True
         except Exception as e:
             logging.error(f"Error setting user channel for {user_id}: {e}")
-            return False
-    
-    async def get_metadata(self, user_id: int) -> bool:
-        """Get user's metadata setting."""
-        try:
-            user = await self.users.find_one({"_id": user_id})
-            return user.get("metadata", True) if user else True
-        except Exception as e:
-            logging.error(f"Error getting metadata for {user_id}: {e}")
-            return True
-    
-    async def set_metadata(self, user_id: int, bool_meta: bool) -> bool:
-        """Set user's metadata setting."""
-        try:
-            await self.users.update_one(
-                {"_id": user_id},
-                {"$set": {"metadata": bool_meta}}
-            )
-            return True
-        except Exception as e:
-            logging.error(f"Error setting metadata for {user_id}: {e}")
             return False
     
     async def get_leaderboard_period(self, user_id: int) -> str:
@@ -1345,12 +1291,14 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting referrer for {user_id}: {e}")
             return False
-    async def is_refferer(self, id):
+
+    async def is_refferer(self, user_id: int) -> Optional[int]:
+        """Check if user is a referrer and return their referrer ID."""
         try:
-            user = await self.col.find_one({"_id": int(id)})
-            return user.get("referrer_id", None)
+            user = await self.users.find_one({"_id": user_id})
+            return user.get("referral", {}).get("referrer_id") if user else None
         except Exception as e:
-            logging.error(f"Error getting reffer for user {id}: {e}")
+            logging.error(f"Error getting referrer for user {user_id}: {e}")
             return None
 
     async def total_renamed_files(self) -> int:
@@ -1363,6 +1311,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error counting total renamed files: {e}")
             return 0
+
     async def clear_all_user_channels(self) -> None:
         """Remove the 'user_channel' field from all user documents."""
         if not self.users:
@@ -1372,7 +1321,7 @@ class Database:
         try:
             result = await self.users.update_many(
                 {},  # Match all documents
-                {"$unset": {"user_channel": ""}}  # Use $unset to remove the field
+                {"$unset": {"settings.user_channel": ""}}  # Use $unset to remove the field
             )
             logging.info(f"✅ Removed 'user_channel' from {result.modified_count} users.")
         except Exception as e:
@@ -1381,7 +1330,7 @@ class Database:
     async def total_points_distributed(self) -> int:
         """Get total points distributed across all users."""
         try:
-            result = await self.users.aggregate([  # Fixed typo here
+            result = await self.users.aggregate([
                 {"$group": {"_id": None, "total": {"$sum": "$points.total_earned"}}}
             ]).to_list(length=1)
             return result[0]["total"] if result else 0
@@ -1392,7 +1341,7 @@ class Database:
     async def get_config(self, key: str, default=None):
         """Get configuration value with default fallback."""
         try:
-            config = await self.db.config.find_one({"key": key})
+            config = await self.config.find_one({"key": key})
             return config["value"] if config else default
         except Exception as e:
             logging.error(f"Error getting config {key}: {e}")
