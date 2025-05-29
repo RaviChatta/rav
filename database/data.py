@@ -1363,6 +1363,16 @@ class Database:
         except Exception as e:
             logging.error(f"Error counting total renamed files: {e}")
             return 0
+    async def clear_all_user_channels(self):
+
+        try:
+            await self.col.update_many(
+                {},  
+                {"$unset": {"user_channel": None}} 
+            )
+            logging.info("Tous les user_channel ont été supprimés avec succès.")
+        except Exception as e:
+            logging.error(f"Erreur lors de la suppression des user_channel : {e}")
     
     async def total_points_distributed(self) -> int:
         """Get total points distributed across all users."""
