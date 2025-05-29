@@ -40,7 +40,8 @@ async def auto_rename_files(client, message):
     if not user_data:
         return await message.reply_text("❌ Unable to load your information. Please type /start to register.")
 
-    user_points = user_data.get("points", 0)
+    points_data = user_data.get("points", {})  # Get the points dictionary
+    user_points = points_data.get("balance", 0)  # Get the actual number from 'balance'
     format_template = user_data.get("format_template", "")
     media_preference = user_data.get("media_preference", "")
     sequential_mode = user_data.get("sequential_mode", False)
