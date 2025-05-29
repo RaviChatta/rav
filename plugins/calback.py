@@ -12,17 +12,19 @@ from pyrogram.types import (
     InputMediaAnimation,
     Message
 )
-from pyrogram.errors import FloodWait
 from urllib.parse import quote
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
 from collections import defaultdict
-
+from threading import Lock
+from datetime import datetime, timedelta
+from pyrogram.errors import QueryIdInvalid, FloodWait
 logger = logging.getLogger(__name__)
 ADMIN_USER_ID = settings.ADMIN
-
+user_last_call = {}
+      # Seconds to wait for DB operations
 # Emoji Constants
 EMOJI = {
     'points': "✨",
@@ -141,6 +143,14 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
         [InlineKeyboardButton("🔙 Back", callback_data="help")]
     ])
 
+
+async def is_rate_limited(user_id: int) -> bool:
+    now = datetime.now()
+    if user_id in user_last_call and (now - user_last_call[user_id]) < timedelta(seconds=1):
+        return True
+    user_last_call[user_id] = now
+    return False
+edit_locks = defaultdict(Lock)  # Add below rate limiter
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     data = query.data
@@ -322,12 +332,31 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': img
             }
 
+        elif data == "setmedia":
+            # Show only video and document options
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Video", callback_data='setmedia_video'),
+                 InlineKeyboardButton("Document", callback_data='setmedia_document')],
+                [InlineKeyboardButton("Back", callback_data='help')]
+            ])
+            current_media = await hyoshcoder.get_media_preference(user_id)
+            response = {
+                'caption': f"🎥 <b>Current Media Preference:</b> {current_media or 'Not set'}\n\n"
+                          "Select the type of media you want to receive:",
+                'reply_markup': btn,
+                'photo': img
+            }
+
         elif data.startswith("setmedia_"):
             media_type = data.split("_")[1]
+            if media_type not in ['video', 'document']:
+                await query.answer("Invalid media type selected", show_alert=True)
+                return
+                
             await hyoshcoder.set_media_preference(user_id, media_type)
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='help')]])
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='setmedia')]])
             response = {
-                'caption': f"**Media preference set to:** {media_type} ✅",
+                'caption': f"✅ <b>Media preference set to:</b> {media_type.capitalize()}",
                 'reply_markup': btn,
                 'photo': img
             }
@@ -335,19 +364,33 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Set Dump Channel", callback_data="setdump_channel")],
+                [InlineKeyboardButton("Set Dump Channel", callback_data="setdump_instructions")],
+                [InlineKeyboardButton("Remove Dump Channel", callback_data="remove_dump")],
                 [InlineKeyboardButton("Back", callback_data="help")]
             ])
             response = {
                 'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
-                          "You can set a channel where renamed files will be automatically forwarded.",
+                          "You can set a channel where renamed files will be automatically forwarded.\n\n"
+                          "To set a dump channel:\n"
+                          "1. Add me to your channel as admin\n"
+                          "2. Use /set_dump command followed by channel ID\n"
+                          "(e.g., <code>/set_dump -100123456789</code>)",
                 'reply_markup': btn,
                 'photo': img
             }
 
-        elif data == "setdump_channel":
+        elif data == "setdump_instructions":
             await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
             return
+
+        elif data == "remove_dump":
+            await hyoshcoder.set_user_channel(user_id, None)
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='setdump')]])
+            response = {
+                'caption': "✅ Dump channel removed successfully",
+                'reply_markup': btn,
+                'photo': img
+            }
 
         elif data in ["sequential", "toggle_src"]:
             if data == "sequential":
