@@ -52,7 +52,7 @@ class Database:
             
             # Initialize database and collections
             self.db = self._client[self._database_name]
-            self._initialize_collections()
+           # self._initialize_collections()
             self.users = self.db.users
             self.premium_codes = self.db.premium_codes
             self.transactions = self.db.transactions
