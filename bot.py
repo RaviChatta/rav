@@ -71,7 +71,7 @@ async def start_services():
     if Config.WEBHOOK:
         app = web.AppRunner(await web_server())
         await app.setup()
-        site = web.TCPSite(app, "0.0.0.0", 8080)
+        site = web.TCPSite(app, "0.0.0.0", 8000)
         await site.start()
     
     try:
