@@ -23,7 +23,6 @@ from datetime import datetime, timedelta
 from pyrogram.errors import QueryIdInvalid, FloodWait
 logger = logging.getLogger(__name__)
 ADMIN_USER_ID = settings.ADMIN
-user_last_call = {}
       # Seconds to wait for DB operations
 # Emoji Constants
 EMOJI = {
@@ -144,13 +143,6 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     ])
 
 
-async def is_rate_limited(user_id: int) -> bool:
-    now = datetime.now()
-    if user_id in user_last_call and (now - user_last_call[user_id]) < timedelta(seconds=1):
-        return True
-    user_last_call[user_id] = now
-    return False
-edit_locks = defaultdict(Lock)  # Add below rate limiter
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     data = query.data
