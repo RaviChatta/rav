@@ -206,7 +206,19 @@ class Database:
         except PyMongoError as e:
             logging.error(f"Error getting user {id}: {e}")
             return None
-
+    async def get_user_by_code(self, code: str) -> Optional[Dict]:
+        """Find user by referral/premium code"""
+        try:
+            # Search in users collection for matching code
+            return await self.users.find_one({
+                "$or": [
+                    {"referral.code": code},
+                    {"premium.code": code}
+                ]
+            })
+        except Exception as e:
+            logger.error(f"Error finding user by code: {e}")
+            return None
     async def update_user_activity(self, user_id: int) -> bool:
         """Update user's last active timestamp."""
         try:
