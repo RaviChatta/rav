@@ -9,8 +9,9 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     InputMediaPhoto,
     InputMediaAnimation,
-    Message
-)from pyrogram.errors import FloodWait
+    Message 
+)
+from pyrogram.errors import FloodWait
 from config import settings
 from scripts import Txt
 from helpers.utils import get_random_photo, get_random_animation
