@@ -99,7 +99,7 @@ class Database:
             ("leaderboards", [("period", False), ("type", False), ("start_date", False), ("end_date", False)]),
             ("file_stats", [("user_id", False), ("date", False), ("timestamp", -1)]),
             ("config", [("key", True)])
-        
+        ]
         for collection, fields in indexes:
             try:
                 for field, unique in fields:
