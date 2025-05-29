@@ -3,8 +3,14 @@ import asyncio
 import logging
 import uuid
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from pyrogram.errors import FloodWait
+from pyrogram.types import (
+    CallbackQuery, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton, 
+    InputMediaPhoto,
+    InputMediaAnimation,
+    Message
+)from pyrogram.errors import FloodWait
 from config import settings
 from scripts import Txt
 from helpers.utils import get_random_photo, get_random_animation
