@@ -19,6 +19,11 @@ class Database:
         self._uri = uri
         self._database_name = database_name
         self._client = None
+        self.db = None
+        self.users = None  # Initialize all collections here
+        self.premium_codes = None
+        self.transactions = None
+        self._is_connected = False
         self._initialize_collections()
         
     def _initialize_collections(self):
@@ -58,10 +63,15 @@ class Database:
             self.premium_codes = self.db.premium_codes
             self.transactions = self.db.transactions
             self.rewards = self.db.rewards
+            self.users = self.db.users
+            self.premium_codes = self.db.premium_codes
+            self.transactions = self.db.transactions
             self.point_links = self.db.point_links
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
             self.config = self.db.config
+            self._is_connected = True
+
             
             # Create indexes
             await self._create_indexes()
@@ -347,7 +357,15 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting metadata code for {user_id}: {e}")
             return False
-
+    async def get_metadata_code(self, user_id: int) -> Optional[str]:
+        try:
+            if not await self.is_connected():
+                return None
+            user = await self.users.find_one({"_id": user_id})
+            return user.get("metadata_code") if user else None
+        except Exception as e:
+            logger.error(f"Error getting metadata code: {e}")
+            return None
     async def set_format_template(self, user_id: int, format_template: str) -> bool:
         """Set user's format template."""
         try:
