@@ -8,9 +8,10 @@ from pyrogram import Client
 from aiohttp import web
 from route import web_server
 from config import settings
-from database.data import hyoshcoder
+from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
-
+import logging
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 Config = settings
@@ -31,6 +32,9 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
+        await initialize_database()
+        #await get_database()
+        
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
@@ -41,7 +45,7 @@ class Bot(Client):
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
 
-        await hyoshcoder.clear_all_user_channels()
+        #await hyoshcoder.clear_all_user_channels()
 
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
@@ -70,14 +74,30 @@ async def start_services():
         site = web.TCPSite(app, "0.0.0.0", 8080)
         await site.start()
     
-    # Keep the bot running
-    await asyncio.Event().wait()
+    try:
+        # Keep the bot running
+        await asyncio.Event().wait()
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        print("Shutting down...")
+    finally:
+        if Config.WEBHOOK:
+            await site.stop()
+            await app.cleanup()
+        await bot.stop()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(start_services())
     except KeyboardInterrupt:
         pass
     finally:
+        # Cancel all running tasks
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        
+        # Wait for tasks to finish cancellation
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
