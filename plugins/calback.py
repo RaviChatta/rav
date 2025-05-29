@@ -174,7 +174,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = {
                 'caption': Txt.START_TXT.format(query.from_user.mention),
                 'reply_markup': btn,
-                'animation': anim
+                'animation': img
             }
 
         elif data == "help":
