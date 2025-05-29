@@ -4,7 +4,6 @@ class Scripts:
 ⚡ <b>File Processing Progress</b> ⚡
 
 <blockquote>
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
 <b>📊 Progress:</b> {0}%
 <b>📦 Size:</b> {1} / {2}
 <b>🚀 Speed:</b> {3}/s
@@ -109,19 +108,18 @@ Experience the ultimate file renaming solution with:
 <b>Activate with:</b> /plan
 </blockquote>"""
 
-    PREPLANS_TXT = """
-💰 <b>PREMIUM PLANS</b> 💰
+    PREMIUM_BENEFITS_TXT = """✨ <b>Premium Benefits</b> ✨
 
-<blockquote>
-<b>BASIC</b> ($3.99/mo)
-• 1000 renames/day
+✅ No advertisements
+✅ Priority file processing
+✅ Higher file size limits (up to 4GB)
+✅ Custom metadata options
+✅ Exclusive thumbnails
+✅ Advanced renaming options
+✅ Early access to new features
+✅ Dedicated support
 
-<b>PRO</b> ($9.99/mo)
-• 5000 renames/day
-
-<b>ULTIMATE</b> ($19.99/mo)
-• Unlimited renames
-</blockquote>"""
+Upgrade now to enjoy these benefits!"""
 
     HELP_TXT = """
 🛠️ <b>COMMAND LIST</b> 🛠️
