@@ -2,7 +2,6 @@ class Scripts:
     
     PROGRESS_BAR = """
 ⚡ <b>File Processing Progress</b> ⚡
-
 <blockquote>
 <b>📊 Progress:</b> {0}%
 <b>📦 Size:</b> {1} / {2}
