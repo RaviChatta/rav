@@ -22,7 +22,7 @@ class Settings():
     DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "downloads/")
     
     # Configuration du serveur web
-    PORT = os.getenv("PORT", "8000")
+    PORT = os.getenv("0.0.0.0", "8000")
     WEBHOOK = os.getenv("WEBHOOK", "True").lower() in ("true", "1", "yes")
     
     BOT_UPTIME  = time.time()
