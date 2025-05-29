@@ -115,7 +115,7 @@ class Database:
 
     def new_user(self, id: int) -> Dict[str, Any]:
         """Create a new user document with comprehensive default values."""
-        now = datetime.datetime.now(pytz.timezone("Africa/Lubumbashi"))
+        now = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
         return {
             "_id": int(id),
             "username": None,
