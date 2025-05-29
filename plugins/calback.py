@@ -615,7 +615,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     await query.answer("⚠️ Please try again", show_alert=True)
                 except QueryIdInvalid:
                     pass  # Already handled earlier
-        
+
         # Start cleanup task with error handling
         try:
             asyncio.create_task(cleanup_metadata_states())
