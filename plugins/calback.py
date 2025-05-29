@@ -548,78 +548,45 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
+# Send response
         if response:
-            try:
-                # Handle media responses
-                if 'animation' in response or 'photo' in response:
-                    media = None
+            media = None
+            if 'animation' in response:
+                media = InputMediaAnimation(media=response['animation'], caption=response['caption'])
+            elif 'photo' in response:
+                media = InputMediaPhoto(media=response['photo'], caption=response['caption'])
+            
+            if media:
+                if query.message.animation or query.message.photo:
+                    await query.message.edit_media(media=media, reply_markup=response['reply_markup'])
+                else:
+                    await query.message.delete()
                     if 'animation' in response:
-                        media = InputMediaAnimation(
-                            media=response['animation'],
-                            caption=response['caption']
-                        )
-                    elif 'photo' in response:
-                        media = InputMediaPhoto(
-                            media=response['photo'],
-                            caption=response['caption']
-                        )
-        
-                    # Try editing existing media first
-                    try:
-                        if query.message.animation or query.message.photo:
-                            await query.message.edit_media(
-                                media=media,
-                                reply_markup=response['reply_markup']
-                            )
-                            return
-                    except Exception:
-                        pass  # Fall through to sending new message
-        
-                    # Send new media message if edit fails
-                    try:
-                        await query.message.delete()
-                        if 'animation' in response:
-                            await client.send_animation(
-                                chat_id=query.message.chat.id,
-                                animation=response['animation'],
-                                caption=response['caption'],
-                                reply_markup=response['reply_markup']
-                            )
-                        else:
-                            await client.send_photo(
-                                chat_id=query.message.chat.id,
-                                photo=response['photo'],
-                                caption=response['caption'],
-                                reply_markup=response['reply_markup']
-                            )
-                    except Exception as e:
-                        logger.error(f"Media send failed: {e}")
-                        await query.message.reply(
-                            "⚠️ Please try that action again",
+                        await client.send_animation(
+                            chat_id=query.message.chat.id,
+                            animation=response['animation'],
+                            caption=response['caption'],
                             reply_markup=response['reply_markup']
                         )
-        
-                # Handle text-only responses
-                else:
-                    await query.message.edit_text(
-                        text=response['caption'],
-                        reply_markup=response['reply_markup'],
-                        disable_web_page_preview=True
-                    )
-        
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-            except Exception as e:
-                logger.error(f"Response handling failed: {e}")
-                try:
-                    await query.answer("⚠️ Please try again", show_alert=True)
-                except QueryIdInvalid:
-                    pass  # Already handled earlier
+                    else:
+                        await client.send_photo(
+                            chat_id=query.message.chat.id,
+                            photo=response['photo'],
+                            caption=response['caption'],
+                            reply_markup=response['reply_markup']
+                        )
+            else:
+                await query.message.edit_text(
+                    text=response['caption'],
+                    reply_markup=response['reply_markup'],
+                    disable_web_page_preview=True
+                )
 
-# Start cleanup task WITH PROPER ERROR HANDLING
-try:
-    asyncio.create_task(cleanup_metadata_states())
-except Exception as e:
-    logger.error(f"Failed to start cleanup task: {e}")
-finally:
-    logger.info("Attempted to start cleanup task.")
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+    except Exception as e:
+        logger.error(f"Callback error: {e}")
+        await query.answer("An error occurred", show_alert=True)
+
+# Start cleanup task
+asyncio.create_task(cleanup_metadata_states())
