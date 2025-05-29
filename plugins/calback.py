@@ -556,7 +556,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     media = None
                     if 'animation' in response:
                         media = InputMediaAnimation(
-                            media=response['animation'], 
+                            media=response['animation'],
                             caption=response['caption']
                         )
                     elif 'photo' in response:
@@ -573,7 +573,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                                 reply_markup=response['reply_markup']
                             )
                             return
-                    except:
+                    except Exception:
                         pass  # Fall through to sending new message
         
                     # Send new media message if edit fails
@@ -607,6 +607,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         reply_markup=response['reply_markup'],
                         disable_web_page_preview=True
                     )
+        
             except FloodWait as e:
                 await asyncio.sleep(e.value)
             except Exception as e:
@@ -615,8 +616,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     await query.answer("⚠️ Please try again", show_alert=True)
                 except QueryIdInvalid:
                     pass  # Already handled earlier
-
-        # Start cleanup task with error handling
-        # Start cleanup task with error handling
-asyncio.create_task(cleanup_metadata_states())
-
+        
+        # ✅ Start cleanup task with proper placement outside try-except
+        asyncio.create_task(cleanup_metadata_states())
+        
+        
