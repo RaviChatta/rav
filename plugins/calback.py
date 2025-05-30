@@ -478,7 +478,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         
         try:
             # Retry handler for FloodWait
-            ...
+            pass  # This pass should be inside the try block if you have no operations yet
         except FloodWait as e:
             await asyncio.sleep(e.value)
             await cb_handler(client, query)
