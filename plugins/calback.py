@@ -442,53 +442,55 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
-        
-         if response:
-                    try:
-                        if 'photo' in response:
-                            # Handle media messages
-                            if query.message.photo:
-                                # Editing existing photo message
-                                await query.message.edit_media(
-                                    media=InputMediaPhoto(
-                                        media=response['photo'] or await get_random_photo(),
-                                        caption=response['caption']
-                                    ),
-                                    reply_markup=response['reply_markup']
-                                )
-                            else:
-                                # Converting text message to photo
-                                await query.message.delete()
-                                await client.send_photo(
-                                    chat_id=query.message.chat.id,
-                                    photo=response['photo'] or await get_random_photo(),
-                                    caption=response['caption'],
-                                    reply_markup=response['reply_markup']
-                                )
-                        else:
-                            # Handle text messages
-                            await query.message.edit_text(
-                                text=response.get('caption', response.get('text', '')),
-                                reply_markup=response['reply_markup'],
-                                disable_web_page_preview=response.get('disable_web_page_preview', False),
-                                parse_mode=response.get('parse_mode', enums.ParseMode.HTML)
-                            )
-                    except Exception as e:
-                        logger.error(f"Failed to update message: {e}")
-                        await query.answer("Failed to update - please try again", show_alert=True)
-                    
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-                await cb_handler(client, query)
-            except ChatWriteForbidden:
-                logger.warning(f"Can't write in chat with {user_id}")
-                await query.answer("I don't have permission to send messages here", show_alert=True)
+        if response:
+            try:
+                if 'photo' in response:
+                    # Handle media messages
+                    if query.message.photo:
+                        # Editing existing photo message
+                        await query.message.edit_media(
+                            media=InputMediaPhoto(
+                                media=response['photo'] or await get_random_photo(),
+                                caption=response['caption']
+                            ),
+                            reply_markup=response['reply_markup']
+                        )
+                    else:
+                        # Converting text message to photo
+                        await query.message.delete()
+                        await client.send_photo(
+                            chat_id=query.message.chat.id,
+                            photo=response['photo'] or await get_random_photo(),
+                            caption=response['caption'],
+                            reply_markup=response['reply_markup']
+                        )
+                else:
+                    # Handle text messages
+                    await query.message.edit_text(
+                        text=response.get('caption', response.get('text', '')),
+                        reply_markup=response['reply_markup'],
+                        disable_web_page_preview=response.get('disable_web_page_preview', False),
+                        parse_mode=response.get('parse_mode', enums.ParseMode.HTML)
+                    )
             except Exception as e:
-                logger.error(f"Callback error: {e}", exc_info=True)
-                try:
-                    await query.answer("❌ An error occurred", show_alert=True)
-                except:
-                    pass
+                logger.error(f"Failed to update message: {e}")
+                await query.answer("Failed to update - please try again", show_alert=True)
+        
+        try:
+            # Retry handler for FloodWait
+            ...
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            await cb_handler(client, query)
+        except ChatWriteForbidden:
+            logger.warning(f"Can't write in chat with {user_id}")
+            await query.answer("I don't have permission to send messages here", show_alert=True)
+        except Exception as e:
+            logger.error(f"Callback error: {e}", exc_info=True)
+            try:
+                await query.answer("❌ An error occurred", show_alert=True)
+            except:
+                pass
 
 
 # Start cleanup task
