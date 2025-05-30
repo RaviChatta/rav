@@ -11,21 +11,14 @@ class Scripts:
 
 <b>🔹 Status:</b> Renaming in progress..."""
 
-    START_TXT = """
-✨ <b>WELCOME TO FILE RENAME PRO</b> ✨
+START_TXT = """
+<b>👑 Hmph~ Hello {}, you're lucky to stand before me.</b>
 
-<blockquote>
-<b>Hello {}</b>,
+ᴬᵘᵗᵒ ʀᴇɴᴀᴍɪɴɢ, ᴅᴜᴍᴘɪɴɢ, ꜱᴇǫᴜᴇɴᴄɪɴɢ & ᴇᴠᴇɴ ᴍᴇᴛᴀᴅᴀᴛᴀ — ᴀʟʟ ꜱᴜʙᴍɪᴛ ᴛᴏ ᴍʏ ᴄʜᴀʀᴍ. ✨
 
-Experience the ultimate file renaming solution with:
+ᴇᴠᴇʀʏ ᴛʜᴜᴍʙɴᴀɪʟ ᴀɴᴅ ᴄᴀᴘᴛɪᴏɴ ɪꜱ ᴍᴀᴅᴇ ᴛᴏ ʙᴇ ᴡᴏʀꜱʜɪᴘᴘᴇᴅ. 💋
+"""
 
-• Lightning-fast processing
-• Smart pattern recognition
-• Military-grade encryption
-• Premium exclusive features
-</blockquote>
-
-<b>🚀 Ready to transform your files?</b>"""
 
     FILE_NAME_TXT = """
 🔮 <b>SMART RENAMING GUIDE</b> 🔮
