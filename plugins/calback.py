@@ -494,4 +494,4 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
 
 # Start cleanup task
-asyncio.create_task(cleanup_metadata_states())
+# asyncio.create_task(cleanup_metadata_states())
