@@ -20,10 +20,11 @@ from config import settings
 from collections import defaultdict
 from threading import Lock
 from datetime import datetime, timedelta
-from pyrogram.errors import QueryIdInvalid, FloodWait
+from pyrogram.errors import QueryIdInvalid, FloodWait, ChatWriteForbidden
+
 logger = logging.getLogger(__name__)
 ADMIN_USER_ID = settings.ADMIN
-      # Seconds to wait for DB operations
+
 # Emoji Constants
 EMOJI = {
     'points': "✨",
@@ -44,12 +45,14 @@ EMOJI = {
 
 # Global state tracker
 metadata_states = defaultdict(dict)
+
 METADATA_ON = [
     [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
      InlineKeyboardButton('✅', callback_data='metadata_1')],
     [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
      InlineKeyboardButton('Back', callback_data='help')]
 ]
+
 METADATA_OFF = [
     [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
      InlineKeyboardButton('❌', callback_data='metadata_0')],
@@ -74,7 +77,6 @@ Join me using this link: {invite_link}
 async def process_metadata_text(client, message: Message):
     user_id = message.from_user.id
     
-    # Check if user is in metadata state and the message isn't a command
     if user_id in metadata_states and not message.text.startswith('/'):
         try:
             if message.text.lower() == "/cancel":
@@ -97,17 +99,17 @@ async def process_metadata_text(client, message: Message):
             await message.reply(f"❌ Error: {str(e)}")
             metadata_states.pop(user_id, None)
     else:
-        # Let other handlers process the message
         message.continue_propagation()
 
 async def cleanup_metadata_states():
     while True:
-        await asyncio.sleep(300)  # Clean every 5 minutes
+        await asyncio.sleep(300)
         current_time = time.time()
         expired = [uid for uid, state in metadata_states.items() 
-                    if current_time - state.get('timestamp', 0) > 300]
+                  if current_time - state.get('timestamp', 0) > 300]
         for uid in expired:
             metadata_states.pop(uid, None)
+
 def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     periods = {
         "daily": f"{EMOJI['clock']} Daily",
@@ -115,6 +117,7 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
         "monthly": f"🗓 Monthly",
         "alltime": f"{EMOJI['leaderboard']} All-Time"
     }
+    
     types = {
         "points": f"{EMOJI['points']} Points",
         "renames": f"{EMOJI['rename']} Files",
@@ -141,7 +144,6 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
         type_buttons,
         [InlineKeyboardButton("🔙 Back", callback_data="help")]
     ])
-
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -174,7 +176,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = {
                 'caption': Txt.START_TXT.format(query.from_user.mention),
                 'reply_markup': btn,
-                'animation': img
+                'animation': anim
             }
 
         elif data == "help":
@@ -325,7 +327,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
 
         elif data == "setmedia":
-            # Show only video and document options
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Video", callback_data='setmedia_video'),
                  InlineKeyboardButton("Document", callback_data='setmedia_document')],
@@ -392,6 +393,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             # Refresh the help menu
             await cb_handler(client, query)
             return
+
         elif data == "caption":
             current_caption = await hyoshcoder.get_caption(user_id) or "Not set"
             btn = InlineKeyboardMarkup([
@@ -406,7 +408,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
-
 
         elif data == "thumbnail":
             btn = InlineKeyboardMarkup([
@@ -442,13 +443,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
-        
         if response:
             try:
                 if 'photo' in response:
-                    # Handle media messages
                     if query.message.photo:
-                        # Editing existing photo message
                         await query.message.edit_media(
                             media=InputMediaPhoto(
                                 media=response['photo'] or await get_random_photo(),
@@ -457,7 +455,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                             reply_markup=response['reply_markup']
                         )
                     else:
-                        # Converting text message to photo
                         await query.message.delete()
                         await client.send_photo(
                             chat_id=query.message.chat.id,
@@ -466,7 +463,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                             reply_markup=response['reply_markup']
                         )
                 else:
-                    # Handle text messages
                     await query.message.edit_text(
                         text=response.get('caption', response.get('text', '')),
                         reply_markup=response['reply_markup'],
@@ -480,8 +476,18 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 logger.warning(f"Can't write in chat with {user_id}")
                 await query.answer("I don't have permission to send messages here", show_alert=True)
             except Exception as e:
-                logger.error(f"Failed to update message: {e}")
+                logger.error(f"Callback error: {e}", exc_info=True)
                 try:
                     await query.answer("❌ An error occurred", show_alert=True)
                 except:
                     pass
+
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        await cb_handler(client, query)
+    except Exception as e:
+        logger.error(f"Callback handler error: {e}", exc_info=True)
+        try:
+            await query.answer("❌ An error occurred", show_alert=True)
+        except:
+            pass
