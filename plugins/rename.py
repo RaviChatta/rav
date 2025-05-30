@@ -365,7 +365,9 @@ async def auto_rename_files(client, message):
             except Exception as cleanup_error:
                 print(f"Cleanup error: {cleanup_error}")
 
-            await hyoshcoder.deduct_points(user_id, 1)
+            points_config = await hyoshcoder.get_config("points_config", {})
+            rename_cost = points_config.get("rename_cost", 1)  # Default to 1 if not set
+            await hyoshcoder.deduct_points(user_id, rename_cost)
             if file_id in renaming_operations:
                 del renaming_operations[file_id]
             
