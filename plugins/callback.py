@@ -151,8 +151,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
     user_id = query.from_user.id
     
     try:
-        await query.answer()
-        
         # Get common resources
         img = await get_random_photo()
         anim = await get_random_animation()
@@ -231,26 +229,37 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
 
         elif data == "leaderboard":
-            leaders = await hyoshcoder.get_leaderboard()
-            if not leaders:
+            try:
+                leaders = await hyoshcoder.get_leaderboard()
+                if not leaders:
+                    response = {
+                        'caption': "📭 No leaderboard data available yet",
+                        'reply_markup': InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                        ]),
+                        'photo': img
+                    }
+                else:
+                    text = f"{EMOJI['leaderboard']} Weekly Points Leaderboard:\n\n"
+                    for i, user in enumerate(leaders[:10], 1):
+                        username = user.get('username', f"User {user['_id']}")
+                        text += f"{i}. {username} - {user.get('points', 0)} {EMOJI['points']} {'⭐' if user.get('premium', False) else ''}\n"
+                    
+                    response = {
+                        'caption': text,
+                        'reply_markup': get_leaderboard_keyboard(),
+                        'photo': img
+                    }
+            except Exception as e:
+                logger.error(f"Error getting leaderboard: {e}")
                 response = {
-                    'caption': "📭 No leaderboard data available yet",
+                    'caption': "⚠️ Error loading leaderboard data",
                     'reply_markup': InlineKeyboardMarkup([
                         [InlineKeyboardButton("🔙 Back", callback_data="help")]
                     ]),
                     'photo': img
                 }
-            else:
-                text = f"{EMOJI['leaderboard']} Weekly Points Leaderboard:\n\n"
-                for i, user in enumerate(leaders[:10], 1):
-                    username = user.get('username', f"User {user['_id']}")
-                    text += f"{i}. {username} - {user.get('points', 0)} {EMOJI['points']} {'⭐' if user.get('premium', False) else ''}\n"
-                
-                response = {
-                    'caption': text,
-                    'reply_markup': get_leaderboard_keyboard(),
-                    'photo': img
-                }
+
 
         elif data == "freepoints":
             me = await client.get_me()
@@ -443,6 +452,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
+ # Send response
         if response:
             try:
                 if 'photo' in response:
@@ -474,20 +484,19 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 await cb_handler(client, query)
             except ChatWriteForbidden:
                 logger.warning(f"Can't write in chat with {user_id}")
-                await query.answer("I don't have permission to send messages here", show_alert=True)
             except Exception as e:
-                logger.error(f"Callback error: {e}", exc_info=True)
-                try:
-                    await query.answer("❌ An error occurred", show_alert=True)
-                except:
-                    pass
+                logger.error(f"Error updating message: {e}")
+
+        # Answer the callback query at the end
+        try:
+            await query.answer()
+        except QueryIdInvalid:
+            logger.warning("Query ID was invalid or expired")
+        except Exception as e:
+            logger.error(f"Error answering callback: {e}")
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
         await cb_handler(client, query)
     except Exception as e:
         logger.error(f"Callback handler error: {e}", exc_info=True)
-        try:
-            await query.answer("❌ An error occurred", show_alert=True)
-        except:
-            pass
