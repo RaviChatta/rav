@@ -442,14 +442,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
-# Send response
+        
         if response:
             media = None
             if 'animation' in response:
                 media = InputMediaAnimation(media=response['animation'], caption=response['caption'])
             elif 'photo' in response:
                 media = InputMediaPhoto(media=response['photo'], caption=response['caption'])
-            
+
             if media:
                 if query.message.animation or query.message.photo:
                     await query.message.edit_media(media=media, reply_markup=response['reply_markup'])
@@ -457,7 +457,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     await query.message.delete()
                     if 'animation' in response:
                         await client.send_animation(
-                            chat_id=query.message.chat.id,
+                            chat_id=query.message.chat.id,More actions
                             animation=response['animation'],
                             caption=response['caption'],
                             reply_markup=response['reply_markup']
