@@ -14,7 +14,7 @@ from pyrogram.types import (
 from pyrogram.errors import FloodWait
 from config import settings
 from scripts import Txt
-from helpers.utils import get_random_photo, get_random_animation
+from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
 
 logger = logging.getLogger(__name__)
@@ -57,14 +57,17 @@ async def command_handler(client: Client, message: Message):
             
             # Handle referral
             if args and args[0].startswith("refer_"):
-                referrer_id = int(args[0].replace("refer_", ""))
-                if referrer_id != user_id:
-                    await hyoshcoder.set_referrer(user_id, referrer_id)
-                    await hyoshcoder.add_points(referrer_id, 10)
-                    await client.send_message(
-                        chat_id=referrer_id,
-                        text=f"🎉 {user.mention} joined through your referral! You received 10 points."
-                    )
+                try:
+                    referrer_id = int(args[0].replace("refer_", ""))
+                    if referrer_id != user_id:
+                        await hyoshcoder.set_referrer(user_id, referrer_id)
+                        await hyoshcoder.add_points(referrer_id, 10)
+                        await client.send_message(
+                            chat_id=referrer_id,
+                            text=f"🎉 {user.mention} joined through your referral! You received 10 points."
+                        )
+                except (ValueError, Exception) as e:
+                    logger.error(f"Referral error: {e}")
 
             # Handle points claim
             if args and args[0].startswith("adds_"):
@@ -72,12 +75,13 @@ async def command_handler(client: Client, message: Message):
                 user_data = await hyoshcoder.get_user_by_code(unique_code)
                 if user_data:
                     points = await hyoshcoder.get_expend_points(user_data["_id"])
-                    await hyoshcoder.add_points(user_data["_id"], points)
-                    await hyoshcoder.set_expend_points(user_data["_id"], 0, None)
-                    await client.send_message(
-                        chat_id=user_data["_id"],
-                        text=f"🎉 You earned {points} points!"
-                    )
+                    if points > 0:
+                        await hyoshcoder.add_points(user_data["_id"], points)
+                        await hyoshcoder.set_expend_points(user_data["_id"], 0, None)
+                        await client.send_message(
+                            chat_id=user_data["_id"],
+                            text=f"🎉 You earned {points} points!"
+                        )
 
             if anim:
                 await message.reply_animation(
@@ -128,70 +132,80 @@ async def command_handler(client: Client, message: Message):
             )
 
         elif cmd in ["leaderboard", "lb"]:
-                # Get user's preferred leaderboard settings
-                period = await hyoshcoder.get_leaderboard_period(user_id)
-                lb_type = await hyoshcoder.get_leaderboard_type(user_id)
-                
-                # Get leaderboard data
-                leaders = await hyoshcoder.get_leaderboard(period, lb_type)
-                
-                if not leaders:
-                    await message.reply_text(
-                        "No leaderboard data available yet. Be the first to earn points!",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("Back", callback_data="help")]
-                        )
-                    )
-                    return
-                
-                # Format leaderboard message
-                emoji = {
-                    "points": "✨",
-                    "renames": "📁",
-                    "referrals": "👥"
-                }.get(lb_type, "🏆")
-                
-                text = (
-                    f"🏆 {period.capitalize()} {lb_type.capitalize()} Leaderboard:\n\n"
-                    f"{emoji} Top Performers {emoji}\n\n"
+            # Get user's preferred leaderboard settings
+            period = await hyoshcoder.get_leaderboard_period(user_id)
+            lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+            
+            # Get leaderboard data
+            leaders = await hyoshcoder.get_leaderboard(period, lb_type)
+            
+            if not leaders:
+                await message.reply_text(
+                    "No leaderboard data available yet. Be the first to earn points!",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Back", callback_data="help")]
+                    ])
                 )
-                
-                for i, user in enumerate(leaders[:10], 1):
-                    username = user.get('username', f"User {user.get('_id', 'N/A')}")
-                    value = user.get('value', 0)
-                    text += f"{i}. {username} - {value} {emoji}\n"
-                    if user.get('is_premium', False):
-                        text += "⭐ Premium User\n"
-                
-                # Create buttons for leaderboard navigation
-                buttons = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
-                        InlineKeyboardButton("Weekly", callback_data="lb_period_weekly"),
-                        InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
-                        InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")
-                    ],
-                    [
-                        InlineKeyboardButton("Points", callback_data="lb_type_points"),
-                        InlineKeyboardButton("Files", callback_data="lb_type_renames"),
-                        InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")
-                    ],
-                    [InlineKeyboardButton("Back", callback_data="help")]
-                ])
-                
-                await message.reply_text(text, reply_markup=buttons)
+                return
+            
+            # Format leaderboard message
+            emoji = {
+                "points": "✨",
+                "renames": "📁",
+                "referrals": "👥"
+            }.get(lb_type, "🏆")
+            
+            text = (
+                f"🏆 {period.capitalize()} {lb_type.capitalize()} Leaderboard:\n\n"
+                f"{emoji} Top Performers {emoji}\n\n"
+            )
+            
+            for i, user in enumerate(leaders[:10], 1):
+                username = user.get('username', f"User {user.get('_id', 'N/A')}")
+                value = user.get('value', 0)
+                text += f"{i}. {username} - {value} {emoji}\n"
+                if user.get('is_premium', False):
+                    text += "⭐ Premium User\n"
+            
+            # Create buttons for leaderboard navigation
+            buttons = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
+                    InlineKeyboardButton("Weekly", callback_data="lb_period_weekly"),
+                    InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
+                    InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")
+                ],
+                [
+                    InlineKeyboardButton("Points", callback_data="lb_type_points"),
+                    InlineKeyboardButton("Files", callback_data="lb_type_renames"),
+                    InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")
+                ],
+                [InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            
+            await message.reply_text(text, reply_markup=buttons)
+
         elif cmd == "freepoints":
             me = await client.get_me()
             unique_code = str(uuid.uuid4())[:8]
             invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
             points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
-            shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, points_link)
+            
+            # Generate shortlink if configured
+            if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
+                try:
+                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, points_link)
+                except Exception as e:
+                    logger.error(f"Shortlink error: {e}")
+                    shortlink = points_link
+            else:
+                shortlink = points_link
             
             points = random.randint(5, 20)
             await hyoshcoder.set_expend_points(user_id, points, unique_code)
             
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Share Bot", callback_data="invite")],
+                [InlineKeyboardButton("Share Bot", url=invite_link)],
                 [InlineKeyboardButton("Watch Ad", url=shortlink)],
                 [InlineKeyboardButton("Back", callback_data="help")]
             ])
