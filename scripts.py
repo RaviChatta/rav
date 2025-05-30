@@ -11,12 +11,13 @@ class Scripts:
 
 <b>🔹 Status:</b> Renaming in progress..."""
 
-START_TXT = """
+     START_TXT = """
 <b>👑 Hmph~ Hello {}, you're lucky to stand before me.</b>
-
+<blockquote>
 ᴬᵘᵗᵒ ʀᴇɴᴀᴍɪɴɢ, ᴅᴜᴍᴘɪɴɢ, ꜱᴇǫᴜᴇɴᴄɪɴɢ & ᴇᴠᴇɴ ᴍᴇᴛᴀᴅᴀᴛᴀ — ᴀʟʟ ꜱᴜʙᴍɪᴛ ᴛᴏ ᴍʏ ᴄʜᴀʀᴍ. ✨
 
 ᴇᴠᴇʀʏ ᴛʜᴜᴍʙɴᴀɪʟ ᴀɴᴅ ᴄᴀᴘᴛɪᴏɴ ɪꜱ ᴍᴀᴅᴇ ᴛᴏ ʙᴇ ᴡᴏʀꜱʜɪᴘᴘᴇᴅ. 💋
+<blockquote>
 """
 
 
