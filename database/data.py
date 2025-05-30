@@ -21,7 +21,7 @@ class Database:
         self._client = None
         self.db = None
         self._is_connected = False
-        # Initialize collection references as None
+        # Initialize collection references
         self.users = None
         self.premium_codes = None
         self.transactions = None
@@ -52,24 +52,18 @@ class Database:
             
             # Initialize database and collections
             self.db = self._client[self._database_name]
-           # self._initialize_collections()
             self.users = self.db.users
             self.premium_codes = self.db.premium_codes
             self.transactions = self.db.transactions
             self.rewards = self.db.rewards
-            self.users = self.db.users
-            self.premium_codes = self.db.premium_codes
-            self.transactions = self.db.transactions
             self.point_links = self.db.point_links
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
             self.config = self.db.config
             self._is_connected = True
 
-            
             # Create indexes
             await self._create_indexes()
-            
             return True
             
         except (ServerSelectionTimeoutError, ConnectionFailure) as e:
@@ -206,10 +200,10 @@ class Database:
         except PyMongoError as e:
             logging.error(f"Error getting user {id}: {e}")
             return None
+
     async def get_user_by_code(self, code: str) -> Optional[Dict]:
         """Find user by referral/premium code"""
         try:
-            # Search in users collection for matching code
             return await self.users.find_one({
                 "$or": [
                     {"referral.code": code},
@@ -219,6 +213,7 @@ class Database:
         except Exception as e:
             logger.error(f"Error finding user by code: {e}")
             return None
+
     async def update_user_activity(self, user_id: int) -> bool:
         """Update user's last active timestamp."""
         try:
@@ -363,6 +358,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting metadata code for {user_id}: {e}")
             return False
+
     async def get_metadata_code(self, user_id: int) -> Optional[str]:
         try:
             if not self._is_connected:
@@ -372,6 +368,7 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting metadata code: {e}")
             return None
+
     async def set_format_template(self, user_id: int, format_template: str) -> bool:
         """Set user's format template."""
         try:
