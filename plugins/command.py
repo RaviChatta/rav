@@ -56,126 +56,59 @@ async def command_handler(client: Client, message: Message):
                  InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
             ])
             
-            # Handle referral
-            # Handle referral link
-            if args and args[0].startswith("refer_"):
-                referrer_id = int(args[0].replace("refer_", ""))
-                reward = 10
-            
-                ref = await hyoshcoder.is_refferer(user_id)
-                if ref:
-                    return
-            
-                if referrer_id != user_id:
-                    referrer = await hyoshcoder.read_user(referrer_id)
-            
-                    if referrer:
-                        await hyoshcoder.set_referrer(user_id, referrer_id)
-                        await hyoshcoder.add_points(referrer_id, reward)
-            
-                        cap = (
-                            f"🎉 {message.from_user.mention} joined the bot through your referral! "
-                            f"You received {reward} points."
-                        )
-                        await client.send_message(
-                            chat_id=referrer_id,
-                            text=cap
-                        )
-                    else:
-                        await message.reply("❌ The user who invited you does not exist.")
-            
-            # Send welcome/start message
-            caption = Txt.START_TXT.format(user.mention)
-            
-            if img:
-                await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-            else:
-                await message.reply_text(text=caption, reply_markup=buttons)
-            
-            # Handle "adds_" campaign reward
-            if args and args[0].startswith("adds_"):
-                unique_code = args[0].replace("adds_", "")
-                user = await hyoshcoder.get_user_by_code(unique_code)
-            
-                if not user:
-                    await message.reply("❌ The link is invalid or already used.")
-                    return
-            
-                reward = await hyoshcoder.get_expend_points(user["_id"])
-                await hyoshcoder.add_points(user["_id"], reward)
-                await hyoshcoder.set_expend_points(user["_id"], 0, None)
-            
-                cap = f"🎉 You earned {reward} points!"
-                await client.send_message(
-                    chat_id=user["_id"],
-                    text=cap
-                )
-
-
-                if args and args[0].startswith("refer_"):
+            # Handle referral and campaign links
+            if args:
+                # Handle referral first
+                if args[0].startswith("refer_"):
                     referrer_id = int(args[0].replace("refer_", ""))
                     reward = 10
+                    
                     ref = await hyoshcoder.is_refferer(user_id)
                     if ref:
-                        return
-                    if referrer_id != user_id:
+                        pass  # Already referred
+                    elif referrer_id != user_id:
                         referrer = await hyoshcoder.read_user(referrer_id)
-
                         if referrer:
                             await hyoshcoder.set_referrer(user_id, referrer_id)
                             await hyoshcoder.add_points(referrer_id, reward)
                             cap = f"🎉 {message.from_user.mention} joined the bot through your referral! You received {reward} points."
-                            await client.send_message(
-                                chat_id=referrer_id,
-                                text=cap
-                            )
+                            await client.send_message(chat_id=referrer_id, text=cap)
                         else:
                             await message.reply("❌ The user who invited you does not exist.")
-
-                caption = Txt.START_TXT.format(user.mention)
-
-                if img:
-                    await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-                else:
-                    await message.reply_text(text=caption, reply_markup=buttons)
-
-                if args and args[0].startswith("adds_"):
+                
+                # Then handle campaign
+                elif args[0].startswith("adds_"):
                     unique_code = args[0].replace("adds_", "")
                     user = await hyoshcoder.get_user_by_code(unique_code)
-                    reward = await hyoshcoder.get_expend_points(user["_id"])
-
-                    if not user:
+                    
+                    if user:
+                        reward = await hyoshcoder.get_expend_points(user["_id"])
+                        if reward > 0:
+                            await hyoshcoder.add_points(user["_id"], reward)
+                            await hyoshcoder.set_expend_points(user["_id"], 0, None)
+                            cap = f"🎉 You earned {reward} points!"
+                            await client.send_message(chat_id=user["_id"], text=cap)
+                    else:
                         await message.reply("❌ The link is invalid or already used.")
-                        return
 
-                    await hyoshcoder.add_points(user["_id"], reward)
-                    await hyoshcoder.set_expend_points(user["_id"], 0, None)
-                    cap = f"🎉 You earned {reward} points!"
-                    await client.send_message(
-                        chat_id=user["_id"],
-                        text=cap
-                    )
-
-
-
-  
-
-
+            # Send welcome message
+            caption = Txt.START_TXT.format(user.mention)
+            
             if anim:
                 await message.reply_animation(
                     animation=anim,
-                    caption=Txt.START_TXT.format(user.mention),
+                    caption=caption,
                     reply_markup=buttons
                 )
             elif img:
                 await message.reply_photo(
                     photo=img,
-                    caption=Txt.START_TXT.format(user.mention),
+                    caption=caption,
                     reply_markup=buttons
                 )
             else:
                 await message.reply_text(
-                    text=Txt.START_TXT.format(user.mention),
+                    text=caption,
                     reply_markup=buttons
                 )
 
@@ -208,7 +141,6 @@ async def command_handler(client: Client, message: Message):
                 "**Please select the type of media you want to set:**",
                 reply_markup=keyboard
             )
-
 
         elif cmd in ["leaderboard", "lb"]:
             await show_leaderboard_ui(client, message)
@@ -329,6 +261,7 @@ async def command_handler(client: Client, message: Message):
         logger.error(f"Command error: {e}")
         await message.reply_text("An error occurred. Please try again later.")
 
+# ... [rest of your existing code remains the same]
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client: Client, message: Message):
     try:
