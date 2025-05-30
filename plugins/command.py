@@ -128,35 +128,58 @@ async def command_handler(client: Client, message: Message):
             )
 
         elif cmd in ["leaderboard", "lb"]:
-            leaders = await hyoshcoder.get_leaderboard()
-            if not leaders:
-                await message.reply_text(
-                    "No leaderboard data available yet. Be the first to earn points!",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Back", callback_data="help")]
-                    ])
+                # Get user's preferred leaderboard settings
+                period = await hyoshcoder.get_leaderboard_period(user_id)
+                lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+                
+                # Get leaderboard data
+                leaders = await hyoshcoder.get_leaderboard(period, lb_type)
+                
+                if not leaders:
+                    await message.reply_text(
+                        "No leaderboard data available yet. Be the first to earn points!",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Back", callback_data="help")]
+                        )
+                    )
+                    return
+                
+                # Format leaderboard message
+                emoji = {
+                    "points": "✨",
+                    "renames": "📁",
+                    "referrals": "👥"
+                }.get(lb_type, "🏆")
+                
+                text = (
+                    f"🏆 {period.capitalize()} {lb_type.capitalize()} Leaderboard:\n\n"
+                    f"{emoji} Top Performers {emoji}\n\n"
                 )
-                return
-            
-            text = f"🏆 Weekly Points Leaderboard:\n\n"
-            for i, user in enumerate(leaders[:10], 1):
-                username = user.get('username', f"User {user['_id']}")
-                text += f"{i}. {username} - {user.get('points', 0)} ✨ {'⭐' if user.get('premium', False) else ''}\n"
-            
-            await message.reply_text(
-                text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
-                     InlineKeyboardButton("Weekly", callback_data="lb_period_weekly")],
-                    [InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
-                     InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")],
-                    [InlineKeyboardButton("Points", callback_data="lb_type_points"),
-                     InlineKeyboardButton("Files", callback_data="lb_type_renames"),
-                     InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")],
+                
+                for i, user in enumerate(leaders[:10], 1):
+                    username = user.get('username', f"User {user.get('_id', 'N/A')}")
+                    value = user.get('value', 0)
+                    text += f"{i}. {username} - {value} {emoji}\n"
+                    if user.get('is_premium', False):
+                        text += "⭐ Premium User\n"
+                
+                # Create buttons for leaderboard navigation
+                buttons = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
+                        InlineKeyboardButton("Weekly", callback_data="lb_period_weekly"),
+                        InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
+                        InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")
+                    ],
+                    [
+                        InlineKeyboardButton("Points", callback_data="lb_type_points"),
+                        InlineKeyboardButton("Files", callback_data="lb_type_renames"),
+                        InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")
+                    ],
                     [InlineKeyboardButton("Back", callback_data="help")]
                 ])
-            )
-
+                
+                await message.reply_text(text, reply_markup=buttons)
         elif cmd == "freepoints":
             me = await client.get_me()
             unique_code = str(uuid.uuid4())[:8]
