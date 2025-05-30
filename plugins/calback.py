@@ -491,7 +491,3 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 await query.answer("❌ An error occurred", show_alert=True)
             except:
                 pass
-
-
-# Start cleanup task
-# asyncio.create_task(cleanup_metadata_states())
