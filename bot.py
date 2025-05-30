@@ -63,7 +63,18 @@ class Bot(Client):
                 )
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
-
+    # Add this to your bot initialization
+    async def auto_refresh_leaderboards():
+        while True:
+            try:
+                await hyoshcoder.update_leaderboards()
+                await asyncio.sleep(3600)  # Refresh every hour
+            except Exception as e:
+                logger.error(f"Error refreshing leaderboards: {e}")
+                await asyncio.sleep(300)  # Wait 5 minutes before retrying
+    
+    # Start the task when your bot starts
+    asyncio.create_task(auto_refresh_leaderboards())
 async def start_services():
     bot = Bot()
     await bot.start()
