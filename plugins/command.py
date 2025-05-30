@@ -160,59 +160,9 @@ async def command_handler(client: Client, message: Message):
                 reply_markup=keyboard
             )
 
+
         elif cmd in ["leaderboard", "lb"]:
-            # Get user's preferred leaderboard settings
-            period = await hyoshcoder.get_leaderboard_period(user_id)
-            lb_type = await hyoshcoder.get_leaderboard_type(user_id)
-            
-            # Get leaderboard data
-            leaders = await hyoshcoder.get_leaderboard(period, lb_type)
-            
-            if not leaders:
-                await message.reply_text(
-                    "No leaderboard data available yet. Be the first to earn points!",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Back", callback_data="help")]
-                    ])
-                )
-                return
-            
-            # Format leaderboard message
-            emoji = {
-                "points": "✨",
-                "renames": "📁",
-                "referrals": "👥"
-            }.get(lb_type, "🏆")
-            
-            text = (
-                f"🏆 {period.capitalize()} {lb_type.capitalize()} Leaderboard:\n\n"
-                f"{emoji} Top Performers {emoji}\n\n"
-            )
-            
-            for i, user in enumerate(leaders[:10], 1):
-                username = user.get('username', f"User {user.get('_id', 'N/A')}")
-                value = user.get('value', 0)
-                text += f"{i}. {username} - {value} {emoji}\n"
-                if user.get('is_premium', False):
-                    text += "⭐ Premium User\n"
-            
-            # Create buttons for leaderboard navigation
-            buttons = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
-                    InlineKeyboardButton("Weekly", callback_data="lb_period_weekly"),
-                    InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
-                    InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")
-                ],
-                [
-                    InlineKeyboardButton("Points", callback_data="lb_type_points"),
-                    InlineKeyboardButton("Files", callback_data="lb_type_renames"),
-                    InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")
-                ],
-                [InlineKeyboardButton("Back", callback_data="help")]
-            ])
-            
-            await message.reply_text(text, reply_markup=buttons)
+            await show_leaderboard_ui(client, message)
 
         elif cmd == "freepoints":
             me = await client.get_me()
@@ -338,3 +288,103 @@ async def addthumbs(client: Client, message: Message):
         await m.edit_text("**Thumbnail saved successfully ✅**")
     except Exception as e:
         await message.reply_text(f"❌ Error saving thumbnail: {e}")
+
+@Client.on_message(filters.command(["leaderboard", "lb"]))
+async def leaderboard_command(client: Client, message: Message):
+    await show_leaderboard_ui(client, message)
+
+@Client.on_callback_query(filters.regex(r'^lb_period_'))
+async def leaderboard_period_callback(client: Client, callback_query: CallbackQuery):
+    """Handle leaderboard period changes"""
+    user_id = callback_query.from_user.id
+    period = callback_query.data.split('_')[-1]  # daily, weekly, monthly, alltime
+    
+    await hyoshcoder.set_leaderboard_period(user_id, period)
+    await show_leaderboard_ui(client, callback_query.message)
+
+@Client.on_callback_query(filters.regex(r'^lb_type_'))
+async def leaderboard_type_callback(client: Client, callback_query: CallbackQuery):
+    """Handle leaderboard type changes"""
+    user_id = callback_query.from_user.id
+    lb_type = callback_query.data.split('_')[-1]  # points, renames, referrals
+    
+    await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+    await show_leaderboard_ui(client, callback_query.message)
+
+async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
+    """Display leaderboard with proper formatting and navigation"""
+    if isinstance(message, CallbackQuery):
+        user_id = message.from_user.id
+        message = message.message  # Get the Message object from CallbackQuery
+    else:
+        user_id = message.from_user.id
+    
+    period = await hyoshcoder.get_leaderboard_period(user_id)
+    lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+    
+    leaders = await hyoshcoder.get_leaderboard(period, lb_type)
+    
+    if not leaders:
+        text = "No leaderboard data available yet. Be the first to earn points!"
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Back", callback_data="help")]
+        ])
+    else:
+        # Format leaderboard message
+        emoji = {
+            "points": "✨",
+            "renames": "📁",
+            "referrals": "👥"
+        }.get(lb_type, "🏆")
+        
+        text = (
+            f"🏆 {period.capitalize()} {lb_type.capitalize()} Leaderboard:\n\n"
+            f"{emoji} Top Performers {emoji}\n\n"
+        )
+        
+        for i, user in enumerate(leaders[:10], 1):
+            username = user.get('username', f"User {user.get('_id', 'N/A')}")
+            value = user.get('value', 0)
+            text += f"{i}. {username} - {value} {emoji}\n"
+            if user.get('is_premium', False):
+                text += "   ⭐ Premium User\n"
+        
+        # Create buttons for leaderboard navigation
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
+                InlineKeyboardButton("Weekly", callback_data="lb_period_weekly"),
+                InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
+                InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")
+            ],
+            [
+                InlineKeyboardButton("Points", callback_data="lb_type_points"),
+                InlineKeyboardButton("Files", callback_data="lb_type_renames"),
+                InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")
+            ],
+            [InlineKeyboardButton("Back", callback_data="help")]
+        ])
+    
+    # Edit or reply based on context
+    if isinstance(message, Message) and message.reply_markup is None:
+        await message.reply_text(text, reply_markup=buttons)
+    else:
+        await message.edit_text(text, reply_markup=buttons)
+@Client.on_message(filters.private & filters.command("start") & filters.regex(r'points_'))
+async def handle_points_link(client: Client, message: Message):
+    try:
+        code = message.text.split("_")[1]
+        user_id = message.from_user.id
+        
+        result = await hyoshcoder.claim_points_link(user_id, code)
+        
+        if result["success"]:
+            await message.reply_text(
+                f"🎉 You claimed {result['points']} points!\n"
+                f"Remaining claims: {result['remaining_claims']}"
+            )
+        else:
+            await message.reply_text(f"❌ Could not claim points: {result['reason']}")
+    except Exception as e:
+        logger.error(f"Points link claim error: {e}")
+        await message.reply_text("❌ Invalid points link")
