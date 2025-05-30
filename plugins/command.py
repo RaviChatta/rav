@@ -16,6 +16,7 @@ from config import settings
 from scripts import Txt
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
+from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
