@@ -1,21 +1,20 @@
-import os
-import sys
-import time
-import asyncio
 import logging
-import secrets
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any
-import re
-import html
+from typing import Any, Optional, Union
+import secrets
+import asyncio
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, ChatWriteForbidden
+from pyrogram.types import (
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    CallbackQuery
+)
+from pyrogram.errors import FloodWait
 
 from database.data import hyoshcoder
 from config import settings
-from helpers.utils import get_random_photo
 
 # Logging setup
 logger = logging.getLogger(__name__)
@@ -24,63 +23,118 @@ logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
 BOT_START_TIME = datetime.now()
 
-class AdminCommands:
-    """Comprehensive admin command handlers with all management features"""
+class AdminPanel:
+    """Complete admin interface with all management features"""
     
     # ========================
-    # Core Utility Methods
+    # Keyboard Layouts
     # ========================
+    
+    @staticmethod
+    def main_menu() -> InlineKeyboardMarkup:
+        """Main admin menu with all options"""
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ Points System", callback_data="points_menu")],
+            [InlineKeyboardButton("👤 User Management", callback_data="user_menu")],
+            [InlineKeyboardButton("🌟 Premium Tools", callback_data="premium_menu")],
+            [
+                InlineKeyboardButton("📢 Broadcast", callback_data="broadcast_menu"),
+                InlineKeyboardButton("📊 Stats", callback_data="stats_menu")
+            ],
+            [InlineKeyboardButton("🔄 Update Config", callback_data="update_config")]
+        ])
+    
+    @staticmethod
+    def points_menu() -> InlineKeyboardMarkup:
+        """Complete points configuration menu"""
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Set Rename Cost", callback_data="set_rename_cost")],
+            [InlineKeyboardButton("🎁 Referral Bonus", callback_data="set_referral_bonus")],
+            [InlineKeyboardButton("📺 Ad Points", callback_data="set_ad_points")],
+            [InlineKeyboardButton("🔗 Generate Points Link", callback_data="gen_points_link")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+        ])
+    
+    @staticmethod
+    def user_menu() -> InlineKeyboardMarkup:
+        """Complete user management menu"""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("➕ Add Points", callback_data="add_points"),
+                InlineKeyboardButton("➖ Deduct Points", callback_data="deduct_points")
+            ],
+            [
+                InlineKeyboardButton("🚫 Ban User", callback_data="ban_user"),
+                InlineKeyboardButton("✅ Unban User", callback_data="unban_user")
+            ],
+            [InlineKeyboardButton("🔍 Find User", callback_data="find_user")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+        ])
+    
+    @staticmethod
+    def premium_menu() -> InlineKeyboardMarkup:
+        """Complete premium management menu"""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⭐ Activate", callback_data="activate_premium"),
+                InlineKeyboardButton("❌ Deactivate", callback_data="deactivate_premium")
+            ],
+            [InlineKeyboardButton("📝 Check Status", callback_data="check_premium")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+        ])
+    
+    @staticmethod
+    def broadcast_menu() -> InlineKeyboardMarkup:
+        """Broadcast options menu"""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📝 Text Broadcast", callback_data="text_broadcast"),
+                InlineKeyboardButton("🖼 Media Broadcast", callback_data="media_broadcast")
+            ],
+            [InlineKeyboardButton("📊 Stats Only", callback_data="stats_broadcast")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+        ])
+    
+    @staticmethod
+    def back_button(target: str = "admin_main") -> InlineKeyboardMarkup:
+        """Dynamic back button"""
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back", callback_data=target)]
+        ])
 
+    # ========================
+    # Core Utilities
+    # ========================
+    
+    @staticmethod
+    async def get_points_config() -> dict:
+        """Get current points configuration with defaults"""
+        config = await hyoshcoder.get_config("points_config", {})
+        return config or {
+            "rename_cost": 1,
+            "referral_bonus": 10,
+            "ad_points": {"min": 5, "max": 20, "daily_limit": 5},
+            "new_user_balance": 70
+        }
+    
+    @staticmethod
+    async def update_config(key: str, value: Any) -> None:
+        """Safely update configuration"""
+        await hyoshcoder.db.config.update_one(
+            {"key": "points_config"},
+            {"$set": {f"value.{key}": value}},
+            upsert=True
+        )
+    
     @staticmethod
     def _format_uptime() -> str:
-        """Format bot uptime into human-readable string"""
+        """Format bot uptime for display"""
         uptime = datetime.now() - BOT_START_TIME
         days = uptime.days
         hours, remainder = divmod(uptime.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
         return f"{days}d {hours}h {minutes}m" if days else f"{hours}h {minutes}m"
-
-    @staticmethod
-    async def _send_response(
-        message: Message,
-        text: str,
-        photo: str = None,
-        delete_after: int = None,
-        reply_markup=None,
-        parse_mode: Optional[enums.ParseMode] = enums.ParseMode.HTML
-    ) -> Optional[Message]:
-        """Smart response sender with auto-delete and media support"""
-        try:
-            if photo:
-                msg = await message.reply_photo(
-                    photo=photo,
-                    caption=text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode
-                )
-            else:
-                msg = await message.reply_text(
-                    text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode
-                )
-            
-            if delete_after:
-                asyncio.create_task(AdminCommands._auto_delete_message(msg, delete_after))
-            return msg
-        except Exception as e:
-            logger.error(f"Response error: {e}", exc_info=True)
-            return None
-
-    @staticmethod
-    async def _auto_delete_message(message: Message, delay: int):
-        """Auto-delete helper with error handling"""
-        await asyncio.sleep(delay)
-        try:
-            await message.delete()
-        except Exception:
-            pass
-
+    
     @staticmethod
     def _parse_duration(duration_str: str) -> timedelta:
         """Parse duration string into timedelta"""
@@ -92,179 +146,171 @@ class AdminCommands:
                 return timedelta(hours=num)
             elif duration_str.endswith('d'):
                 return timedelta(days=num)
-            return timedelta(hours=1)  # Default to 1 hour if no suffix matched
+            return timedelta(hours=1)
         except (ValueError, TypeError):
-            return timedelta(hours=1)  # Default to 1 hour on parse error
-
+            return timedelta(hours=1)
+    
     @staticmethod
-    def _format_timedelta(delta: timedelta) -> str:
-        """Format timedelta into human-readable string"""
-        days = delta.days
-        hours, remainder = divmod(delta.seconds, 3600)
-        minutes, _ = divmod(remainder, 60)
-        return f"{days}d {hours}h {minutes}m" if days else f"{hours}h {minutes}m"
-
-    @staticmethod
-    def _get_command_args(message: Message) -> List[str]:
-        """Safely get command arguments with None checks"""
-        if not message or not hasattr(message, "command"):
-            return []
-        return getattr(message, "command", []) or []
+    async def _edit_or_reply(
+        target: Union[Message, CallbackQuery],
+        text: str,
+        reply_markup: InlineKeyboardMarkup = None,
+        parse_mode: enums.ParseMode = enums.ParseMode.HTML
+    ) -> Message:
+        """Smart response handler for both messages and callbacks"""
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+            await target.answer()
+            return target.message
+        else:
+            return await target.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
     # ========================
-    # Points System Configuration
+    # Menu Handlers
     # ========================
-
+    
     @staticmethod
-    async def setup_points_config() -> Dict[str, Any]:
-        """Initialize points config if not exists"""
-        default_config = {
-            "per_rename": 2,
-            "new_user_bonus": 70,
-            "referral_bonus": 10,
-            "daily_cap": 100,
-            "premium_multiplier": 2,
-            "ad_watch": {
-                "min_points": 5,
-                "max_points": 20,
-                "cooldown": 3600,
-                "daily_limit": 5
-            }
-        }
+    async def show_main_menu(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Display main admin menu"""
+        return await AdminPanel._edit_or_reply(
+            target,
+            "👨‍💼 <b>Admin Panel</b>\n\n"
+            "Select an option below:",
+            reply_markup=AdminPanel.main_menu()
+        )
+    
+    @staticmethod
+    async def show_points_menu(client: Client, callback: CallbackQuery) -> Message:
+        """Display points configuration menu with current values"""
+        config = await AdminPanel.get_points_config()
         
-        if not await hyoshcoder.get_config("points_config"):
-            await hyoshcoder.db.config.update_one(
-                {"key": "points_config"},
-                {"$set": {"value": default_config}},
-                upsert=True
-            )
-        return default_config
+        text = (
+            "⚙️ <b>Points Configuration</b>\n\n"
+            f"• Rename Cost: {config['rename_cost']} point(s)\n"
+            f"• Referral Bonus: {config['referral_bonus']} points\n"
+            f"• Ad Points: {config['ad_points']['min']}-{config['ad_points']['max']}\n"
+            f"• Daily Ad Limit: {config['ad_points']['daily_limit']}\n"
+            f"• New User Balance: {config['new_user_balance']}"
+        )
+        
+        return await AdminPanel._edit_or_reply(
+            callback,
+            text,
+            reply_markup=AdminPanel.points_menu()
+        )
 
     @staticmethod
-    async def config_points_system(client: Client, message: Message):
-        """Configure points system settings"""
+    async def show_user_menu(client: Client, callback: CallbackQuery) -> Message:
+        """Display user management menu"""
+        return await AdminPanel._edit_or_reply(
+            callback,
+            "👤 <b>User Management</b>\n\n"
+            "Select an action:",
+            reply_markup=AdminPanel.user_menu()
+        )
+    
+    @staticmethod
+    async def show_premium_menu(client: Client, callback: CallbackQuery) -> Message:
+        """Display premium management menu"""
+        return await AdminPanel._edit_or_reply(
+            callback,
+            "🌟 <b>Premium Management</b>\n\n"
+            "Select an action:",
+            reply_markup=AdminPanel.premium_menu()
+        )
+    
+    @staticmethod
+    async def show_broadcast_menu(client: Client, callback: CallbackQuery) -> Message:
+        """Display broadcast options menu"""
+        return await AdminPanel._edit_or_reply(
+            callback,
+            "📢 <b>Broadcast Options</b>\n\n"
+            "Choose broadcast type:",
+            reply_markup=AdminPanel.broadcast_menu()
+        )
+
+    # ========================
+    # Action Handlers
+    # ========================
+    
+    @staticmethod
+    async def handle_set_rename_cost(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Handle rename cost configuration"""
+        return await AdminPanel._edit_or_reply(
+            target,
+            "💳 <b>Set Rename Cost</b>\n\n"
+            "Enter new cost (in points):\n"
+            "<code>/setcost [amount]</code>\n\n"
+            "Example: <code>/setcost 2</code>",
+            reply_markup=AdminPanel.back_button("points_menu")
+        )
+    
+    @staticmethod
+    async def process_set_cost(client: Client, message: Message) -> Message:
+        """Process rename cost change command"""
         try:
-            config = await AdminCommands.setup_points_config()
+            cost = int(message.text.split()[1])
+            if cost < 0:
+                raise ValueError("Cost cannot be negative")
+                
+            await AdminPanel.update_config("rename_cost", cost)
             
-            command = AdminCommands._get_command_args(message)
-            if len(command) < 2:
-                response = (
-                    "🛠 <b>Points Configuration</b>\n\n"
-                    f"• Per Rename: {config['per_rename']}\n"
-                    f"• New User Bonus: {config['new_user_bonus']}\n"
-                    f"• Referral Bonus: {config['referral_bonus']}\n"
-                    f"• Daily Cap: {config['daily_cap']}\n"
-                    f"• Premium Multiplier: {config['premium_multiplier']}x\n\n"
-                    "<b>Usage:</b> <code>/pointconfig setting value</code>\n"
-                    "<b>Example:</b> <code>/pointconfig per_rename 5</code>"
-                )
-                return await AdminCommands._send_response(message, response)
-
-            setting = command[1]
-            
-            if len(command) < 3:
-                return await AdminCommands._send_response(
-                    message, 
-                    f"❌ Missing value for setting {setting}"
-                )
-
-            value = command[2]
-
-            if setting not in config:
-                return await AdminCommands._send_response(
-                    message, 
-                    "❌ Invalid setting. Available settings:\n" +
-                    "\n".join(f"- {k}" for k in config.keys())
-                )
-
-            try:
-                if setting == "ad_watch":
-                    if len(command) < 4:
-                        return await AdminCommands._send_response(
-                            message,
-                            "❌ For ad_watch, specify sub-setting and value\n"
-                            "Example: /pointconfig ad_watch min_points 5"
-                        )
-                    sub_setting = command[2]
-                    value = command[3]
-                    if sub_setting not in config[setting]:
-                        return await AdminCommands._send_response(
-                            message,
-                            f"❌ Invalid ad_watch setting. Available: {', '.join(config[setting].keys())}"
-                        )
-                    config[setting][sub_setting] = int(value)
-                else:
-                    config[setting] = int(value) if setting != "premium_multiplier" else float(value)
-            except ValueError as e:
-                return await AdminCommands._send_response(
-                    message, 
-                    f"❌ Invalid value: {str(e)}"
-                )
-
-            await hyoshcoder.db.config.update_one(
-                {"key": "points_config"},
-                {"$set": {"value": config}},
-                upsert=True
-            )
-
-            await AdminCommands._send_response(
+            return await AdminPanel._edit_or_reply(
                 message,
-                f"✅ Updated {setting} to {value}",
-                delete_after=10
+                f"✅ Rename cost set to {cost} point(s)",
+                reply_markup=AdminPanel.back_button("points_menu")
             )
-        except Exception as e:
-            logger.error(f"Config error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Configuration error: {str(e)}"
+        except (IndexError, ValueError) as e:
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"❌ Invalid input: {str(e)}\n"
+                "Usage: <code>/setcost [amount]</code>",
+                reply_markup=AdminPanel.back_button("points_menu")
             )
-
-    # ========================
-    # Points Link Generation
-    # ========================
-
+    
     @staticmethod
-    async def generate_points_link(client: Client, message: Message):
-        """Generate shareable points links"""
+    async def generate_points_link_ui(client: Client, callback: CallbackQuery) -> Message:
+        """Show points link generation UI"""
+        return await AdminPanel._edit_or_reply(
+            callback,
+            "🔗 <b>Generate Points Link</b>\n\n"
+            "Enter command:\n"
+            "<code>/genlink points uses expires</code>\n\n"
+            "<b>Example:</b> <code>/genlink 50 10 24h</code>\n"
+            "<b>Expires formats:</b> 24h, 7d, 30m",
+            reply_markup=AdminPanel.back_button("points_menu")
+        )
+    
+    @staticmethod
+    async def process_gen_link(client: Client, message: Message) -> Message:
+        """Process points link generation"""
         try:
-            command = AdminCommands._get_command_args(message)
-            if len(command) < 4:
-                return await AdminCommands._send_response(
-                    message,
-                    "🔗 <b>Generate Points Link</b>\n\n"
-                    "<b>Usage:</b> <code>/genlink points uses expires</code>\n"
-                    "<b>Example:</b> <code>/genlink 50 10 24h</code>\n\n"
-                    "<b>Expires formats:</b> 24h, 7d, 30m"
-                )
-
-            try:
-                points = int(command[1])
-                max_uses = int(command[2])
-                expires_in = command[3]
-            except (IndexError, ValueError) as e:
-                return await AdminCommands._send_response(
-                    message,
-                    f"❌ Invalid parameters: {str(e)}"
-                )
-
-            expires_delta = AdminCommands._parse_duration(expires_in)
+            parts = message.text.split()
+            if len(parts) < 4:
+                raise ValueError("Missing parameters")
+            
+            points = int(parts[1])
+            max_uses = int(parts[2])
+            expires_in = parts[3]
+            
+            expires_delta = AdminPanel._parse_duration(expires_in)
             expires_at = datetime.now() + expires_delta
-
+            
             code = secrets.token_urlsafe(8)
             bot_username = (await client.get_me()).username
             link = f"https://t.me/{bot_username}?start=points_{code}"
-
+            
             await hyoshcoder.point_links.insert_one({
                 "code": code,
                 "points": points,
                 "max_uses": max_uses,
                 "uses_left": max_uses,
                 "expires_at": expires_at,
-                "created_by": message.from_user.id,
-                "created_at": datetime.now()
+                "created_at": datetime.now(),
+                "created_by": message.from_user.id
             })
-
-            await AdminCommands._send_response(
+            
+            return await AdminPanel._edit_or_reply(
                 message,
                 f"🔗 <b>Points Link Created</b>\n\n"
                 f"🪙 Points: {points}\n"
@@ -273,384 +319,307 @@ class AdminCommands:
                 f"📌 Code: <code>{code}</code>\n"
                 f"🔗 Link: {link}",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🗑 Delete", callback_data=f"del_link_{code}")]
+                    [InlineKeyboardButton("🗑 Delete", callback_data=f"del_link_{code}")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="points_menu")]
                 ])
             )
+            
         except Exception as e:
-            logger.error(f"Link gen error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Error generating link: {str(e)}"
-            )
-
-    # ========================
-    # User Points Management
-    # ========================
-
-    @staticmethod
-    async def manage_user_points(client: Client, message: Message):
-        """Manage user points"""
-        try:
-            command = AdminCommands._get_command_args(message)
-            if len(command) < 4:
-                return await AdminCommands._send_response(
-                    message,
-                    "👤 <b>Manage User Points</b>\n\n"
-                    "<b>Usage:</b> <code>/userpoints user_id action amount</code>\n"
-                    "<b>Actions:</b> add, deduct, set\n"
-                    "<b>Example:</b> <code>/userpoints 123456 add 50</code>"
-                )
-
-            try:
-                user_id = int(command[1])
-                action = command[2].lower()
-                amount = int(command[3])
-            except (IndexError, ValueError) as e:
-                return await AdminCommands._send_response(
-                    message,
-                    f"❌ Invalid parameters: {str(e)}"
-                )
-
-            user = await hyoshcoder.get_user(user_id)
-            if not user:
-                return await AdminCommands._send_response(message, "❌ User not found")
-
-            if action == "add":
-                await hyoshcoder.add_points(user_id, amount, "admin")
-                new_balance = user["points"]["balance"] + amount
-            elif action == "deduct":
-                if user["points"]["balance"] < amount:
-                    return await AdminCommands._send_response(message, "❌ Not enough points")
-                await hyoshcoder.deduct_points(user_id, amount, "admin")
-                new_balance = user["points"]["balance"] - amount
-            elif action == "set":
-                await hyoshcoder.users.update_one(
-                    {"_id": user_id},
-                    {"$set": {"points.balance": amount}}
-                )
-                new_balance = amount
-            else:
-                return await AdminCommands._send_response(message, "❌ Invalid action")
-
-            await AdminCommands._send_response(
+            return await AdminPanel._edit_or_reply(
                 message,
-                f"✅ Updated user {user_id}\n"
-                f"🪙 New balance: {new_balance}",
-                delete_after=10
+                f"❌ Error: {str(e)}\n\n"
+                "Usage: <code>/genlink points uses expires</code>\n"
+                "Example: <code>/genlink 50 10 24h</code>",
+                reply_markup=AdminPanel.back_button("points_menu")
+            )
+    
+    @staticmethod
+    async def show_stats(client: Client, callback: CallbackQuery) -> Message:
+        """Display comprehensive bot statistics"""
+        stats = await asyncio.gather(
+            hyoshcoder.total_users_count(),
+            hyoshcoder.total_premium_users_count(),
+            hyoshcoder.total_renamed_files(),
+            hyoshcoder.total_points_distributed(),
+            hyoshcoder.total_banned_users_count(),
+            hyoshcoder.get_daily_active_users()
+        )
+        
+        return await AdminPanel._edit_or_reply(
+            callback,
+            "📊 <b>Bot Statistics</b>\n\n"
+            f"⏱ Uptime: {AdminPanel._format_uptime()}\n"
+            f"👥 Total Users: {stats[0]}\n"
+            f"⭐ Premium Users: {stats[1]}\n"
+            f"🚫 Banned Users: {stats[4]}\n"
+            f"📈 Active Today: {stats[5]}\n"
+            f"📂 Files Renamed: {stats[2]}\n"
+            f"🪙 Points Distributed: {stats[3]}",
+            reply_markup=AdminPanel.back_button()
+        )
+    
+    @staticmethod
+    async def handle_add_points(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Initiate add points flow"""
+        return await AdminPanel._edit_or_reply(
+            target,
+            "➕ <b>Add Points</b>\n\n"
+            "Enter command:\n"
+            "<code>/addpoints user_id amount</code>\n\n"
+            "Example: <code>/addpoints 123456 50</code>",
+            reply_markup=AdminPanel.back_button("user_menu")
+        )
+    
+    @staticmethod
+    async def process_add_points(client: Client, message: Message) -> Message:
+        """Process adding points to user"""
+        try:
+            parts = message.text.split()
+            if len(parts) < 3:
+                raise ValueError("Missing parameters")
+            
+            user_id = int(parts[1])
+            amount = int(parts[2])
+            
+            if amount <= 0:
+                raise ValueError("Amount must be positive")
+            
+            await hyoshcoder.add_points(user_id, amount, "admin_addition")
+            user = await hyoshcoder.get_user(user_id)
+            
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"✅ Added {amount} points to user {user_id}\n"
+                f"🪙 New balance: {user['points']['balance']}",
+                reply_markup=AdminPanel.back_button("user_menu")
             )
         except Exception as e:
-            logger.error(f"Points error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Points management error: {str(e)}"
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"❌ Error: {str(e)}\n\n"
+                "Usage: <code>/addpoints user_id amount</code>\n"
+                "Example: <code>/addpoints 123456 50</code>",
+                reply_markup=AdminPanel.back_button("user_menu")
             )
-
-    # ========================
-    # Premium Management
-    # ========================
-
+    
     @staticmethod
-    async def manage_premium(client: Client, message: Message):
-        """Manage premium subscriptions"""
-        try:
-            command = AdminCommands._get_command_args(message)
-            if len(command) < 2:
-                return await AdminCommands._send_response(
-                    message,
-                    "🌟 <b>Premium Management</b>\n\n"
-                    "<b>Usage:</b> <code>/premium user_id action [duration] [plan]</code>\n"
-                    "<b>Actions:</b> activate, deactivate, check\n"
-                    "<b>Example:</b> <code>/premium 123456 activate 7d gold</code>"
-                )
-
-            try:
-                user_id = int(command[1])
-                action = command[2].lower()
-            except (IndexError, ValueError) as e:
-                return await AdminCommands._send_response(
-                    message,
-                    f"❌ Invalid parameters: {str(e)}"
-                )
-
-            if action == "check":
-                status = await hyoshcoder.check_premium_status(user_id)
-                response = (
-                    f"🌟 <b>Premium Status for {user_id}</b>\n\n"
-                    f"Status: {'✅ Active' if status['is_premium'] else '❌ Inactive'}\n"
-                    f"Valid Until: {status.get('until', 'N/A')}\n"
-                    f"Plan: {status.get('plan', 'N/A')}"
-                )
-                return await AdminCommands._send_response(message, response)
-
-            elif action == "activate":
-                if len(command) < 4:
-                    return await AdminCommands._send_response(
-                        message,
-                        "❌ Missing duration or plan\n"
-                        "Example: /premium 123456 activate 7d gold"
-                    )
-                
-                duration = AdminCommands._parse_duration(command[3])
-                plan = command[4] if len(command) > 4 else "premium"
-                
-                success = await hyoshcoder.activate_premium(
-                    user_id=user_id,
-                    plan=plan,
-                    duration_days=duration.days
-                )
-                
-                if not success:
-                    return await AdminCommands._send_response(
-                        message, 
-                        "❌ Failed to activate premium"
-                    )
-                
-                return await AdminCommands._send_response(
-                    message,
-                    f"✅ Activated premium for {user_id}\n"
-                    f"⏳ Duration: {AdminCommands._format_timedelta(duration)}\n"
-                    f"📝 Plan: {plan}",
-                    delete_after=15
-                )
-
-            elif action == "deactivate":
-                success = await hyoshcoder.deactivate_premium(user_id)
-                if not success:
-                    return await AdminCommands._send_response(
-                        message, 
-                        "❌ Failed to deactivate premium"
-                    )
-                return await AdminCommands._send_response(
-                    message, 
-                    f"✅ Deactivated premium for {user_id}",
-                    delete_after=10
-                )
-
-            else:
-                return await AdminCommands._send_response(
-                    message, 
-                    "❌ Invalid action. Use activate, deactivate or check"
-                )
-
-        except Exception as e:
-            logger.error(f"Premium error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Premium management error: {str(e)}"
-            )
-
-    # ========================
-    # Bot Statistics
-    # ========================
-
+    async def handle_ban_user(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Initiate user ban flow"""
+        return await AdminPanel._edit_or_reply(
+            target,
+            "🚫 <b>Ban User</b>\n\n"
+            "Enter command:\n"
+            "<code>/ban user_id reason</code>\n\n"
+            "Example: <code>/ban 123456 Spamming</code>",
+            reply_markup=AdminPanel.back_button("user_menu")
+        )
+    
     @staticmethod
-    async def bot_stats(client: Client, message: Message):
-        """Show bot statistics"""
+    async def process_ban_user(client: Client, message: Message) -> Message:
+        """Process banning a user"""
         try:
-            stats = await asyncio.gather(
-                hyoshcoder.total_users_count(),
-                hyoshcoder.total_premium_users_count(),
-                hyoshcoder.total_renamed_files(),
-                hyoshcoder.total_points_distributed(),
-                hyoshcoder.total_banned_users_count(),
-                hyoshcoder.get_daily_active_users()
-            )
-
-            response = (
-                "📊 <b>Bot Statistics</b>\n\n"
-                f"⏱ Uptime: {AdminCommands._format_uptime()}\n"
-                f"👥 Total Users: {stats[0]}\n"
-                f"⭐ Premium Users: {stats[1]}\n"
-                f"🚫 Banned Users: {stats[4]}\n"
-                f"📈 Active Today: {stats[5]}\n"
-                f"📂 Files Renamed: {stats[2]}\n"
-                f"🪙 Points Distributed: {stats[3]}"
-            )
-
-            await AdminCommands._send_response(message, response)
-        except Exception as e:
-            logger.error(f"Stats error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Error getting stats: {str(e)}"
-            )
-
-    # ========================
-    # User Ban Management
-    # ========================
-
-    @staticmethod
-    async def ban_user(client: Client, message: Message):
-        """Ban a user"""
-        try:
-            command = AdminCommands._get_command_args(message)
-            if len(command) < 2:
-                return await AdminCommands._send_response(
-                    message,
-                    "🚫 <b>Ban User</b>\n\n"
-                    "<b>Usage:</b> <code>/ban user_id [reason]</code>\n"
-                    "<b>Example:</b> <code>/ban 123456 Spamming</code>"
-                )
-
-            try:
-                user_id = int(command[1])
-                reason = ' '.join(command[2:]) or "No reason provided"
-            except (IndexError, ValueError) as e:
-                return await AdminCommands._send_response(
-                    message,
-                    f"❌ Invalid parameters: {str(e)}"
-                )
-
-            success = await hyoshcoder.ban_user(user_id, 30, reason)  # Default 30 day ban
-            if not success:
-                return await AdminCommands._send_response(message, "❌ Failed to ban user")
-
-            await AdminCommands._send_response(
+            parts = message.text.split()
+            if len(parts) < 2:
+                raise ValueError("Missing user ID")
+            
+            user_id = int(parts[1])
+            reason = ' '.join(parts[2:]) if len(parts) > 2 else "No reason provided"
+            
+            await hyoshcoder.ban_user(user_id, 30, reason)  # 30 day ban
+            
+            return await AdminPanel._edit_or_reply(
                 message,
                 f"✅ Banned user {user_id}\n"
                 f"📝 Reason: {reason}",
-                delete_after=15
+                reply_markup=AdminPanel.back_button("user_menu")
             )
         except Exception as e:
-            logger.error(f"Ban error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Ban error: {str(e)}"
-            )
-
-    @staticmethod
-    async def unban_user(client: Client, message: Message):
-        """Unban a user"""
-        try:
-            command = AdminCommands._get_command_args(message)
-            if len(command) < 2:
-                return await AdminCommands._send_response(
-                    message,
-                    "✅ <b>Unban User</b>\n\n"
-                    "<b>Usage:</b> <code>/unban user_id</code>\n"
-                    "<b>Example:</b> <code>/unban 123456</code>"
-                )
-
-            try:
-                user_id = int(command[1])
-            except (IndexError, ValueError) as e:
-                return await AdminCommands._send_response(
-                    message,
-                    f"❌ Invalid user ID: {str(e)}"
-                )
-
-            success = await hyoshcoder.remove_ban(user_id)
-            if not success:
-                return await AdminCommands._send_response(message, "❌ Failed to unban user")
-
-            await AdminCommands._send_response(
+            return await AdminPanel._edit_or_reply(
                 message,
-                f"✅ Unbanned user {user_id}",
-                delete_after=15
+                f"❌ Error: {str(e)}\n\n"
+                "Usage: <code>/ban user_id reason</code>\n"
+                "Example: <code>/ban 123456 Spamming</code>",
+                reply_markup=AdminPanel.back_button("user_menu")
+            )
+    
+    @staticmethod
+    async def handle_activate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Initiate premium activation flow"""
+        return await AdminPanel._edit_or_reply(
+            target,
+            "🌟 <b>Activate Premium</b>\n\n"
+            "Enter command:\n"
+            "<code>/premium user_id duration plan</code>\n\n"
+            "Example: <code>/premium 123456 30d gold</code>\n"
+            "Duration formats: 7d, 30d, 1y\n"
+            "Plan options: basic, premium, gold",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
+    
+    @staticmethod
+    async def process_activate_premium(client: Client, message: Message) -> Message:
+        """Process premium activation"""
+        try:
+            parts = message.text.split()
+            if len(parts) < 3:
+                raise ValueError("Missing parameters")
+            
+            user_id = int(parts[1])
+            duration_str = parts[2]
+            plan = parts[3] if len(parts) > 3 else "premium"
+            
+            duration = AdminPanel._parse_duration(duration_str)
+            
+            await hyoshcoder.activate_premium(
+                user_id=user_id,
+                plan=plan,
+                duration_days=duration.days
+            )
+            
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"✅ Activated premium for user {user_id}\n"
+                f"⏳ Duration: {duration_str}\n"
+                f"📝 Plan: {plan}",
+                reply_markup=AdminPanel.back_button("premium_menu")
             )
         except Exception as e:
-            logger.error(f"Unban error: {e}", exc_info=True)
-            await AdminCommands._send_response(
-                message, 
-                f"❌ Unban error: {str(e)}"
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"❌ Error: {str(e)}\n\n"
+                "Usage: <code>/premium user_id duration plan</code>\n"
+                "Example: <code>/premium 123456 30d gold</code>",
+                reply_markup=AdminPanel.back_button("premium_menu")
             )
-
-    # ========================
-    # Admin Panel
-    # ========================
-
+    
     @staticmethod
-    async def admin_panel(client: Client, message: Message):
-        """Show admin panel"""
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🛠 Points Config", callback_data="points_config")],
-            [InlineKeyboardButton("🔗 Generate Link", callback_data="gen_link")],
-            [InlineKeyboardButton("👤 Manage Users", callback_data="user_manage")],
-            [InlineKeyboardButton("🌟 Premium", callback_data="premium_manage")],
-            [InlineKeyboardButton("📊 Stats", callback_data="bot_stats")]
-        ])
-        await AdminCommands._send_response(
-            message,
-            "👨‍💼 <b>Admin Panel</b>\n\n"
-            "Select an option below:",
-            reply_markup=buttons
+    async def handle_broadcast(client: Client, callback: CallbackQuery) -> Message:
+        """Initiate broadcast flow"""
+        return await AdminPanel._edit_or_reply(
+            callback,
+            "📢 <b>Broadcast Message</b>\n\n"
+            "Enter your broadcast message:\n"
+            "(Reply to this message with your content)",
+            reply_markup=AdminPanel.back_button("broadcast_menu")
         )
+    
+    @staticmethod
+    async def process_broadcast(client: Client, message: Message) -> Message:
+        """Process sending broadcast to all users"""
+        try:
+            if not message.reply_to_message:
+                raise ValueError("You must reply to the broadcast instruction message")
+            
+            broadcast_msg = message.reply_to_message
+            users = await hyoshcoder.get_all_users()
+            total = len(users)
+            success = 0
+            failed = 0
+            
+            status_msg = await message.reply_text(
+                f"📢 Broadcasting to {total} users...\n"
+                f"✅ Success: {success}\n"
+                f"❌ Failed: {failed}"
+            )
+            
+            for user in users:
+                try:
+                    if broadcast_msg.text:
+                        await client.send_message(
+                            chat_id=user["_id"],
+                            text=broadcast_msg.text,
+                            parse_mode=enums.ParseMode.HTML
+                        )
+                    else:
+                        await broadcast_msg.copy(chat_id=user["_id"])
+                    success += 1
+                except Exception:
+                    failed += 1
+                
+                if (success + failed) % 10 == 0:
+                    await status_msg.edit_text(
+                        f"📢 Broadcasting to {total} users...\n"
+                        f"✅ Success: {success}\n"
+                        f"❌ Failed: {failed}"
+                    )
+            
+            await status_msg.edit_text(
+                f"📢 Broadcast Complete!\n"
+                f"✅ Success: {success}\n"
+                f"❌ Failed: {failed}"
+            )
+            
+        except Exception as e:
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"❌ Broadcast error: {str(e)}",
+                reply_markup=AdminPanel.back_button("broadcast_menu")
+            )
 
-# Command handlers
-@Client.on_message(filters.private & filters.command(["admin", "pointconfig", "genlink", "userpoints", "premium", "stats", "ban", "unban"]) & filters.user(ADMIN_USER_ID))
-async def admin_commands_handler(client: Client, message: Message):
-    try:
-        command = AdminCommands._get_command_args(message)
-        if not command:
-            return
-        
-        cmd = command[0].lower()
-        
-        if cmd == "admin":
-            await AdminCommands.admin_panel(client, message)
-        elif cmd == "pointconfig":
-            await AdminCommands.config_points_system(client, message)
-        elif cmd == "genlink":
-            await AdminCommands.generate_points_link(client, message)
-        elif cmd == "userpoints":
-            await AdminCommands.manage_user_points(client, message)
-        elif cmd == "premium":
-            await AdminCommands.manage_premium(client, message)
-        elif cmd == "stats":
-            await AdminCommands.bot_stats(client, message)
-        elif cmd == "ban":
-            await AdminCommands.ban_user(client, message)
-        elif cmd == "unban":
-            await AdminCommands.unban_user(client, message)
-    except Exception as e:
-        logger.error(f"Command handler error: {e}", exc_info=True)
-        await message.reply_text(f"❌ Command error: {str(e)}")
+# ========================
+# Command Handlers
+# ========================
 
-# Callback handlers
+@Client.on_message(filters.command("admin") & filters.user(ADMIN_USER_ID))
+async def admin_command(client: Client, message: Message):
+    await AdminPanel.show_main_menu(client, message)
+
+@Client.on_message(filters.command("setcost") & filters.user(ADMIN_USER_ID))
+async def set_cost_command(client: Client, message: Message):
+    await AdminPanel.process_set_cost(client, message)
+
+@Client.on_message(filters.command("genlink") & filters.user(ADMIN_USER_ID))
+async def gen_link_command(client: Client, message: Message):
+    await AdminPanel.process_gen_link(client, message)
+
+@Client.on_message(filters.command("addpoints") & filters.user(ADMIN_USER_ID))
+async def add_points_command(client: Client, message: Message):
+    await AdminPanel.process_add_points(client, message)
+
+@Client.on_message(filters.command("ban") & filters.user(ADMIN_USER_ID))
+async def ban_command(client: Client, message: Message):
+    await AdminPanel.process_ban_user(client, message)
+
+@Client.on_message(filters.command("premium") & filters.user(ADMIN_USER_ID))
+async def premium_command(client: Client, message: Message):
+    await AdminPanel.process_activate_premium(client, message)
+
+# ========================
+# Callback Handlers
+# ========================
+
 @Client.on_callback_query(filters.user(ADMIN_USER_ID))
-async def admin_callbacks(client: Client, callback: CallbackQuery):
-    try:
-        data = callback.data
-        
-        if data == "points_config":
-            await AdminCommands.config_points_system(client, callback.message)
-        elif data == "gen_link":
-            await AdminCommands.generate_points_link(client, callback.message)
-        elif data == "user_manage":
-            await callback.message.edit_text(
-                "👤 <b>User Management</b>\n\n"
-                "Commands:\n"
-                "<code>/ban user_id [reason]</code>\n"
-                "<code>/unban user_id</code>\n"
-                "<code>/userpoints user_id action amount</code>\n\n"
-                "<b>Actions:</b> add, deduct, set",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]
-                ])
-            )
-        elif data == "premium_manage":
-            await callback.message.edit_text(
-                "🌟 <b>Premium Management</b>\n\n"
-                "Commands:\n"
-                "<code>/premium user_id activate duration plan</code>\n"
-                "<code>/premium user_id deactivate</code>\n"
-                "<code>/premium user_id check</code>\n\n"
-                "<b>Plans:</b> basic, premium, gold",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]
-                ])
-            )
-        elif data == "bot_stats":
-            await AdminCommands.bot_stats(client, callback.message)
-        elif data.startswith("del_link_"):
-            code = data.split("_")[2]
-            await hyoshcoder.point_links.delete_one({"code": code})
-            await callback.answer("✅ Link deleted")
-            await callback.message.delete()
-        elif data == "admin_panel":
-            await AdminCommands.admin_panel(client, callback.message)
-        
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Callback error: {e}", exc_info=True)
-        await callback.answer("❌ Error occurred")
+async def handle_admin_callbacks(client: Client, callback: CallbackQuery):
+    data = callback.data
+    
+    if data == "admin_main":
+        await AdminPanel.show_main_menu(client, callback)
+    elif data == "points_menu":
+        await AdminPanel.show_points_menu(client, callback)
+    elif data == "user_menu":
+        await AdminPanel.show_user_menu(client, callback)
+    elif data == "premium_menu":
+        await AdminPanel.show_premium_menu(client, callback)
+    elif data == "broadcast_menu":
+        await AdminPanel.show_broadcast_menu(client, callback)
+    elif data == "stats_menu":
+        await AdminPanel.show_stats(client, callback)
+    elif data == "set_rename_cost":
+        await AdminPanel.handle_set_rename_cost(client, callback)
+    elif data == "gen_points_link":
+        await AdminPanel.generate_points_link_ui(client, callback)
+    elif data == "add_points":
+        await AdminPanel.handle_add_points(client, callback)
+    elif data == "ban_user":
+        await AdminPanel.handle_ban_user(client, callback)
+    elif data == "activate_premium":
+        await AdminPanel.handle_activate_premium(client, callback)
+    elif data == "text_broadcast":
+        await AdminPanel.handle_broadcast(client, callback)
+    elif data.startswith("del_link_"):
+        code = data.split("_")[2]
+        await hyoshcoder.point_links.delete_one({"code": code})
+        await callback.answer("✅ Link deleted")
+        await AdminPanel.show_points_menu(client, callback)
+    
+    await callback.answer()
