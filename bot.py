@@ -11,6 +11,7 @@ from config import settings
 from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
+
 logger = logging.getLogger(__name__)
 load_dotenv()
 
@@ -33,8 +34,7 @@ class Bot(Client):
     async def start(self):
         await super().start()
         await initialize_database()
-        #await get_database()
-        
+
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
@@ -45,14 +45,9 @@ class Bot(Client):
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
 
-        #await hyoshcoder.clear_all_user_channels()
-
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
                 curr = datetime.now(timezone("Asia/Kolkata"))
-                date = curr.strftime('%d %B, %Y')
-                time_str = curr.strftime('%I:%M:%S %p')
-
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg",
@@ -63,18 +58,20 @@ class Bot(Client):
                 )
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
-    # Add this to your bot initialization
-    async def auto_refresh_leaderboards():
+
+        # Start auto-refresh leaderboard task
+        asyncio.create_task(self.auto_refresh_leaderboards())
+
+    async def auto_refresh_leaderboards(self):
         while True:
             try:
                 await hyoshcoder.update_leaderboards()
                 await asyncio.sleep(3600)  # Refresh every hour
             except Exception as e:
                 logger.error(f"Error refreshing leaderboards: {e}")
-                await asyncio.sleep(300)  # Wait 5 minutes before retrying
-    
-    # Start the task when your bot starts
-    asyncio.create_task(auto_refresh_leaderboards())
+                await asyncio.sleep(300)  # Retry after 5 minutes
+
+
 async def start_services():
     bot = Bot()
     await bot.start()
@@ -84,10 +81,9 @@ async def start_services():
         await app.setup()
         site = web.TCPSite(app, "0.0.0.0", 8000)
         await site.start()
-    
+
     try:
-        # Keep the bot running
-        await asyncio.Event().wait()
+        await asyncio.Event().wait()  # Keep bot running
     except (asyncio.CancelledError, KeyboardInterrupt):
         print("Shutting down...")
     finally:
@@ -95,6 +91,7 @@ async def start_services():
             await site.stop()
             await app.cleanup()
         await bot.stop()
+
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
@@ -104,11 +101,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        # Cancel all running tasks
         pending = asyncio.all_tasks(loop)
         for task in pending:
             task.cancel()
-        
-        # Wait for tasks to finish cancellation
         loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
