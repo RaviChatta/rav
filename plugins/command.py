@@ -297,7 +297,7 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
     """Display leaderboard with proper formatting and navigation"""
     if isinstance(message, CallbackQuery):
         user_id = message.from_user.id
-        message = message.message  # Get the Message object from CallbackQuery
+        message = message.message
     else:
         user_id = message.from_user.id
     
@@ -413,3 +413,20 @@ async def handle_points_link(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Points link claim error: {e}")
         await message.reply_text("❌ Invalid points link")
+@Client.on_callback_query(filters.regex(r'^lb_period_'))
+async def leaderboard_period_callback(client: Client, callback_query: CallbackQuery):
+    """Handle leaderboard period changes"""
+    user_id = callback_query.from_user.id
+    period = callback_query.data.split('_')[-1]  # daily, weekly, monthly, alltime
+    
+    await hyoshcoder.set_leaderboard_period(user_id, period)
+    await show_leaderboard_ui(client, callback_query.message)
+
+@Client.on_callback_query(filters.regex(r'^lb_type_'))
+async def leaderboard_type_callback(client: Client, callback_query: CallbackQuery):
+    """Handle leaderboard type changes"""
+    user_id = callback_query.from_user.id
+    lb_type = callback_query.data.split('_')[-1]  # points, renames, referrals
+    
+    await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+    await show_leaderboard_ui(client, callback_query.message)
