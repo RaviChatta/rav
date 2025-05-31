@@ -3,6 +3,8 @@ import datetime
 import pytz
 import secrets
 from config import settings
+# Add this with your other imports at the top of data.py
+from pyrogram import Client
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from bson.objectid import ObjectId
 from urllib.parse import urlencode
@@ -18,7 +20,8 @@ class Database:
         """Initialize database connection with enhanced settings."""
         self._uri = uri
         self._database_name = database_name
-        self._client = None
+ #       self._client = None
+        self._client = client
         self.db = None
         self._is_connected = False
         # Initialize collection references
