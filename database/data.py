@@ -892,7 +892,7 @@ class Database:
             logger.error(f"Failed to update leaderboards: {e}")
             return False
     async def _update_leaderboard_period(self, period: str):
-    """Update a specific leaderboard period"""
+        """Update a specific leaderboard period"""
     try:
         leaders = await self._get_leaderboard_data(period)
         await self.leaderboards.update_one(
