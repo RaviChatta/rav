@@ -755,21 +755,113 @@ class Database:
             logging.error(f"Error claiming points link {code} by {user_id}: {e}")
             return {"success": False, "reason": "Internal error"}
 
-    async def set_expend_points(self, user_id: int, points: int, code: str) -> bool:
-        """Track points expenditure"""
+    async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
+        """
+        Track points expenditure and create claimable reward
+        
+        Args:
+            user_id: User ID creating the reward link
+            points: Points amount to reward
+            code: Unique code for claiming (auto-generated if None)
+        
+        Returns:
+            Dict: {
+                'success': bool,
+                'code': str (if successful),
+                'error': str (if failed)
+            }
+        """
         try:
-            await self.transactions.insert_one({
+            # Validate user exists
+            if not await self.is_user_exist(user_id):
+                return {'success': False, 'error': 'User does not exist'}
+                
+            # Generate code if not provided
+            if not code:
+                code = secrets.token_urlsafe(8)
+            
+            # Record the expenditure
+            result = await self.transactions.insert_one({
                 "user_id": user_id,
-                "type": "free_points",
+                "type": "points_expenditure",
                 "amount": points,
                 "code": code,
-                "timestamp": datetime.datetime.now()
+                "status": "pending",
+                "created_at": datetime.datetime.now(),
+                "claimed_by": [],
+                "expires_at": datetime.datetime.now() + datetime.timedelta(hours=24)
             })
-            return True
+            
+            if not result.inserted_id:
+                return {'success': False, 'error': 'Failed to record transaction'}
+                
+            return {'success': True, 'code': code}
+            
         except Exception as e:
-            logging.error(f"Error tracking points expenditure: {e}")
-            return False
-
+            logging.error(f"Error setting expend points: {e}")
+            return {'success': False, 'error': str(e)}
+    async def claim_expend_points(self, claimer_id: int, code: str) -> Dict:
+        """
+        Claim points from an expenditure record
+        
+        Args:
+            claimer_id: User ID claiming the points
+            code: Unique claim code
+        
+        Returns:
+            Dict: {
+                'success': bool,
+                'points': int (if successful),
+                'error': str (if failed)
+            }
+        """
+        try:
+            # Find the expenditure record
+            record = await self.transactions.find_one({
+                "code": code,
+                "status": "pending",
+                "expires_at": {"$gt": datetime.datetime.now()}
+            })
+            
+            if not record:
+                return {'success': False, 'error': 'Invalid or expired code'}
+                
+            # Check if already claimed by this user
+            if claimer_id in record.get('claimed_by', []):
+                return {'success': False, 'error': 'Already claimed'}
+                
+            # Add points to claimer
+            await self.add_points(
+                claimer_id,
+                record['amount'],
+                source="ad_reward",
+                description=f"Claimed from code {code}"
+            )
+            
+            # Add bonus to creator
+            creator_bonus = record['amount'] // 2
+            if creator_bonus > 0:
+                await self.add_points(
+                    record['user_id'],
+                    creator_bonus,
+                    source="referral_ad",
+                    description=f"Bonus for ad claim by {claimer_id}"
+                )
+            
+            # Update the record
+            await self.transactions.update_one(
+                {"_id": record['_id']},
+                {
+                    "$push": {"claimed_by": claimer_id},
+                    "$set": {"status": "claimed"}
+                }
+            )
+            
+            return {'success': True, 'points': record['amount']}
+            
+        except Exception as e:
+            logging.error(f"Error claiming expend points: {e}")
+            return {'success': False, 'error': str(e)}
     async def update_leaderboards(self):
         """Update all leaderboards (run periodically)."""
         await self._update_daily_leaderboard()
