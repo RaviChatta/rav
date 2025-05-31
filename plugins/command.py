@@ -42,7 +42,7 @@ async def command_handler(client: Client, message: Message):
             await hyoshcoder.add_user(user_id)
             
             # Send sticker
-            m = await message.reply_sticker("CAACAgIAAxkBAALmzGXSSt3ppnOsSl_spnAP8wHC26jpAAJEGQACCOHZSVKp6_XqghKoHgQ")
+            m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
             await asyncio.sleep(3)
             await m.delete()
 
