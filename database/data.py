@@ -126,7 +126,7 @@ class Database:
             except Exception as e:
                 logging.error(f"Index error in {collection}: {e}")
     def set_client(self, client: Client):
-    """Store the Pyrogram client for Telegram API calls"""
+        """Store the Pyrogram client for Telegram API calls"""
     self._pyrogram_client = client
     logger.info("Pyrogram client set for database operations")
     
