@@ -20,8 +20,8 @@ class Database:
         """Initialize database connection with enhanced settings."""
         self._uri = uri
         self._database_name = database_name
- #       self._client = None
-        self._client = client
+        self._client = None
+        self._pyrogram_client = None
         self.db = None
         self._is_connected = False
         # Initialize collection references
@@ -125,10 +125,11 @@ class Database:
                 await self.db[collection].create_index(index_spec, **options[0])
             except Exception as e:
                 logging.error(f"Index error in {collection}: {e}")
+
     def set_client(self, client: Client):
         """Store the Pyrogram client for Telegram API calls"""
-    self._pyrogram_client = client
-    logger.info("Pyrogram client set for database operations")
+        self._pyrogram_client = client
+        logger.info("Pyrogram client set for database operations")
     
     def new_user(self, id: int) -> Dict[str, Any]:
         """Create a new user document with comprehensive default values."""
@@ -227,12 +228,14 @@ class Database:
     async def get_user_by_code(self, code: str) -> Optional[Dict]:
         """Find user by their unique ad code"""
         return await self.users.find_one({"ad_code": code})
+
     async def mark_ad_code_used(self, code: str) -> None:
         """Mark an ad code as used"""
         await self.users.update_one(
             {"ad_code": code},
             {"$set": {"ad_code_used": True}}
         )
+
     async def update_user_activity(self, user_id: int) -> bool:
         """Update user's last active timestamp."""
         try:
@@ -807,6 +810,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error setting expend points: {e}")
             return {'success': False, 'error': str(e)}
+
     async def claim_expend_points(self, claimer_id: int, code: str) -> Dict:
         """
         Claim points from an expenditure record
@@ -869,6 +873,7 @@ class Database:
         except Exception as e:
             logging.error(f"Error claiming expend points: {e}")
             return {'success': False, 'error': str(e)}
+
     async def update_leaderboards(self):
         """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
         try:
@@ -891,51 +896,54 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to update leaderboards: {e}")
             return False
+
     async def _update_leaderboard_period(self, period: str):
         """Update a specific leaderboard period"""
-    try:
-        leaders = await self._get_leaderboard_data(period)
-        await self.leaderboards.update_one(
-            {"period": period},
-            {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
-            upsert=True
-        )
-    except Exception as e:
-        logger.error(f"Error updating {period} leaderboard: {e}")
+        try:
+            leaders = await self._get_leaderboard_data(period)
+            await self.leaderboards.update_one(
+                {"period": period},
+                {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error updating {period} leaderboard: {e}")
+
     async def _get_leaderboard_data(self, period: str) -> List[Dict]:
         """Get leaderboard data for a specific period"""
-    try:
-        if period == "alltime":
-            pipeline = [
-                {"$sort": {"points.balance": -1}},
-                {"$limit": 100},
-                {"$project": {
-                    "_id": 1,
-                    "username": 1,
-                    "points": "$points.balance",
-                    "is_premium": "$premium.is_premium"
-                }}
-            ]
-        else:
-            days = 1 if period == "daily" else 7 if period == "weekly" else 30
-            start_date = datetime.datetime.now() - datetime.timedelta(days=days)
+        try:
+            if period == "alltime":
+                pipeline = [
+                    {"$sort": {"points.balance": -1}},
+                    {"$limit": 100},
+                    {"$project": {
+                        "_id": 1,
+                        "username": 1,
+                        "points": "$points.balance",
+                        "is_premium": "$premium.is_premium"
+                    }}
+                ]
+            else:
+                days = 1 if period == "daily" else 7 if period == "weekly" else 30
+                start_date = datetime.datetime.now() - datetime.timedelta(days=days)
+                
+                pipeline = [
+                    {"$match": {"last_active": {"$gte": start_date}}},
+                    {"$sort": {"points.balance": -1}},
+                    {"$limit": 100},
+                    {"$project": {
+                        "_id": 1,
+                        "username": 1,
+                        "points": "$points.balance",
+                        "is_premium": "$premium.is_premium"
+                    }}
+                ]
             
-            pipeline = [
-                {"$match": {"last_active": {"$gte": start_date}}},
-                {"$sort": {"points.balance": -1}},
-                {"$limit": 100},
-                {"$project": {
-                    "_id": 1,
-                    "username": 1,
-                    "points": "$points.balance",
-                    "is_premium": "$premium.is_premium"
-                }}
-            ]
-        
-        return await self.users.aggregate(pipeline).to_list(length=100)
-    except Exception as e:
-        logger.error(f"Error getting {period} leaderboard data: {e}")
-        return []
+            return await self.users.aggregate(pipeline).to_list(length=100)
+        except Exception as e:
+            logger.error(f"Error getting {period} leaderboard data: {e}")
+            return []
+
     async def _update_daily_leaderboard(self):
         """Update daily leaderboard."""
         try:
@@ -1270,6 +1278,7 @@ class Database:
         except Exception as e:
             logger.error(f"Leaderboard error: {e}")
             return []
+
     async def get_points_links_stats(self, admin_id: int = None) -> Dict:
         """Get statistics about points links."""
         try:
