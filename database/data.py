@@ -125,7 +125,11 @@ class Database:
                 await self.db[collection].create_index(index_spec, **options[0])
             except Exception as e:
                 logging.error(f"Index error in {collection}: {e}")
-
+    def set_client(self, client: Client):
+    """Store the Pyrogram client for Telegram API calls"""
+    self._pyrogram_client = client
+    logger.info("Pyrogram client set for database operations")
+    
     def new_user(self, id: int) -> Dict[str, Any]:
         """Create a new user document with comprehensive default values."""
         now = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
@@ -866,12 +870,72 @@ class Database:
             logging.error(f"Error claiming expend points: {e}")
             return {'success': False, 'error': str(e)}
     async def update_leaderboards(self):
-        """Update all leaderboards (run periodically)."""
-        await self._update_daily_leaderboard()
-        await self._update_weekly_leaderboard()
-        await self._update_monthly_leaderboard()
-        await self._update_alltime_leaderboard()
-
+        """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
+        try:
+            # Update daily leaderboard
+            await self._update_leaderboard_period("daily")
+            
+            # Update weekly leaderboard (only on Sundays)
+            if datetime.datetime.now().weekday() == 6:  # Sunday
+                await self._update_leaderboard_period("weekly")
+                
+            # Update monthly leaderboard (on 1st of month)
+            if datetime.datetime.now().day == 1:
+                await self._update_leaderboard_period("monthly")
+                
+            # Always update all-time leaderboard
+            await self._update_leaderboard_period("alltime")
+            
+            logger.info("Leaderboards updated successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update leaderboards: {e}")
+            return False
+    async def _update_leaderboard_period(self, period: str):
+    """Update a specific leaderboard period"""
+    try:
+        leaders = await self._get_leaderboard_data(period)
+        await self.leaderboards.update_one(
+            {"period": period},
+            {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"Error updating {period} leaderboard: {e}")
+    async def _get_leaderboard_data(self, period: str) -> List[Dict]:
+    """Get leaderboard data for a specific period"""
+    try:
+        if period == "alltime":
+            pipeline = [
+                {"$sort": {"points.balance": -1}},
+                {"$limit": 100},
+                {"$project": {
+                    "_id": 1,
+                    "username": 1,
+                    "points": "$points.balance",
+                    "is_premium": "$premium.is_premium"
+                }}
+            ]
+        else:
+            days = 1 if period == "daily" else 7 if period == "weekly" else 30
+            start_date = datetime.datetime.now() - datetime.timedelta(days=days)
+            
+            pipeline = [
+                {"$match": {"last_active": {"$gte": start_date}}},
+                {"$sort": {"points.balance": -1}},
+                {"$limit": 100},
+                {"$project": {
+                    "_id": 1,
+                    "username": 1,
+                    "points": "$points.balance",
+                    "is_premium": "$premium.is_premium"
+                }}
+            ]
+        
+        return await self.users.aggregate(pipeline).to_list(length=100)
+    except Exception as e:
+        logger.error(f"Error getting {period} leaderboard data: {e}")
+        return []
     async def _update_daily_leaderboard(self):
         """Update daily leaderboard."""
         try:
