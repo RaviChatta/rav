@@ -88,24 +88,40 @@ class Database:
                     raise e
 
     async def _create_indexes(self):
-        """Create necessary indexes with enhanced error handling."""
+        """Create optimized indexes for all collections."""
         indexes = [
-            ("users", [("referrer_id", False)]),
-            ("users", [("ban_status.is_banned", False)]),
-            ("point_links", [("code", True), ("expires_at", False)]),
-            ("transactions", [("user_id", False), ("timestamp", False)]),
-            ("leaderboards", [("period", False), ("type", False), ("start_date", False), ("end_date", False)]),
-            ("file_stats", [("user_id", False), ("date", False), ("timestamp", -1)]),
-            ("config", [("key", True)])
+            # Users collection
+            ("users", [("referrer_id", 1)]),
+            ("users", [("ban_status.is_banned", 1)]),
+            ("users", [("points.balance", -1)]),  # Critical for leaderboard
+            ("users", [("activity.total_files_renamed", -1)]),
+            
+            # Point links (keep your existing)
+            ("point_links", [("code", 1)], {"unique": True}),
+            ("point_links", [("expires_at", 1)]),
+            
+            # Transactions (modified)
+            ("transactions", [("user_id", 1), ("timestamp", -1)]),
+            ("transactions", [("type", 1), ("timestamp", -1)]),
+            
+            # Leaderboards (new)
+            ("leaderboards", [("period", 1), ("date_key", -1)]),
+            
+            # File stats (modified)
+            ("file_stats", [("user_id", 1)]),
+            ("file_stats", [("date", 1)]),  # Single field index
+            ("file_stats", [("timestamp", -1)]),
+            
+            # Config (keep your existing)
+            ("config", [("key", 1)], {"unique": True})
         ]
-        for collection, fields in indexes:
+    
+        for entry in indexes:
+            collection, index_spec, *options = entry if len(entry) > 2 else [*entry, {}]
             try:
-                for field, unique in fields:
-                    await self.db[collection].create_index(field, unique=unique)
-                logging.info(f"Created indexes for {collection}")
-            except PyMongoError as e:
-                logging.error(f"Failed to create indexes for {collection}: {e}")
-                continue
+                await self.db[collection].create_index(index_spec, **options[0])
+            except Exception as e:
+                logging.error(f"Index error in {collection}: {e}")
 
     def new_user(self, id: int) -> Dict[str, Any]:
         """Create a new user document with comprehensive default values."""
@@ -219,7 +235,7 @@ class Database:
         try:
             await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"activity.last_active": datetime.datetime.now().isoformat()}}
+                {"$set": {"activity.last_active": datetime.datetime.now()}}
             )
             return True
         except PyMongoError as e:
@@ -278,7 +294,7 @@ class Database:
             today = datetime.datetime.now().date()
             return await self.users.count_documents({
                 "activity.last_active": {
-                    "$gte": today.isoformat()
+                    "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New
                 }
             })
         except Exception as e:
@@ -298,7 +314,7 @@ class Database:
         try:
             await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"deleted": True, "deleted_at": datetime.datetime.now().isoformat()}}
+                {"$set": {"deleted": True, "deleted_at": datetime.datetime.now()}}
             )
             return True
         except Exception as e:
@@ -472,7 +488,7 @@ class Database:
                 "user_id": user_id,
                 "original_name": file_name,
                 "new_name": new_name,
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": datetime.datetime.now(),
                 "date": datetime.datetime.now().date().isoformat()
             })
             
@@ -508,12 +524,12 @@ class Database:
             
             stats["this_week"] = await self.file_stats.count_documents({
                 "user_id": user_id,
-                "date": {"$gte": start_of_week.isoformat()}
+                "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
             })
             
             stats["this_month"] = await self.file_stats.count_documents({
                 "user_id": user_id,
-                "date": {"$gte": start_of_month.isoformat()}
+                "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
             })
             
             return stats
@@ -532,7 +548,7 @@ class Database:
                         "points.balance": points,
                         "points.total_earned": points
                     },
-                    "$set": {"points.last_earned": datetime.datetime.now().isoformat()}
+                    "$set": {"points.last_earned": datetime.datetime.now()}
                 }
             )
             
@@ -542,7 +558,7 @@ class Database:
                 "amount": points,
                 "source": source,
                 "description": description or f"Added {points} points",
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": datetime.datetime.now(),
                 "balance_after": (await self.get_points(user_id)) + points
             })
             
@@ -574,7 +590,7 @@ class Database:
                 "amount": points,
                 "source": reason,
                 "description": f"Deducted {points} points",
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": datetime.datetime.now(),
                 "balance_after": current_points - points
             })
             
@@ -672,7 +688,7 @@ class Database:
                 "max_claims": max_claims,
                 "claims_remaining": max_claims,
                 "created_by": admin_id,
-                "created_at": datetime.datetime.now().isoformat(),
+                "created_at": datetime.datetime.now(),
                 "expires_at": expires_at.isoformat(),
                 "is_active": True,
                 "note": note,
@@ -695,7 +711,7 @@ class Database:
             link = await self.point_links.find_one({
                 "code": code,
                 "is_active": True,
-                "expires_at": {"$gt": datetime.datetime.now().isoformat()}
+                "expires_at": {"$gt": datetime.datetime.now()}
             })
             
             if not link:
@@ -726,7 +742,7 @@ class Database:
                 "user_id": user_id,
                 "type": "point_link_claim",
                 "amount": link["points"],
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": datetime.datetime.now(),
                 "details": {
                     "link_code": code,
                     "created_by": link["created_by"],
@@ -751,7 +767,7 @@ class Database:
                 "type": "free_points",
                 "amount": points,
                 "code": code,
-                "timestamp": datetime.datetime.now().isoformat()
+                "timestamp": datetime.datetime.now()
             })
             return True
         except Exception as e:
@@ -823,7 +839,7 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": datetime.datetime.combine(start_of_week, datetime.time.min).isoformat()
+                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New
                         }
                     }
                 },
@@ -853,7 +869,7 @@ class Database:
             weekly_renames = await self.file_stats.aggregate([
                 {
                     "$match": {
-                        "date": {"$gte": start_of_week.isoformat()}
+                        "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
                     }
                 },
                 {
@@ -897,7 +913,7 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": datetime.datetime.combine(start_of_month, datetime.time.min).isoformat()
+                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New
                         }
                     }
                 },
@@ -927,7 +943,7 @@ class Database:
             monthly_renames = await self.file_stats.aggregate([
                 {
                     "$match": {
-                        "date": {"$gte": start_of_month.isoformat()}
+                        "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
                     }
                 },
                 {
@@ -1005,7 +1021,7 @@ class Database:
                 {
                     "$set": {
                         "data": data,
-                        "updated_at": datetime.datetime.now().isoformat()
+                        "updated_at": datetime.datetime.now()
                     }
                 },
                 upsert=True
@@ -1058,7 +1074,7 @@ class Database:
                         "$sum": {
                             "$cond": [
                                 {"$and": [
-                                    {"$gt": ["$expires_at", datetime.datetime.now().isoformat()]},
+                                    {"$gt": ["$expires_at", datetime.datetime.now()]},
                                     {"$gt": ["$claims_remaining", 0]}
                                 ]},
                                 1, 0
@@ -1096,7 +1112,7 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": start_date.isoformat(),
+                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New,
                             "$lte": end_date.isoformat()
                         }
                     }
@@ -1115,7 +1131,7 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": start_date.isoformat(),
+                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New,
                             "$lte": end_date.isoformat()
                         }
                     }
@@ -1156,7 +1172,7 @@ class Database:
             return {
                 "period": {
                     "start": (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat(),
-                    "end": datetime.datetime.now().isoformat()
+                    "end": datetime.datetime.now()
                 },
                 "total_points_distributed": 0,
                 "distribution": [],
