@@ -50,7 +50,7 @@ class Bot(Client):
                 curr = datetime.now(timezone("Asia/Kolkata"))
                 await self.send_photo(
                     chat_id=chat_id,
-                    photo="https://graph.org/file/7c1856ae9ba0a15065ade-abf2c0b5a93356da7b.jpg",
+                    photo="https://files.catbox.moe/px9br5.png",
                     caption=(
                         "**Oops! The bot has restarted.**\n\n"
                         f"I haven't slept since: `{uptime_string}`"
