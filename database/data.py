@@ -1122,7 +1122,7 @@ class Database:
             logging.error(f"Error saving {period} leaderboard: {e}")
 
     async def get_leaderboard(self, period: str = "daily", lb_type: str = "points") -> List[Dict]:
-    """Improved leaderboard query with proper user data"""
+        """Improved leaderboard query with proper user data"""
     try:
         # Determine date range based on period
         today = datetime.datetime.now().date()
