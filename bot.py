@@ -13,6 +13,7 @@ from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
 from typing import Optional
+from findanime import setup_anime_finder
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -81,17 +82,21 @@ class Bot(Client):
             except Exception as e:
                 logger.error(f"Error refreshing leaderboards: {e}")
                 await asyncio.sleep(300)  # Retry after 5 minutes
-
-    async def cleanup_tasks(self):
-        """Handle periodic cleanup tasks"""
-        while True:
-            try:
-                # Add any periodic cleanup tasks here
-                await asyncio.sleep(3600)  # Run every hour
-            except Exception as e:
-                logger.error(f"Cleanup task error: {e}")
-                await asyncio.sleep(300)
-
+    from anime_finder import setup_anime_finder
+    
+    async def post_init(app):
+        # Your existing initialization
+        await setup_anime_finder(app)  # Add this line
+        async def cleanup_tasks(self):
+            """Handle periodic cleanup tasks"""
+            while True:
+                try:
+                    # Add any periodic cleanup tasks here
+                    await asyncio.sleep(3600)  # Run every hour
+                except Exception as e:
+                    logger.error(f"Cleanup task error: {e}")
+                    await asyncio.sleep(300)
+    
 
 async def start_services():
     """Start all bot services"""
