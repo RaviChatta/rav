@@ -211,3 +211,36 @@ async def get_shortlink(url, api, link):
     shortzy = Shortzy(api_key=api, base_site=url)
     shortlink = await shortzy.convert(link)
     return shortlink
+async def safe_edit_message(target: Union[Message, CallbackQuery], text: str, **kwargs):
+    """Safely edit a message with error handling"""
+    try:
+        if isinstance(target, CallbackQuery):
+            if not target.message:
+                logger.warning("No message in CallbackQuery")
+                return None
+            return await target.message.edit_text(text, **kwargs)
+        else:
+            return await target.edit_text(text, **kwargs)
+    except (AttributeError, TypeError) as e:
+        logger.warning(f"Message edit failed (invalid target): {e}")
+    except Exception as e:
+        logger.error(f"Message edit failed: {e}")
+    return None
+
+def safe_mention(user: Optional[User]) -> str:
+    """Safe user mention with fallback"""
+    if not user:
+        return "User"
+    return user.mention if hasattr(user, 'mention') else f"@{user.username}" if user.username else f"User {user.id}"
+
+async def get_safe_media(media_type: str, user_id: int, fallback=None):
+    """Get media with fallback handling"""
+    try:
+        if media_type == "photo":
+            thumb = await hyoshcoder.get_thumbnail(user_id)
+            return thumb or await get_random_photo() or fallback
+        elif media_type == "animation":
+            return await get_random_animation() or fallback
+    except Exception as e:
+        logger.error(f"Error getting {media_type}: {e}")
+    return fallback
