@@ -218,18 +218,14 @@ class Database:
             return None
 
     async def get_user_by_code(self, code: str) -> Optional[Dict]:
-        """Find user by referral/premium code"""
-        try:
-            return await self.users.find_one({
-                "$or": [
-                    {"referral.code": code},
-                    {"premium.code": code}
-                ]
-            })
-        except Exception as e:
-            logger.error(f"Error finding user by code: {e}")
-            return None
-
+        """Find user by their unique ad code"""
+        return await self.users.find_one({"ad_code": code})
+    async def mark_ad_code_used(self, code: str) -> None:
+        """Mark an ad code as used"""
+        await self.users.update_one(
+            {"ad_code": code},
+            {"$set": {"ad_code_used": True}}
+        )
     async def update_user_activity(self, user_id: int) -> bool:
         """Update user's last active timestamp."""
         try:
