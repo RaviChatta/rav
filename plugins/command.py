@@ -398,18 +398,19 @@ async def handle_ad_link(client: Client, message: Message):
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'points_'))
 async def handle_points_link(client: Client, message: Message):
     try:
-        code = message.text.split("_")[1]
+        code = message.text.split("points_")[1]
         user_id = message.from_user.id
         
-        result = await hyoshcoder.claim_points_link(user_id, code)
+        result = await hyoshcoder.claim_expend_points(user_id, code)
         
         if result["success"]:
             await message.reply_text(
                 f"🎉 You claimed {result['points']} points!\n"
-                f"Remaining claims: {result['remaining_claims']}"
+                "Thanks for supporting the bot!"
             )
         else:
-            await message.reply_text(f"❌ Could not claim points: {result['reason']}")
+            await message.reply_text(f"❌ Could not claim points: {result['error']}")
+            
     except Exception as e:
         logger.error(f"Points link claim error: {e}")
         await message.reply_text("❌ Invalid points link")
