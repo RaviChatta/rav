@@ -294,7 +294,7 @@ class Database:
             today = datetime.datetime.now().date()
             return await self.users.count_documents({
                 "activity.last_active": {
-                    "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New
+                    "$gte": datetime.datetime.combine(today, datetime.time.min)
                 }
             })
         except Exception as e:
@@ -524,12 +524,12 @@ class Database:
             
             stats["this_week"] = await self.file_stats.count_documents({
                 "user_id": user_id,
-                "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
+                "date": {"$gte": start_of_week.isoformat()}
             })
             
             stats["this_month"] = await self.file_stats.count_documents({
                 "user_id": user_id,
-                "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
+                "date": {"$gte": start_of_month.isoformat()}
             })
             
             return stats
@@ -839,7 +839,7 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New
+                            "$gte": datetime.datetime.combine(start_of_week, datetime.time.min)
                         }
                     }
                 },
@@ -869,7 +869,7 @@ class Database:
             weekly_renames = await self.file_stats.aggregate([
                 {
                     "$match": {
-                        "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
+                        "date": {"$gte": start_of_week.isoformat()}
                     }
                 },
                 {
@@ -913,7 +913,7 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New
+                            "$gte": datetime.datetime.combine(start_of_month, datetime.time.min)
                         }
                     }
                 },
@@ -943,7 +943,7 @@ class Database:
             monthly_renames = await self.file_stats.aggregate([
                 {
                     "$match": {
-                        "date": {"$gte": datetime.datetime.combine(some_date, datetime.time.min)}
+                        "date": {"$gte": start_of_month.isoformat()}
                     }
                 },
                 {
@@ -1013,6 +1013,10 @@ class Database:
     async def _save_leaderboard(self, period: str, date_key: str, data: Dict):
         """Save leaderboard data to database."""
         try:
+            if not any(data.values()):  # Check if any leaderboard data exists
+                logging.warning(f"Empty {period} leaderboard for {date_key}")
+                return
+                
             await self.leaderboards.update_one(
                 {
                     "period": period,
@@ -1112,8 +1116,8 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New,
-                            "$lte": end_date.isoformat()
+                            "$gte": start_date,
+                            "$lte": end_date
                         }
                     }
                 },
@@ -1131,8 +1135,8 @@ class Database:
                     "$match": {
                         "type": "credit",
                         "timestamp": {
-                            "$gte": datetime.datetime.combine(some_date, datetime.time.min)  # New,
-                            "$lte": end_date.isoformat()
+                            "$gte": start_date,
+                            "$lte": end_date
                         }
                     }
                 },
@@ -1172,7 +1176,7 @@ class Database:
             return {
                 "period": {
                     "start": (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat(),
-                    "end": datetime.datetime.now()
+                    "end": datetime.datetime.now().isoformat()
                 },
                 "total_points_distributed": 0,
                 "distribution": [],
