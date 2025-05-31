@@ -1033,36 +1033,113 @@ class Database:
         except Exception as e:
             logging.error(f"Error saving {period} leaderboard: {e}")
 
-    async def get_leaderboard(self, period: str = "daily", 
-                            lb_type: str = "points") -> List[Dict]:
-        """
-        Get leaderboard data.
+    async def get_leaderboard(self, period: str = "daily", lb_type: str = "points") -> List[Dict]:
+    """Improved leaderboard query with proper user data"""
+    try:
+        # Determine date range based on period
+        today = datetime.datetime.now().date()
+        if period == "daily":
+            start_date = today
+        elif period == "weekly":
+            start_date = today - datetime.timedelta(days=today.weekday())
+        elif period == "monthly":
+            start_date = datetime.date(today.year, today.month, 1)
+        else:  # alltime
+            start_date = None
+
+        # Build aggregation pipeline
+        pipeline = []
         
-        Args:
-            period: "daily", "weekly", "monthly", or "alltime"
-            lb_type: "points", "renames", or "points_earned"
-            
-        Returns:
-            list: Leaderboard entries with user details
-        """
-        try:
-            if period not in ["daily", "weekly", "monthly", "alltime"]:
-                period = "daily"
-                
-            leaderboard = await self.leaderboards.find_one({
-                "period": period,
-                "date_key": {
-                    "$ne": None if period != "alltime" else "alltime"
-                }
-            }, sort=[("date_key", -1)])
-            
-            if not leaderboard:
-                return []
-                
-            return leaderboard["data"].get(lb_type, [])
-        except Exception as e:
-            logging.error(f"Error getting {period} leaderboard: {e}")
-            return []
+        # For alltime, we can use the pre-calculated values
+        if period == "alltime":
+            if lb_type == "points":
+                pipeline.extend([
+                    {"$sort": {"points.balance": -1}},
+                    {"$limit": 10},
+                    {"$project": {
+                        "_id": 1,
+                        "username": 1,
+                        "value": "$points.balance",
+                        "is_premium": "$premium.is_premium"
+                    }}
+                ])
+            else:  # renames or referrals
+                field = "activity.total_files_renamed" if lb_type == "renames" else "referral.referred_count"
+                pipeline.extend([
+                    {"$sort": {field: -1}},
+                    {"$limit": 10},
+                    {"$project": {
+                        "_id": 1,
+                        "username": 1,
+                        "value": f"${field}",
+                        "is_premium": "$premium.is_premium"
+                    }}
+                ])
+        else:
+            # For time-based leaderboards, we need to aggregate from transactions or file_stats
+            if lb_type == "points":
+                pipeline.extend([
+                    {"$match": {"timestamp": {"$gte": datetime.datetime.combine(start_date, datetime.time.min)}}},
+                    {"$group": {
+                        "_id": "$user_id",
+                        "value": {"$sum": "$amount"}
+                    }},
+                    {"$sort": {"value": -1}},
+                    {"$limit": 10},
+                    {"$lookup": {
+                        "from": "users",
+                        "localField": "_id",
+                        "foreignField": "_id",
+                        "as": "user"
+                    }},
+                    {"$unwind": "$user"},
+                    {"$project": {
+                        "_id": "$_id",
+                        "username": "$user.username",
+                        "value": 1,
+                        "is_premium": "$user.premium.is_premium"
+                    }}
+                ])
+            else:  # renames
+                pipeline.extend([
+                    {"$match": {"date": {"$gte": start_date.isoformat()}}},
+                    {"$group": {
+                        "_id": "$user_id",
+                        "value": {"$sum": 1}
+                    }},
+                    {"$sort": {"value": -1}},
+                    {"$limit": 10},
+                    {"$lookup": {
+                        "from": "users",
+                        "localField": "_id",
+                        "foreignField": "_id",
+                        "as": "user"
+                    }},
+                    {"$unwind": "$user"},
+                    {"$project": {
+                        "_id": "$_id",
+                        "username": "$user.username",
+                        "value": 1,
+                        "is_premium": "$user.premium.is_premium"
+                    }}
+                ])
+
+        users = await self.users.aggregate(pipeline).to_list(length=10)
+        
+        # Ensure we have usernames for all entries
+        for user in users:
+            if not user.get('username'):
+                try:
+                    tg_user = await client.get_users(user['_id'])
+                    user['username'] = tg_user.username or tg_user.first_name
+                except:
+                    user['username'] = f"User {user['_id']}"
+        
+        return users
+        
+    except Exception as e:
+        logger.error(f"Error getting leaderboard: {e}")
+        return []
 
     async def get_points_links_stats(self, admin_id: int = None) -> Dict:
         """Get statistics about points links."""
