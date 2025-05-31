@@ -903,7 +903,7 @@ class Database:
     except Exception as e:
         logger.error(f"Error updating {period} leaderboard: {e}")
     async def _get_leaderboard_data(self, period: str) -> List[Dict]:
-    """Get leaderboard data for a specific period"""
+        """Get leaderboard data for a specific period"""
     try:
         if period == "alltime":
             pipeline = [
