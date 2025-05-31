@@ -6,7 +6,12 @@ import time
 from typing import Optional, Tuple , Union
 import math, time
 from shortzy import Shortzy
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import (
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    CallbackQuery
+)
 from scripts import Txt
 from config import settings
 
