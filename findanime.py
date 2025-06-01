@@ -1,37 +1,16 @@
-# findanime.py - Fully compatible with Python 3.13
+# findanime.py - Updated for PTB v13 compatibility
 import asyncio
 import requests
 import psutil
-import mimetypes
 from collections import deque
 
-# Compatibility layer for Python 3.13
-import sys
-if sys.version_info >= (3, 13):
-    # Create imghdr replacement
-    class ImghdrCompat:
-        @staticmethod
-        def what(file, h=None):
-            mime = mimetypes.guess_type(file)[0]
-            return mime.split('/')[-1] if mime else None
-    sys.modules['imghdr'] = ImghdrCompat()
-
-# Telegram imports with fallbacks
-try:
-    from telegram import ParseMode, ChatAction
-except ImportError:
-    try:
-        from telegram.constants import ParseMode, ChatAction
-    except ImportError:
-        ParseMode = type('ParseMode', (), {'HTML': 'HTML', 'MARKDOWN': 'MARKDOWN_V2'})
-        ChatAction = type('ChatAction', (), {'TYPING': 'typing'})
-
-from telegram import Update
+# PTB v13 compatible imports
+from telegram import Update, ParseMode, ChatAction
 from telegram.ext import (
     CallbackContext,
     CommandHandler,
     MessageHandler,
-    filters
+    Filters  # Changed from filters to Filters
 )
 
 # --- Config ---
@@ -144,5 +123,8 @@ async def handle_mention(update: Update, context: CallbackContext):
 async def setup_anime_finder(app):
     asyncio.create_task(adaptive_queue_processor(app))
     app.add_handler(CommandHandler("findanime", findanime))
-    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.GROUPS, handle_mention))
+    app.add_handler(MessageHandler(
+        Filters.text & Filters.chat_type.groups,  # Updated filter syntax
+        handle_mention
+    ))
     print("🎌 Anime Finder feature initialized successfully!")
