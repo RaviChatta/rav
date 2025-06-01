@@ -3,7 +3,7 @@ import asyncio
 import logging
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, Message
-from pyrogram.errors import UserNotParticipant, FloodWait, ChatAdminRequired
+from pyrogram.errors import UserNotParticipant, FloodWait, ChatAdminRequired, ChannelInvalid, ChannelPrivate
 from config import settings
 from helpers.utils import get_random_photo
 from database.data import hyoshcoder
@@ -11,12 +11,58 @@ from database.data import hyoshcoder
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS  # List of channel IDs (-100...)
-CHECK_DELAY = 1  # Fast checks
+class ForceSubManager:
+    def __init__(self):
+        self.channel_cache = {}
+        
+    async def ensure_bot_joined(self, client: Client, channel_id: int):
+        """Make sure bot has joined the channel"""
+        try:
+            # Check if already joined
+            if channel_id in self.channel_cache:
+                return True
+                
+            # Try to get chat details
+            chat = await client.get_chat(channel_id)
+            self.channel_cache[channel_id] = chat
+            return True
+            
+        except (ChannelInvalid, ChannelPrivate):
+            try:
+                # Try to join via invite link
+                invite = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
+                await client.join_chat(invite)
+                self.channel_cache[channel_id] = await client.get_chat(channel_id)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to join channel {channel_id}: {str(e)}")
+                return False
+        except Exception as e:
+            logger.error(f"Channel check error {channel_id}: {str(e)}")
+            return False
 
-async def not_subscribed(_, __, message: Message):
-    """Check if user is not subscribed (with proper channel ID handling)"""
-    if not FORCE_SUB_CHANNELS:
+force_sub_manager = ForceSubManager()
+
+@Client.on_message(filters.private & filters.command("fs_debug"))
+async def debug_force_sub(client: Client, message: Message):
+    """Admin command to debug force sub channels"""
+    if message.from_user.id != settings.ADMIN:
+        return
+        
+    report = []
+    for channel_id in settings.FORCE_SUB_CHANNELS:
+        try:
+            joined = await force_sub_manager.ensure_bot_joined(client, channel_id)
+            status = "✅ Joined" if joined else "❌ Failed"
+            report.append(f"{channel_id}: {status}")
+        except Exception as e:
+            report.append(f"{channel_id}: ❌ Error ({str(e)})")
+    
+    await message.reply_text("Force Sub Debug:\n\n" + "\n".join(report))
+
+async def not_subscribed(_, client: Client, message: Message):
+    """Improved subscription check with channel validation"""
+    if not settings.FORCE_SUB_CHANNELS:
         return False
         
     user_id = message.from_user.id
@@ -25,9 +71,13 @@ async def not_subscribed(_, __, message: Message):
     if user_id == settings.ADMIN:
         return False
         
-    for channel_id in FORCE_SUB_CHANNELS:
+    for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
-            user = await message._client.get_chat_member(channel_id, user_id)
+            # Ensure bot has joined first
+            if not await force_sub_manager.ensure_bot_joined(client, channel_id):
+                continue
+                
+            user = await client.get_chat_member(channel_id, user_id)
             if user.status == "kicked":
                 await message.reply("🚫 You're banned from our channels. Contact admins.")
                 return False
@@ -37,17 +87,17 @@ async def not_subscribed(_, __, message: Message):
             return True
         except FloodWait as e:
             await asyncio.sleep(e.value)
-            return await not_subscribed(_, __, message)
+            continue
         except Exception as e:
-            logger.error(f"ForceSub Check Error (Channel ID: {channel_id}): {str(e)}")
+            logger.error(f"Subscription check failed for {channel_id}: {str(e)}")
             continue
             
     return False
 
 @Client.on_message(filters.private & filters.create(not_subscribed))
 async def force_sub_handler(client: Client, message: Message):
-    """Fixed handler for channel IDs"""
-    if not FORCE_SUB_CHANNELS:
+    """Fixed handler with channel validation"""
+    if not settings.FORCE_SUB_CHANNELS:
         return
         
     user_id = message.from_user.id
@@ -57,23 +107,24 @@ async def force_sub_handler(client: Client, message: Message):
     UNIVERSE_IMAGE = await get_random_photo() or "https://telegra.ph/file/3a4d5a6a6c3d4a7a9a8a9.jpg"
     
     not_joined = []
-    channel_info = []
+    valid_channels = []
     
-    # Get channel info with proper error handling
-    for channel_id in FORCE_SUB_CHANNELS:
+    # Validate channels first
+    for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
-            chat = await client.get_chat(channel_id)
-            try:
-                invite_link = await client.export_chat_invite_link(channel_id)
-            except:
-                invite_link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
-            channel_info.append((channel_id, chat.title or f"Channel {channel_id}", invite_link))
+            if await force_sub_manager.ensure_bot_joined(client, channel_id):
+                chat = await client.get_chat(channel_id)
+                try:
+                    invite_link = await client.export_chat_invite_link(channel_id)
+                except:
+                    invite_link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
+                valid_channels.append((channel_id, chat.title or f"Channel {channel_id}", invite_link))
         except Exception as e:
-            logger.error(f"Failed to get channel {channel_id} info: {str(e)}")
+            logger.error(f"Skipping invalid channel {channel_id}: {str(e)}")
             continue
     
-    # Check subscription status
-    for channel_id, title, invite_link in channel_info:
+    # Check user status
+    for channel_id, title, invite_link in valid_channels:
         try:
             user = await client.get_chat_member(channel_id, user_id)
             if user.status in ["left", "kicked"]:
@@ -81,7 +132,7 @@ async def force_sub_handler(client: Client, message: Message):
         except UserNotParticipant:
             not_joined.append((channel_id, title, invite_link))
         except Exception as e:
-            logger.error(f"Subscription check failed: {str(e)}")
+            logger.error(f"Status check failed for {channel_id}: {str(e)}")
             continue
     
     if not not_joined:
@@ -117,7 +168,7 @@ Join our channels to continue:
 
 @Client.on_callback_query(filters.regex("force_sub_verify"))
 async def verify_subscription(client: Client, callback: CallbackQuery):
-    """Verification handler for channel IDs"""
+    """Improved verification with channel validation"""
     user = callback.from_user
     user_id = user.id
     
@@ -125,15 +176,18 @@ async def verify_subscription(client: Client, callback: CallbackQuery):
     
     not_joined = []
     
-    for channel_id in FORCE_SUB_CHANNELS:
+    for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
+            if not await force_sub_manager.ensure_bot_joined(client, channel_id):
+                continue
+                
             member = await client.get_chat_member(channel_id, user_id)
             if member.status in ["left", "kicked"]:
                 not_joined.append(channel_id)
         except UserNotParticipant:
             not_joined.append(channel_id)
         except Exception as e:
-            logger.error(f"Verification error: {str(e)}")
+            logger.error(f"Verification error for {channel_id}: {str(e)}")
             continue
     
     if not not_joined:
