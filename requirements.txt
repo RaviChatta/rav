@@ -9,7 +9,6 @@ argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
 python-telegram-bot==13.15
 python-magic==0.4.27
-backports.zoneinfo==0.2.1;python_version>="3.9"
 filetype==1.2.0
 arrow==1.3.0
 asttokens==3.0.0
