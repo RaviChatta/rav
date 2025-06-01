@@ -2,7 +2,7 @@ import asyncio
 import psutil
 from collections import deque
 from pyrogram import filters, Client
-from pyrogram.types import Message, InputMediaPhoto
+from pyrogram.types import Message
 from pyrogram.enums import ParseMode, ChatAction
 from typing import Dict, Optional
 import logging
@@ -106,12 +106,21 @@ async def process_anime_request(bot: Client, task: Dict):
             await message.reply_text("❌ Please reply to an image with /findanime")
             return
 
-        # Download the image properly
+        # Download the image properly using file reference
         image_bytes = BytesIO()
-        await bot.download_media(file_id, file_name=image_bytes)
-        image_bytes.seek(0)
+        downloaded = await bot.download_media(
+            file_id,
+            in_memory=True,
+            file_name=image_bytes
+        )
+        
+        # Ensure we have bytes data
+        if hasattr(downloaded, 'getvalue'):
+            image_data = downloaded.getvalue()
+        else:
+            image_data = downloaded.read()
 
-        trace_data = await turbo_search(image_bytes.getvalue())
+        trace_data = await turbo_search(image_data)
         if not trace_data or not trace_data.get('result'):
             await message.reply_text("❌ Couldn't identify the anime. Try a clearer image.")
             return
@@ -163,7 +172,7 @@ async def process_anime_request(bot: Client, task: Dict):
             )
 
     except Exception as e:
-        logger.error(f"Error processing anime request: {e}")
+        logger.error(f"Complete anime processing failed: {e}")
         await message.reply_text("⚠️ An error occurred while processing your request")
     finally:
         ACTIVE_TASKS.discard(task['message_id'])
@@ -189,7 +198,7 @@ def register_handlers(bot: Client):
                 action=ChatAction.TYPING
             )
         except Exception as e:
-            logger.error(f"Error in findanime handler: {e}")
+            logger.error(f"Complete findanime handler failed: {e}")
 
 async def start_queue_processor(bot: Client):
     asyncio.create_task(adaptive_queue_processor(bot))
