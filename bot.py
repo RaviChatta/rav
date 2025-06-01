@@ -37,6 +37,27 @@ class Bot(Client):
         self.username: Optional[str] = None
         self.uptime: Optional[str] = None
 
+    async def cleanup_tasks(self):
+        """Handle periodic cleanup tasks"""
+        while True:
+            try:
+                # Add your cleanup logic here
+                await asyncio.sleep(3600)  # Run every hour
+            except Exception as e:
+                logger.error(f"Cleanup task error: {e}")
+                await asyncio.sleep(300)
+
+    async def auto_refresh_leaderboards(self):
+        """Periodically refresh leaderboard data"""
+        while True:
+            try:
+                await hyoshcoder.update_leaderboards()
+                logger.info("Leaderboards refreshed successfully")
+                await asyncio.sleep(3600)  # Refresh every hour
+            except Exception as e:
+                logger.error(f"Error refreshing leaderboards: {e}")
+                await asyncio.sleep(300)  # Retry after 5 minutes
+
     async def start(self):
         await super().start()
         
@@ -72,30 +93,9 @@ class Bot(Client):
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
 
-    async def auto_refresh_leaderboards(self):
-        """Periodically refresh leaderboard data"""
-        while True:
-            try:
-                await hyoshcoder.update_leaderboards()
-                logger.info("Leaderboards refreshed successfully")
-                await asyncio.sleep(3600)  # Refresh every hour
-            except Exception as e:
-                logger.error(f"Error refreshing leaderboards: {e}")
-                await asyncio.sleep(300)  # Retry after 5 minutes
-    
-    async def post_init(app):
-        # Your existing initialization
-        await setup_anime_finder(app)  # Add this line
-        async def cleanup_tasks(self):
-            """Handle periodic cleanup tasks"""
-            while True:
-                try:
-                    # Add any periodic cleanup tasks here
-                    await asyncio.sleep(3600)  # Run every hour
-                except Exception as e:
-                    logger.error(f"Cleanup task error: {e}")
-                    await asyncio.sleep(300)
-    
+async def post_init(app):
+    """Initialize additional services"""
+    await setup_anime_finder(app)
 
 async def start_services():
     """Start all bot services"""
@@ -113,6 +113,7 @@ async def start_services():
             logger.error(f"Failed to start web server: {e}")
 
     try:
+        await post_init(bot)  # Initialize additional services
         await asyncio.Event().wait()  # Keep bot running
     except (asyncio.CancelledError, KeyboardInterrupt):
         logger.info("Shutdown signal received")
@@ -126,7 +127,6 @@ async def start_services():
                 logger.error(f"Error during web server cleanup: {e}")
         await bot.stop()
         logger.info("Bot shutdown complete")
-
 
 if __name__ == "__main__":
     # Configure logging
