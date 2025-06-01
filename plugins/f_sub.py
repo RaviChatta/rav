@@ -54,7 +54,7 @@ async def universe_force_sub(client: Client, message: Message):
     user_mention = message.from_user.mention
     
     # Get a stunning random image
-    UNIVERSE_IMAGE = await get_random_photo() or "https://telegra.ph/file/3a4d5a6a6c3d4a7a9a8a9.jpg"
+    UNIVERSE_IMAGE = await get_random_photo() # or "https://telegra.ph/file/3a4d5a6a6c3d4a7a9a8a9.jpg"
     
     not_joined = []
     channel_info = []
