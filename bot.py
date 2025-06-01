@@ -13,7 +13,7 @@ from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
 from typing import Optional
-from findanime import setup_anime_finder
+from findanime  import register_handlers, start_queue_processor
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -98,11 +98,14 @@ async def start_services():
     await bot.start()
 
     # Initialize anime finder
+    # Register anime finder handlers and start queue
     try:
-        await setup_anime_finder(bot)
+        register_handlers(bot)
+        await start_queue_processor(bot)
         logger.info("Anime finder initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize anime finder: {e}", exc_info=False)
+        logger.error(f"Failed to initialize anime finder: {e}", exc_info=True)
+
 
     if Config.WEBHOOK:
         try:
