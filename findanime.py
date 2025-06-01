@@ -2,11 +2,12 @@ import asyncio
 import psutil
 from collections import deque
 from pyrogram import filters, Client
-from pyrogram.types import Message
+from pyrogram.types import Message, InputMediaPhoto
 from pyrogram.enums import ParseMode, ChatAction
 from typing import Dict, Optional
 import logging
 import aiohttp
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -91,18 +92,26 @@ def format_response(data: Dict) -> str:
 
 async def process_anime_request(bot: Client, task: Dict):
     try:
-        message_id = task['message_id']
-        chat_id = task['chat_id']
-
-        message = await bot.get_messages(chat_id, message_id)
-        if not message or not message.reply_to_message or not message.reply_to_message.photo:
+        message = await bot.get_messages(task['chat_id'], task['message_id'])
+        if not message or not message.reply_to_message:
             return
 
-        # Corrected: photo is a Photo object, not a list
-        photo = message.reply_to_message.photo
-        image_bytes = await photo.download(in_memory=True)
+        # Handle both photo and document cases
+        if message.reply_to_message.photo:
+            photo = message.reply_to_message.photo
+            file_id = photo.file_id
+        elif message.reply_to_message.document and message.reply_to_message.document.mime_type.startswith('image/'):
+            file_id = message.reply_to_message.document.file_id
+        else:
+            await message.reply_text("❌ Please reply to an image with /findanime")
+            return
 
-        trace_data = await turbo_search(image_bytes)
+        # Download the image properly
+        image_bytes = BytesIO()
+        await bot.download_media(file_id, file_name=image_bytes)
+        image_bytes.seek(0)
+
+        trace_data = await turbo_search(image_bytes.getvalue())
         if not trace_data or not trace_data.get('result'):
             await message.reply_text("❌ Couldn't identify the anime. Try a clearer image.")
             return
@@ -155,6 +164,7 @@ async def process_anime_request(bot: Client, task: Dict):
 
     except Exception as e:
         logger.error(f"Error processing anime request: {e}")
+        await message.reply_text("⚠️ An error occurred while processing your request")
     finally:
         ACTIVE_TASKS.discard(task['message_id'])
 
@@ -162,7 +172,9 @@ def register_handlers(bot: Client):
     @bot.on_message(filters.command("findanime") & (filters.private | filters.group))
     async def findanime_handler(bot: Client, message: Message):
         try:
-            if not message.reply_to_message or not message.reply_to_message.photo:
+            if not message.reply_to_message or not (message.reply_to_message.photo or 
+                                                   (message.reply_to_message.document and 
+                                                    message.reply_to_message.document.mime_type.startswith('image/'))):
                 await message.reply_text("🔍 Reply to an anime screenshot with /findanime")
                 return
 
