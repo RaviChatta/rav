@@ -1,5 +1,4 @@
 import asyncio
-import requests
 import psutil
 from collections import deque
 from pyrogram import filters, Client
@@ -7,15 +6,14 @@ from pyrogram.types import Message
 from pyrogram.enums import ParseMode, ChatAction
 from typing import Dict, Optional
 import logging
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
-# Optional: set your trace.moe key here or None
 TRACE_MOE_KEY = None
 ANILIST_API = "https://graphql.anilist.co"
 CPU_THRESHOLD = 80
 
-# Queue system
 REQUEST_QUEUE = deque()
 ACTIVE_TASKS = set()
 
@@ -30,21 +28,22 @@ async def adaptive_queue_processor(bot: Client):
             asyncio.create_task(process_anime_request(bot, task))
         await asyncio.sleep(0.5)
 
-async def turbo_search(image_url: str) -> Optional[Dict]:
+async def turbo_search(image_bytes: bytes) -> Optional[Dict]:
     headers = {'x-trace-key': TRACE_MOE_KEY} if TRACE_MOE_KEY else {}
-    params = {'url': image_url, 'cutBorders': True}
+    url = "https://api.trace.moe/search"
+
+    data = aiohttp.FormData()
+    data.add_field('image', image_bytes, filename='image.jpg', content_type='image/jpeg')
+
     try:
-        response = requests.get(
-            "https://api.trace.moe/search", 
-            params=params, 
-            headers=headers, 
-            timeout=10
-        )
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
-    except requests.exceptions.RequestException as e:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data, headers=headers, timeout=15) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    logger.error(f"Trace.moe returned status {resp.status}")
+                    return None
+    except Exception as e:
         logger.error(f"Trace.moe request failed: {e}")
         return None
 
@@ -58,27 +57,36 @@ async def fetch_anilist(anilist_id: int) -> Dict:
         } 
     }"""
     try:
-        response = requests.post(
-            ANILIST_API, 
-            json={'query': query, 'variables': {'id': anilist_id}}, 
-            timeout=10
-        )
-        if response.status_code == 200:
-            return response.json().get('data', {}).get('Media', {})
-        else:
-            return {}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ANILIST_API, 
+                json={'query': query, 'variables': {'id': anilist_id}}, 
+                timeout=15
+            ) as resp:
+                if resp.status == 200:
+                    json_data = await resp.json()
+                    return json_data.get('data', {}).get('Media', {})
+                else:
+                    logger.error(f"AniList API returned status {resp.status}")
+                    return {}
     except Exception as e:
         logger.error(f"AniList API request failed: {e}")
         return {}
 
 def format_response(data: Dict) -> str:
     title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
+    episodes = data.get('episodes', 0)
+    episode = data.get('episode', 'N/A')
+    timestamp = data.get('timestamp', '00:00')
+    confidence = data.get('confidence', 0)
+    anilist_url = data.get('anilist_url', '#')
+
     return (
         f"🎬 <b>{title}</b>\n"
-        f"• {'🎥 Movie' if data.get('episodes', 0) == 1 else f'📺 Episode: {data.get('episode', 'N/A')}'}\n"
-        f"• ⏱ <b>Timestamp:</b> {data.get('timestamp', '00:00')}\n"
-        f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
-        f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>"
+        f"• {'🎥 Movie' if episodes == 1 else f'📺 Episode: {episode}'}\n"
+        f"• ⏱ <b>Timestamp:</b> {timestamp}\n"
+        f"• 📊 <b>Confidence:</b> {confidence:.1f}%\n"
+        f"• 🔗 <a href='{anilist_url}'>More Info</a>"
     )
 
 async def process_anime_request(bot: Client, task: Dict):
@@ -90,15 +98,16 @@ async def process_anime_request(bot: Client, task: Dict):
         if not message or not message.reply_to_message or not message.reply_to_message.photo:
             return
 
-        file_path = await message.reply_to_message.download()
+        # Download photo bytes to memory (in_memory=True)
+        photo = message.reply_to_message.photo[-1]
+        image_bytes = await photo.download(in_memory=True)
 
-        trace_data = await turbo_search(file_path)
+        trace_data = await turbo_search(image_bytes)
         if not trace_data or not trace_data.get('result'):
             await message.reply_text("❌ Couldn't identify the anime. Try a clearer image.")
             return
 
         best_match = trace_data['result'][0]
-
         anilist_data = await fetch_anilist(best_match['anilist'])
 
         from_time = best_match.get('from', 0)
