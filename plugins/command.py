@@ -273,11 +273,65 @@ async def command_handler(client: Client, message: Message):
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client: Client, message: Message):
     try:
-        m = await message.reply_text("Please wait...")
-        await hyoshcoder.set_thumbnail(message.from_user.id, message.photo.file_id)
-        await m.edit_text("**Thumbnail saved successfully ✅**")
+        m = await message.reply_text("🛠 Processing thumbnail...")
+
+        # Download image
+        file_path = await message.download()
+        
+        # Open and process
+        with Image.open(file_path) as img:
+            img = img.convert("RGB")
+
+            # Center crop
+            w, h = img.size
+            min_edge = min(w, h)
+            left = (w - min_edge) // 2
+            top = (h - min_edge) // 2
+            img = img.crop((left, top, left + min_edge, top + min_edge))
+
+            # Resize to 320x320
+            img = img.resize((320, 320), Image.LANCZOS)
+
+            # Enhance
+            img = ImageEnhance.Sharpness(img).enhance(1.2)
+            img = ImageEnhance.Contrast(img).enhance(1.1)
+            img = ImageEnhance.Brightness(img).enhance(1.05)
+
+            # Save to memory
+            bio = BytesIO()
+            bio.name = "thumb.jpg"
+            img.save(bio, "JPEG", quality=85)
+            bio.seek(0)
+
+        # Upload silently (no user preview)
+        sent = await client.send_photo("me", photo=bio)
+        await hyoshcoder.set_thumbnail(message.from_user.id, sent.photo.file_id)
+
+        await m.edit_text("✅ **Thumbnail saved successfully**")
+
     except Exception as e:
         await message.reply_text(f"❌ Error saving thumbnail: {e}")
+@Client.on_message(filters.private & filters.command("showthumb"))
+async def show_thumb(client: Client, message: Message):
+    try:
+        thumb_id = await hyoshcoder.get_thumbnail(message.from_user.id)
+        if not thumb_id:
+            await message.reply_text("⚠️ No thumbnail is set.")
+            return
+        await message.reply_photo(thumb_id)
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to show thumbnail: {e}")
+@Client.on_message(filters.private & filters.command("deletethumb"))
+async def delete_thumb(client: Client, message: Message):
+    try:
+        deleted = await hyoshcoder.delete_thumbnail(message.from_user.id)
+        if deleted:
+            await message.reply_text("🗑️ Thumbnail deleted successfully.")
+        else:
+            await message.reply_text("⚠️ No thumbnail was set.")
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to delete thumbnail: {e}")
+
 
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
