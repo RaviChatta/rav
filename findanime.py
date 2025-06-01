@@ -1,15 +1,32 @@
+# findanime.py - Fully compatible with Python 3.13
 import asyncio
 import requests
 import psutil
+import mimetypes
 from collections import deque
 
-# Universal compatibility imports
+# Compatibility layer for Python 3.13
+import sys
+if sys.version_info >= (3, 13):
+    # Create imghdr replacement
+    class ImghdrCompat:
+        @staticmethod
+        def what(file, h=None):
+            mime = mimetypes.guess_type(file)[0]
+            return mime.split('/')[-1] if mime else None
+    sys.modules['imghdr'] = ImghdrCompat()
+
+# Telegram imports with fallbacks
 try:
     from telegram import ParseMode, ChatAction
 except ImportError:
-    from telegram.constants import ParseMode, ChatAction
+    try:
+        from telegram.constants import ParseMode, ChatAction
+    except ImportError:
+        ParseMode = type('ParseMode', (), {'HTML': 'HTML', 'MARKDOWN': 'MARKDOWN_V2'})
+        ChatAction = type('ChatAction', (), {'TYPING': 'typing'})
 
-from telegram import Update, InputMediaPhoto, InputMediaVideo
+from telegram import Update
 from telegram.ext import (
     CallbackContext,
     CommandHandler,
@@ -17,117 +34,73 @@ from telegram.ext import (
     filters
 )
 
-# Import from config
-from config import settings
-
 # --- Config ---
+TRACE_MOE_KEY = "your_trace_moe_key"  # Replace with your key
 ANILIST_API = "https://graphql.anilist.co"
 
 # --- Adaptive Queue System ---
 REQUEST_QUEUE = deque()
 ACTIVE_TASKS = set()
-CPU_THRESHOLD = 80  # Max CPU% before throttling
+CPU_THRESHOLD = 80
 
 def get_system_load():
-    """Get current CPU usage percentage"""
     return psutil.cpu_percent(interval=1)
 
 async def adaptive_queue_processor(app):
-    """Smart queue that adjusts based on system load"""
     while True:
         if REQUEST_QUEUE:
             current_load = get_system_load()
-            
             if current_load < CPU_THRESHOLD:
                 task = REQUEST_QUEUE.popleft()
                 ACTIVE_TASKS.add(task['message'].message_id)
                 asyncio.create_task(process_anime_request(task, app))
-            
             await asyncio.sleep(0.5 if current_load > CPU_THRESHOLD else 0.1)
         else:
             await asyncio.sleep(1)
 
 async def turbo_search(image_url: str):
-    """Anime detection with retries"""
     headers = {'x-trace-key': TRACE_MOE_KEY} if TRACE_MOE_KEY else {}
     params = {'url': image_url, 'cutBorders': True}
-
     for attempt in range(3):
         try:
-            response = requests.get(
-                "https://api.trace.moe/search",
-                params=params,
-                headers=headers,
-                timeout=10
-            )
-            if response.status_code == 200:
-                return response.json()
+            response = requests.get("https://api.trace.moe/search", params=params, headers=headers, timeout=10)
+            return response.json() if response.status_code == 200 else None
         except requests.exceptions.RequestException:
-            if attempt == 2:
-                return None
+            if attempt == 2: return None
             await asyncio.sleep(1)
 
 async def fetch_anilist(anilist_id: int):
-    """Fetch AniList metadata"""
-    query = """
-    query($id: Int) {
-        Media(id: $id, type: ANIME) {
-            title { romaji english }
-            episodes
-            siteUrl
-            coverImage { large }
-        }
-    }
-    """
+    query = """query($id: Int) { Media(id: $id, type: ANIME) {
+        title { romaji english } episodes siteUrl coverImage { large } } }"""
     try:
-        response = requests.post(
-            ANILIST_API,
-            json={'query': query, 'variables': {'id': anilist_id}},
-            timeout=10
-        )
+        response = requests.post(ANILIST_API, json={'query': query, 'variables': {'id': anilist_id}}, timeout=10)
         return response.json().get('data', {}).get('Media', {})
     except:
         return {}
 
 def format_response(data: dict) -> str:
-    """Format anime info response"""
-    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown Title')
-    is_movie = data.get('episodes', 0) == 1
-    timestamp = data.get('timestamp', '00:00')
-
-    return (
-        f"╔══════════════════════════╗\n"
-        f"  🎬 <b>{title}</b>\n"
-        f"╚══════════════════════════╝\n"
-        f"• {'🎥 Movie' if is_movie else f'📺 Episode: {data.get('episode', 'N/A')}'}\n"
-        f"• ⏱ <b>Timestamp:</b> {timestamp}\n"
-        f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
-        f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>"
-    )
+    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
+    return (f"🎬 <b>{title}</b>\n"
+            f"• {'🎥 Movie' if data.get('episodes', 0) == 1 else f'📺 Episode: {data.get('episode', 'N/A')}'}\n"
+            f"• ⏱ <b>Timestamp:</b> {data.get('timestamp', '00:00')}\n"
+            f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
+            f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>")
 
 async def process_anime_request(task, app):
-    """Process each anime search request"""
     try:
         update = task['update']
         context = task['context']
         message = task['message']
+        file = await message.reply_to_message.photo[-1].get_file()
         
-        photo = message.reply_to_message.photo[-1]
-        file = await photo.get_file()
-        image_url = file.file_path
-
-        trace_data = await turbo_search(image_url)
-        if not trace_data or not trace_data.get('result'):
+        if not (trace_data := await turbo_search(file.file_path)):
             await message.reply_text("❌ Couldn't identify the anime. Try a clearer image.")
             return
 
         best_match = trace_data['result'][0]
         anilist_data = await fetch_anilist(best_match['anilist'])
-
         from_time = best_match.get('from', 0)
-        minutes = int(from_time // 60)
-        seconds = int(from_time % 60)
-        timestamp = f"{minutes:02}:{seconds:02}"
+        timestamp = f"{int(from_time//60):02}:{int(from_time%60):02}"
 
         response_data = {
             'title': anilist_data.get('title', {}),
@@ -141,34 +114,12 @@ async def process_anime_request(task, app):
         }
 
         caption = format_response(response_data)
-
-        try:
-            if response_data.get('video_url'):
-                sent_msg = await message.reply_video(
-                    response_data['video_url'],
-                    caption=caption,
-                    parse_mode=ParseMode.HTML
-                )
-            elif response_data.get('cover_image'):
-                sent_msg = await message.reply_photo(
-                    response_data['cover_image'],
-                    caption=caption,
-                    parse_mode=ParseMode.HTML
-                )
-            else:
-                sent_msg = await message.reply_text(
-                    caption,
-                    parse_mode=ParseMode.HTML
-                )
-
-            if message.chat.type in ["group", "supergroup"]:
-                await sent_msg.reply_text(
-                    f"👆 For {message.from_user.mention_html()}",
-                    parse_mode=ParseMode.HTML
-                )
-
-        except Exception as e:
-            print(f"Error sending results: {e}")
+        if response_data.get('video_url'):
+            await message.reply_video(response_data['video_url'], caption=caption, parse_mode=ParseMode.HTML)
+        elif response_data.get('cover_image'):
+            await message.reply_photo(response_data['cover_image'], caption=caption, parse_mode=ParseMode.HTML)
+        else:
+            await message.reply_text(caption, parse_mode=ParseMode.HTML)
 
     except Exception as e:
         print(f"Processing error: {e}")
@@ -176,43 +127,22 @@ async def process_anime_request(task, app):
         ACTIVE_TASKS.discard(message.message_id)
 
 async def findanime(update: Update, context: CallbackContext):
-    """Handle /findanime command"""
     try:
-        message = update.message
-        if not (message and message.reply_to_message and message.reply_to_message.photo):
-            await message.reply_text("🔍 Reply to an anime screenshot with /findanime")
+        if not (update.message and update.message.reply_to_message and update.message.reply_to_message.photo):
+            await update.message.reply_text("🔍 Reply to an anime screenshot with /findanime")
             return
 
-        REQUEST_QUEUE.append({
-            'update': update,
-            'context': context,
-            'message': message
-        })
-
-        await context.bot.send_chat_action(
-            chat_id=message.chat.id,
-            action=ChatAction.TYPING
-        )
-
+        REQUEST_QUEUE.append({'update': update, 'context': context, 'message': update.message})
+        await context.bot.send_chat_action(chat_id=update.message.chat.id, action=ChatAction.TYPING)
     except Exception as e:
         print(f"Command error: {e}")
 
 async def handle_mention(update: Update, context: CallbackContext):
-    """Handle @bot mentions in groups"""
-    if update.message and context.bot.username:
-        if f"@{context.bot.username}" in update.message.text:
-            await findanime(update, context)
+    if update.message and context.bot.username and f"@{context.bot.username}" in update.message.text:
+        await findanime(update, context)
 
 async def setup_anime_finder(app):
-    """Initialize the anime finder feature"""
-    # Start queue processor
     asyncio.create_task(adaptive_queue_processor(app))
-    
-    # Add handlers
     app.add_handler(CommandHandler("findanime", findanime))
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.ChatType.GROUPS,
-        handle_mention
-    ))
-    
+    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.GROUPS, handle_mention))
     print("🎌 Anime Finder feature initialized successfully!")
