@@ -1,3 +1,4 @@
+import compat  
 import asyncio
 import requests
 import psutil
