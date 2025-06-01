@@ -36,6 +36,7 @@ class Bot(Client):
         self.mention: Optional[str] = None
         self.username: Optional[str] = None
         self.uptime: Optional[str] = None
+        self.web_app = None  # Add web app reference
 
     async def cleanup_tasks(self):
         """Handle periodic cleanup tasks"""
@@ -93,9 +94,15 @@ class Bot(Client):
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
 
-async def post_init(app):
+async def post_init(bot):
     """Initialize additional services"""
-    await setup_anime_finder(app)
+    try:
+        # Initialize anime finder with the bot instance
+        await setup_anime_finder(bot)
+        logger.info("Anime finder initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize anime finder: {e}")
+        raise
 
 async def start_services():
     """Start all bot services"""
@@ -104,10 +111,13 @@ async def start_services():
 
     if Config.WEBHOOK:
         try:
-            app = web.AppRunner(await web_server())
-            await app.setup()
-            site = web.TCPSite(app, "0.0.0.0", 8000)
+            app = web.Application()
+            app.router.add_routes(await web_server())
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", 8000)
             await site.start()
+            bot.web_app = app  # Store reference
             logger.info("Web server started successfully")
         except Exception as e:
             logger.error(f"Failed to start web server: {e}")
@@ -119,10 +129,9 @@ async def start_services():
         logger.info("Shutdown signal received")
     finally:
         logger.info("Cleaning up before shutdown...")
-        if Config.WEBHOOK:
+        if Config.WEBHOOK and bot.web_app:
             try:
-                await site.stop()
-                await app.cleanup()
+                await runner.cleanup()
             except Exception as e:
                 logger.error(f"Error during web server cleanup: {e}")
         await bot.stop()
