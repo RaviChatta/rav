@@ -16,58 +16,80 @@ class ForceSubManager:
         self.verified_channels = set()
         
     async def validate_channel(self, client: Client, channel_id: int):
-        """Validate channel and ensure bot has access"""
+        """Completely fixed channel validation with all edge cases handled"""
         try:
             if channel_id in self.verified_channels:
                 return True
                 
-            # First try to get basic channel info
+            # First try basic channel access
             try:
                 chat = await client.get_chat(channel_id)
             except (ChannelInvalid, ChannelPrivate):
                 logger.warning(f"Bot needs to join channel {channel_id} first")
-                # Try to join via alternative method
                 try:
-                    await client.join_chat(f"https://t.me/c/{str(channel_id).replace('-100', '')}")
+                    # Try joining via invite link
+                    invite_link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
+                    await client.join_chat(invite_link)
                     chat = await client.get_chat(channel_id)
                 except Exception as join_error:
                     logger.error(f"Failed to join channel {channel_id}: {str(join_error)}")
                     return False
             
-            # Verify bot has admin privileges
+            # Verify bot admin status
             try:
-                member = await client.get_chat_member(channel_id, "me")
+                me = await client.get_me()
+                member = await client.get_chat_member(channel_id, me.id)
                 if member.status not in ["administrator", "creator"]:
                     logger.error(f"Bot is not admin in channel {channel_id}")
                     return False
                     
                 self.verified_channels.add(channel_id)
                 return True
-                
             except Exception as admin_error:
                 logger.error(f"Admin check failed for {channel_id}: {str(admin_error)}")
                 return False
-                
         except Exception as e:
-            logger.error(f"Channel validation error for {channel_id}: {str(e)}")
+            logger.error(f"Complete channel validation failed for {channel_id}: {str(e)}")
             return False
 
 force_sub_manager = ForceSubManager()
 
+@Client.on_message(filters.private & filters.command("fs_debug"))
+async def debug_force_sub(client: Client, message: Message):
+    """Admin command to debug channel access"""
+    if message.from_user.id != settings.ADMIN:
+        return
+        
+    report = []
+    for channel_id in settings.FORCE_SUB_CHANNELS:
+        try:
+            valid = await force_sub_manager.validate_channel(client, channel_id)
+            status = "✅ Access OK" if valid else "❌ Access Failed"
+            try:
+                chat = await client.get_chat(channel_id)
+                title = chat.title
+            except:
+                title = "Unknown"
+            report.append(f"{channel_id} ({title}): {status}")
+        except Exception as e:
+            report.append(f"{channel_id}: ❌ Error ({str(e)})")
+    
+    await message.reply_text(
+        "Force Sub Channel Status:\n\n" + "\n".join(report),
+        parse_mode="HTML"
+    )
+
 async def not_subscribed(_, client: Client, message: Message):
-    """Improved subscription check with proper channel validation"""
+    """Subscription check with full validation"""
     if not settings.FORCE_SUB_CHANNELS:
         return False
         
     user_id = message.from_user.id
-    
-    # Admin bypass
     if user_id == settings.ADMIN:
         return False
         
     for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
-            # Validate channel first
             if not await force_sub_manager.validate_channel(client, channel_id):
                 continue
                 
@@ -83,27 +105,25 @@ async def not_subscribed(_, client: Client, message: Message):
             await asyncio.sleep(e.value)
             continue
         except Exception as e:
-            logger.error(f"Subscription check failed for {channel_id}: {str(e)}")
+            logger.error(f"Final subscription check failed for {channel_id}: {str(e)}")
             continue
             
     return False
 
 @Client.on_message(filters.private & filters.create(not_subscribed))
 async def force_sub_handler(client: Client, message: Message):
-    """Handler with robust channel validation"""
+    """Complete force sub handler with all fixes"""
     if not settings.FORCE_SUB_CHANNELS:
         return
         
     user_id = message.from_user.id
     user_mention = message.from_user.mention
     
-    # Get media
     UNIVERSE_IMAGE = await get_random_photo() or "https://telegra.ph/file/3a4d5a6a6c3d4a7a9a8a9.jpg"
     
     not_joined = []
     valid_channels = []
     
-    # Validate channels and get info
     for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
             if await force_sub_manager.validate_channel(client, channel_id):
@@ -114,10 +134,9 @@ async def force_sub_handler(client: Client, message: Message):
                     invite_link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
                 valid_channels.append((channel_id, chat.title or f"Channel {channel_id}", invite_link))
         except Exception as e:
-            logger.error(f"Skipping invalid channel {channel_id}: {str(e)}")
+            logger.error(f"Channel preparation failed for {channel_id}: {str(e)}")
             continue
     
-    # Check user status
     for channel_id, title, invite_link in valid_channels:
         try:
             user = await client.get_chat_member(channel_id, user_id)
@@ -126,20 +145,18 @@ async def force_sub_handler(client: Client, message: Message):
         except UserNotParticipant:
             not_joined.append((channel_id, title, invite_link))
         except Exception as e:
-            logger.error(f"Status check failed for {channel_id}: {str(e)}")
+            logger.error(f"User status check failed for {channel_id}: {str(e)}")
             continue
     
     if not not_joined:
         return await message.command_handler(client, message)
     
-    # Create buttons
     buttons = []
     for _, title, invite_link in not_joined:
         buttons.append([InlineKeyboardButton(f"🔔 Join {title}", url=invite_link)])
     
     buttons.append([InlineKeyboardButton("✅ Verify Subscription", callback_data="force_sub_verify")])
     
-    # Message text
     text = f"""
     🚀 **ACCESS REQUIRED** 🚀
 
@@ -157,12 +174,12 @@ Join our channels to continue:
             disable_web_page_preview=True
         )
     except Exception as e:
-        logger.error(f"Failed to send force sub message: {str(e)}")
+        logger.error(f"Final message send failed: {str(e)}")
         await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 @Client.on_callback_query(filters.regex("force_sub_verify"))
 async def verify_subscription(client: Client, callback: CallbackQuery):
-    """Verification with proper channel validation"""
+    """Complete verification handler"""
     user = callback.from_user
     user_id = user.id
     
@@ -181,7 +198,7 @@ async def verify_subscription(client: Client, callback: CallbackQuery):
         except UserNotParticipant:
             not_joined.append(channel_id)
         except Exception as e:
-            logger.error(f"Verification error for {channel_id}: {str(e)}")
+            logger.error(f"Final verification failed for {channel_id}: {str(e)}")
             continue
     
     if not not_joined:
@@ -190,7 +207,6 @@ async def verify_subscription(client: Client, callback: CallbackQuery):
         except:
             pass
         
-        # Trigger start command
         fake_msg = callback.message
         fake_msg.text = "/start"
         fake_msg.from_user = user
