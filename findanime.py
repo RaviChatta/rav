@@ -1,94 +1,89 @@
-# findanime.py - Fully compatible with Python 3.13 and PTB v13
 import asyncio
 import requests
 import psutil
-import mimetypes  # Replacement for imghdr
+import mimetypes
 from collections import deque
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pyrogram.enums import ParseMode, ChatAction
+from typing import Dict, Optional
 
-# Compatibility layer for Python 3.13
-import sys
-if sys.version_info >= (3, 13):
-    # Create imghdr replacement
-    class ImghdrCompat:
-        @staticmethod
-        def what(file, h=None):
-            mime = mimetypes.guess_type(file)[0]
-            return mime.split('/')[-1] if mime else None
-    sys.modules['imghdr'] = ImghdrCompat()
-
-# PTB v13 imports
-try:
-    from telegram import Update, ParseMode, ChatAction
-    from telegram.ext import (
-        CallbackContext,
-        CommandHandler,
-        MessageHandler,
-        Filters
-    )
-except ImportError as e:
-    print(f"Import error: {e}")
-    raise
-
-# --- Config ---
-TRACE_MOE_KEY = "your_trace_moe_key"  # Replace with your key
+# Config
+TRACE_MOE_KEY = Config.TRACE_MOE_KEY  # Make sure to add this to your config
 ANILIST_API = "https://graphql.anilist.co"
+CPU_THRESHOLD = 80
 
-# --- Adaptive Queue System ---
+# Queue system
 REQUEST_QUEUE = deque()
 ACTIVE_TASKS = set()
-CPU_THRESHOLD = 80
 
 def get_system_load():
     return psutil.cpu_percent(interval=1)
 
-async def adaptive_queue_processor(app):
+async def adaptive_queue_processor(bot: Client):
     while True:
-        if REQUEST_QUEUE:
-            current_load = get_system_load()
-            if current_load < CPU_THRESHOLD:
-                task = REQUEST_QUEUE.popleft()
-                ACTIVE_TASKS.add(task['message'].message_id)
-                asyncio.create_task(process_anime_request(task, app))
-            await asyncio.sleep(0.5 if current_load > CPU_THRESHOLD else 0.1)
-        else:
-            await asyncio.sleep(1)
+        if REQUEST_QUEUE and get_system_load() < CPU_THRESHOLD:
+            task = REQUEST_QUEUE.popleft()
+            ACTIVE_TASKS.add(task['message_id'])
+            asyncio.create_task(process_anime_request(bot, task))
+        await asyncio.sleep(0.5)
 
-async def turbo_search(image_url: str):
+async def turbo_search(image_url: str) -> Optional[Dict]:
     headers = {'x-trace-key': TRACE_MOE_KEY} if TRACE_MOE_KEY else {}
     params = {'url': image_url, 'cutBorders': True}
-    for attempt in range(3):
-        try:
-            response = requests.get("https://api.trace.moe/search", params=params, headers=headers, timeout=10)
-            return response.json() if response.status_code == 200 else None
-        except requests.exceptions.RequestException:
-            if attempt == 2: return None
-            await asyncio.sleep(1)
-
-async def fetch_anilist(anilist_id: int):
-    query = """query($id: Int) { Media(id: $id, type: ANIME) {
-        title { romaji english } episodes siteUrl coverImage { large } } }"""
     try:
-        response = requests.post(ANILIST_API, json={'query': query, 'variables': {'id': anilist_id}}, timeout=10)
+        response = requests.get(
+            "https://api.trace.moe/search", 
+            params=params, 
+            headers=headers, 
+            timeout=10
+        )
+        return response.json() if response.status_code == 200 else None
+    except requests.exceptions.RequestException:
+        return None
+
+async def fetch_anilist(anilist_id: int) -> Dict:
+    query = """query($id: Int) { 
+        Media(id: $id, type: ANIME) {
+            title { romaji english } 
+            episodes 
+            siteUrl 
+            coverImage { large } 
+        } 
+    }"""
+    try:
+        response = requests.post(
+            ANILIST_API, 
+            json={'query': query, 'variables': {'id': anilist_id}}, 
+            timeout=10
+        )
         return response.json().get('data', {}).get('Media', {})
-    except:
+    except Exception:
         return {}
 
-def format_response(data: dict) -> str:
+def format_response(data: Dict) -> str:
     title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
-    return (f"🎬 <b>{title}</b>\n"
-            f"• {'🎥 Movie' if data.get('episodes', 0) == 1 else f'📺 Episode: {data.get('episode', 'N/A')}'}\n"
-            f"• ⏱ <b>Timestamp:</b> {data.get('timestamp', '00:00')}\n"
-            f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
-            f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>")
+    return (
+        f"🎬 <b>{title}</b>\n"
+        f"• {'🎥 Movie' if data.get('episodes', 0) == 1 else f'📺 Episode: {data.get('episode', 'N/A')}'}\n"
+        f"• ⏱ <b>Timestamp:</b> {data.get('timestamp', '00:00')}\n"
+        f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
+        f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>"
+    )
 
-async def process_anime_request(task, app):
+async def process_anime_request(bot: Client, task: Dict):
     try:
-        update = task['update']
-        context = task['context']
-        message = task['message']
-        file = await message.reply_to_message.photo[-1].get_file()
+        message_id = task['message_id']
+        chat_id = task['chat_id']
+        reply_to = task['reply_to']
         
-        if not (trace_data := await turbo_search(file.file_path)):
+        message = await bot.get_messages(chat_id, message_id)
+        if not message or not message.reply_to_message or not message.reply_to_message.photo:
+            return
+
+        file = await message.reply_to_message.download()
+        
+        if not (trace_data := await turbo_search(file)):
             await message.reply_text("❌ Couldn't identify the anime. Try a clearer image.")
             return
 
@@ -110,37 +105,53 @@ async def process_anime_request(task, app):
 
         caption = format_response(response_data)
         if response_data.get('video_url'):
-            await message.reply_video(response_data['video_url'], caption=caption, parse_mode=ParseMode.HTML)
+            await message.reply_video(
+                response_data['video_url'], 
+                caption=caption, 
+                parse_mode=ParseMode.HTML
+            )
         elif response_data.get('cover_image'):
-            await message.reply_photo(response_data['cover_image'], caption=caption, parse_mode=ParseMode.HTML)
+            await message.reply_photo(
+                response_data['cover_image'], 
+                caption=caption, 
+                parse_mode=ParseMode.HTML
+            )
         else:
-            await message.reply_text(caption, parse_mode=ParseMode.HTML)
+            await message.reply_text(
+                caption, 
+                parse_mode=ParseMode.HTML
+            )
 
     except Exception as e:
-        print(f"Processing error: {e}")
+        logger.error(f"Error processing anime request: {e}")
     finally:
-        ACTIVE_TASKS.discard(message.message_id)
+        ACTIVE_TASKS.discard(message_id)
 
-async def findanime(update: Update, context: CallbackContext):
+@Client.on_message(filters.command("findanime") & (filters.private | filters.group))
+async def findanime_handler(bot: Client, message: Message):
     try:
-        if not (update.message and update.message.reply_to_message and update.message.reply_to_message.photo):
-            await update.message.reply_text("🔍 Reply to an anime screenshot with /findanime")
+        if not message.reply_to_message or not message.reply_to_message.photo:
+            await message.reply_text("🔍 Reply to an anime screenshot with /findanime")
             return
 
-        REQUEST_QUEUE.append({'update': update, 'context': context, 'message': update.message})
-        await context.bot.send_chat_action(chat_id=update.message.chat.id, action=ChatAction.TYPING)
+        REQUEST_QUEUE.append({
+            'message_id': message.id,
+            'chat_id': message.chat.id,
+            'reply_to': message.reply_to_message.id
+        })
+        
+        await bot.send_chat_action(
+            chat_id=message.chat.id,
+            action=ChatAction.TYPING
+        )
     except Exception as e:
-        print(f"Command error: {e}")
+        logger.error(f"Error in findanime handler: {e}")
 
-async def handle_mention(update: Update, context: CallbackContext):
-    if update.message and context.bot.username and f"@{context.bot.username}" in update.message.text:
-        await findanime(update, context)
-
-async def setup_anime_finder(app):
-    asyncio.create_task(adaptive_queue_processor(app))
-    app.add_handler(CommandHandler("findanime", findanime))
-    app.add_handler(MessageHandler(
-        Filters.text & Filters.chat_type.groups,
-        handle_mention
-    ))
-    print("🎌 Anime Finder feature initialized successfully!")
+async def setup_anime_finder(bot: Client):
+    """Setup anime finder handlers and queue processor"""
+    try:
+        asyncio.create_task(adaptive_queue_processor(bot))
+        logger.info("Anime finder setup completed")
+    except Exception as e:
+        logger.error(f"Error setting up anime finder: {e}")
+        raise
