@@ -14,6 +14,7 @@ from pyrogram.types import (
 from pyrogram.errors import FloodWait
 from config import settings
 from scripts import Txt
+from pyrogram.enums import ChatMemberStatus
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
@@ -30,6 +31,12 @@ ADMIN_USER_ID = settings.ADMIN
 ]))
 async def command_handler(client: Client, message: Message):
     user_id = message.from_user.id
+    is_admin = user_id == ADMIN_USER_ID  # Check if user is admin
+    
+    # Admin bypass for all commands
+    if is_admin:
+        logger.info(f"Admin {user_id} accessed command: {message.command}")
+
     img = await get_random_photo()
     anim = await get_random_animation()
     
@@ -259,7 +266,8 @@ async def command_handler(client: Client, message: Message):
         await asyncio.sleep(e.value)
     except Exception as e:
         logger.error(f"Command error: {e}")
-        await message.reply_text("An error occurred. Please try again later.")
+        await message.reply_text("⚠️ An error occurred. Please try again.")
+
 
 # ... [rest of your existing code remains the same]
 @Client.on_message(filters.private & filters.photo)
@@ -275,15 +283,21 @@ async def addthumbs(client: Client, message: Message):
 async def leaderboard_command(client: Client, message: Message):
     await show_leaderboard_ui(client, message)
 
-@Client.on_callback_query(filters.regex(r'^lb_period_'))
-async def leaderboard_period_callback(client: Client, callback_query: CallbackQuery):
-    """Handle leaderboard period changes"""
-    user_id = callback_query.from_user.id
-    period = callback_query.data.split('_')[-1]  # daily, weekly, monthly, alltime
+@Client.on_callback_query(filters.regex(r'^lb_(period|type)_'))
+async def leaderboard_callback(client: Client, callback: CallbackQuery):
+    """Handle all leaderboard button presses"""
+    user_id = callback.from_user.id
+    data_parts = callback.data.split('_')
     
-    await hyoshcoder.set_leaderboard_period(user_id, period)
-    await show_leaderboard_ui(client, callback_query.message)
-
+    if data_parts[1] == "period":
+        period = data_parts[2]  # daily, weekly, monthly, alltime
+        await hyoshcoder.set_leaderboard_period(user_id, period)
+    else:
+        lb_type = data_parts[2]  # points, renames, referrals
+        await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+    
+    await show_leaderboard_ui(client, callback.message)
+    
 @Client.on_callback_query(filters.regex(r'^lb_type_'))
 async def leaderboard_type_callback(client: Client, callback_query: CallbackQuery):
     """Handle leaderboard type changes"""
@@ -294,12 +308,9 @@ async def leaderboard_type_callback(client: Client, callback_query: CallbackQuer
     await show_leaderboard_ui(client, callback_query.message)
 
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
-    """Display leaderboard with proper formatting and navigation"""
-    if isinstance(message, CallbackQuery):
-        user_id = message.from_user.id
-        message = message.message
-    else:
-        user_id = message.from_user.id
+    """Improved leaderboard display with working buttons"""
+    user_id = message.from_user.id if isinstance(message, Message) else message.from_user.id
+    msg = message if isinstance(message, Message) else message.message
     
     period = await hyoshcoder.get_leaderboard_period(user_id)
     lb_type = await hyoshcoder.get_leaderboard_type(user_id)
@@ -307,51 +318,44 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
     leaders = await hyoshcoder.get_leaderboard(period, lb_type)
     
     if not leaders:
-        text = "No leaderboard data available yet. Be the first to earn points!"
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Back", callback_data="help")]
-        ])
+        text = "📊 No leaderboard data yet!"
+        buttons = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="help")]])
     else:
-        # Format leaderboard message
-        emoji = {
-            "points": "✨",
-            "renames": "📁",
-            "referrals": "👥"
-        }.get(lb_type, "🏆")
-        
-        text = (
-            f"🏆 {period.capitalize()} {lb_type.capitalize()} Leaderboard:\n\n"
-            f"{emoji} Top Performers {emoji}\n\n"
-        )
+        emoji = {"points": "⭐", "renames": "📁", "referrals": "👥"}.get(lb_type, "🏆")
+        text = f"🏆 {period.upper()} {lb_type.upper()} LEADERBOARD:\n\n"
         
         for i, user in enumerate(leaders[:10], 1):
-            username = user.get('username', f"User {user.get('_id', 'N/A')}")
-            value = user.get('value', 0)
+            username = user.get('username', f"User {user['_id']}")
+            value = user['value']
             text += f"{i}. {username} - {value} {emoji}\n"
-            if user.get('is_premium', False):
-                text += "   ⭐ Premium User\n"
-        
-        # Create buttons for leaderboard navigation
-        buttons = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Daily", callback_data="lb_period_daily"),
-                InlineKeyboardButton("Weekly", callback_data="lb_period_weekly"),
-                InlineKeyboardButton("Monthly", callback_data="lb_period_monthly"),
-                InlineKeyboardButton("All-Time", callback_data="lb_period_alltime")
-            ],
-            [
-                InlineKeyboardButton("Points", callback_data="lb_type_points"),
-                InlineKeyboardButton("Files", callback_data="lb_type_renames"),
-                InlineKeyboardButton("Referrals", callback_data="lb_type_referrals")
-            ],
-            [InlineKeyboardButton("Back", callback_data="help")]
-        ])
+            if user.get('is_premium'):
+                text += "   💎 PREMIUM\n"
     
-    # Edit or reply based on context
-    if isinstance(message, Message) and message.reply_markup is None:
-        await message.reply_text(text, reply_markup=buttons)
-    else:
-        await message.edit_text(text, reply_markup=buttons)
+    # Active button styling
+    active_btn_style = {"text": f"• {period.upper()} •" if "period" in callback.data else f"• {lb_type.upper()} •"}
+    
+    buttons = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("DAILY", callback_data="lb_period_daily"),
+            InlineKeyboardButton("WEEKLY", callback_data="lb_period_weekly"),
+            InlineKeyboardButton("MONTHLY", callback_data="lb_period_monthly"),
+            InlineKeyboardButton("ALL-TIME", callback_data="lb_period_alltime")
+        ],
+        [
+            InlineKeyboardButton("POINTS", callback_data="lb_type_points"),
+            InlineKeyboardButton("FILES", callback_data="lb_type_renames"),
+            InlineKeyboardButton("REFERRALS", callback_data="lb_type_referrals")
+        ],
+        [InlineKeyboardButton("BACK", callback_data="help")]
+    ])
+    
+    try:
+        if isinstance(message, CallbackQuery):
+            await msg.edit_text(text, reply_markup=buttons)
+        else:
+            await msg.reply_text(text, reply_markup=buttons)
+    except Exception as e:
+        logger.error(f"Leaderboard error: {e}")
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'adds_'))
 async def handle_ad_link(client: Client, message: Message):
     try:
