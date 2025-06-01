@@ -1277,90 +1277,90 @@ async def reset_daily_usage(self):
 
     async def get_leaderboard(self, period: str = "daily", lb_type: str = "points", client: Optional[Client] = None) -> List[Dict]:
         """Get leaderboard data with proper async handling"""
-    try:
-        # Determine date range
-        today = datetime.datetime.now().date()
-        if period == "daily":
-            start_date = today
-        elif period == "weekly":
-            start_date = today - datetime.timedelta(days=today.weekday())
-        elif period == "monthly":
-            start_date = datetime.date(today.year, today.month, 1)
-        else:  # alltime
-            start_date = None
-
-        pipeline = []
-        
-        if period == "alltime":
-            field = {
-                "points": "points.balance",
-                "renames": "activity.total_files_renamed",
-                "referrals": "referral.referred_count"
-            }.get(lb_type, "points.balance")
+        try:
+            # Determine date range
+            today = datetime.datetime.now().date()
+            if period == "daily":
+                start_date = today
+            elif period == "weekly":
+                start_date = today - datetime.timedelta(days=today.weekday())
+            elif period == "monthly":
+                start_date = datetime.date(today.year, today.month, 1)
+            else:  # alltime
+                start_date = None
+    
+            pipeline = []
             
-            pipeline.extend([
-                {"$sort": {field: -1}},
-                {"$limit": 10},
-                {"$project": {
-                    "_id": 1,
-                    "username": 1,
-                    "value": f"${field}",
-                    "is_premium": "$premium.is_premium"
-                }}
-            ])
-        else:
-            if start_date is None:
-                raise ValueError("Invalid period specified for leaderboard")
+            if period == "alltime":
+                field = {
+                    "points": "points.balance",
+                    "renames": "activity.total_files_renamed",
+                    "referrals": "referral.referred_count"
+                }.get(lb_type, "points.balance")
                 
-            collection = "transactions" if lb_type == "points" else "file_stats"
-            group_field = {"$sum": "$amount"} if lb_type == "points" else {"$sum": 1}
+                pipeline.extend([
+                    {"$sort": {field: -1}},
+                    {"$limit": 10},
+                    {"$project": {
+                        "_id": 1,
+                        "username": 1,
+                        "value": f"${field}",
+                        "is_premium": "$premium.is_premium"
+                    }}
+                ])
+            else:
+                if start_date is None:
+                    raise ValueError("Invalid period specified for leaderboard")
+                    
+                collection = "transactions" if lb_type == "points" else "file_stats"
+                group_field = {"$sum": "$amount"} if lb_type == "points" else {"$sum": 1}
+                
+                pipeline.extend([
+                    {"$match": {
+                        "timestamp" if lb_type == "points" else "date": {
+                            "$gte": (
+                                datetime.datetime.combine(start_date, datetime.time.min) 
+                                if lb_type == "points" 
+                                else start_date.isoformat()
+                            )
+                    }}},
+                    {"$group": {"_id": "$user_id", "value": group_field}},
+                    {"$sort": {"value": -1}},
+                    {"$limit": 10},
+                    {"$lookup": {
+                        "from": "users",
+                        "localField": "_id",
+                        "foreignField": "_id",
+                        "as": "user"
+                    }},
+                    {"$unwind": "$user"},
+                    {"$project": {
+                        "_id": "$_id",
+                        "username": "$user.username",
+                        "value": 1,
+                        "is_premium": "$user.premium.is_premium"
+                    }}
+                ])
+    
+            # Get users from proper collection
+            collection = self.db.transactions if lb_type == "points" else self.db.file_stats
+            users = await collection.aggregate(pipeline).to_list(length=10)
             
-            pipeline.extend([
-                {"$match": {
-                    "timestamp" if lb_type == "points" else "date": {
-                        "$gte": (
-                            datetime.datetime.combine(start_date, datetime.time.min) 
-                            if lb_type == "points" 
-                            else start_date.isoformat()
-                        )
-                }}},
-                {"$group": {"_id": "$user_id", "value": group_field}},
-                {"$sort": {"value": -1}},
-                {"$limit": 10},
-                {"$lookup": {
-                    "from": "users",
-                    "localField": "_id",
-                    "foreignField": "_id",
-                    "as": "user"
-                }},
-                {"$unwind": "$user"},
-                {"$project": {
-                    "_id": "$_id",
-                    "username": "$user.username",
-                    "value": 1,
-                    "is_premium": "$user.premium.is_premium"
-                }}
-            ])
-
-        # Get users from proper collection
-        collection = self.db.transactions if lb_type == "points" else self.db.file_stats
-        users = await collection.aggregate(pipeline).to_list(length=10)
-        
-        # Get usernames from Telegram if missing and client is provided
-        if client:
-            for user in users:
-                if not user.get('username'):
-                    try:
-                        tg_user = await client.get_users(user['_id'])
-                        user['username'] = tg_user.username or tg_user.first_name
-                    except Exception:
-                        user['username'] = f"User {user['_id']}"
-        
-        return users
-        
-    except Exception as e:
-        logger.error(f"Leaderboard error: {e}")
-        return []
+            # Get usernames from Telegram if missing and client is provided
+            if client:
+                for user in users:
+                    if not user.get('username'):
+                        try:
+                            tg_user = await client.get_users(user['_id'])
+                            user['username'] = tg_user.username or tg_user.first_name
+                        except Exception:
+                            user['username'] = f"User {user['_id']}"
+            
+            return users
+            
+        except Exception as e:
+            logger.error(f"Leaderboard error: {e}")
+            return []
 
     async def get_points_links_stats(self, admin_id: int = None) -> Dict:
         """Get statistics about points links."""
