@@ -224,9 +224,17 @@ class Database:
             logger.error(f"Error getting user {id}: {e}")
             return None
 
-    async def get_user_by_code(self, code: str) -> Optional[Dict]:
-        """Find user by their unique ad code"""
-        return await self.users.find_one({"ad_code": code})
+    async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
+        """Find user by their unique referral/ad code if it's not already used."""
+        user = await self.col.find_one({
+            "unique_code": unique_code,
+            "$or": [
+                {"code_used": {"$exists": False}},  # code_used not set
+                {"code_used": False}                # code_used is False
+            ]
+        })
+        return user
+  
 
     async def mark_ad_code_used(self, code: str) -> None:
         """Mark an ad code as used"""
