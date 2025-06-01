@@ -82,7 +82,6 @@ class Bot(Client):
             except Exception as e:
                 logger.error(f"Error refreshing leaderboards: {e}")
                 await asyncio.sleep(300)  # Retry after 5 minutes
-    from anime_finder import setup_anime_finder
     
     async def post_init(app):
         # Your existing initialization
