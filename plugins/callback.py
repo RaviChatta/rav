@@ -274,6 +274,15 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         'reply_markup': get_leaderboard_keyboard(period, lb_type),
                         'photo': img
                     }
+            except Exception as e:
+                logger.error(f"Error in leaderboard handler: {e}")
+                response = {
+                    'caption': "⚠️ Error loading leaderboard data",
+                    'reply_markup': InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                    ]),
+                    'photo': img
+                }
         elif data == "freepoints":
             me = await client.get_me()
             unique_code = str(uuid.uuid4())[:8]
