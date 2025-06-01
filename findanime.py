@@ -98,8 +98,8 @@ async def process_anime_request(bot: Client, task: Dict):
         if not message or not message.reply_to_message or not message.reply_to_message.photo:
             return
 
-        # Download photo bytes to memory (in_memory=True)
-        photo = message.reply_to_message.photo[-1]
+        # Corrected: photo is a Photo object, not a list
+        photo = message.reply_to_message.photo
         image_bytes = await photo.download(in_memory=True)
 
         trace_data = await turbo_search(image_bytes)
