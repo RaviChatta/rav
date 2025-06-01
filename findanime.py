@@ -171,7 +171,7 @@ async def process_anime_request(task, app):
     finally:
         ACTIVE_TASKS.discard(message.message_id)
 
-async def findanime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def findanime(update: Update, context: CallbackContext):  # Changed this line
     """Handle /findanime command"""
     try:
         message = update.message
