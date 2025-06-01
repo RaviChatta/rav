@@ -7,11 +7,10 @@ from pyrogram.enums import ParseMode, ChatAction
 from typing import Dict, Optional
 import logging
 import aiohttp
-from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
-TRACE_MOE_KEY = None  # Set your key if needed
+TRACE_MOE_KEY = None  # Set your API key if needed
 ANILIST_API = "https://graphql.anilist.co"
 CPU_THRESHOLD = 80
 
@@ -27,95 +26,96 @@ async def adaptive_queue_processor(bot: Client):
         if REQUEST_QUEUE:
             current_load = get_system_load()
             
-            # Dynamic concurrency based on CPU load
             if current_load < CPU_THRESHOLD:
                 task = REQUEST_QUEUE.popleft()
                 ACTIVE_TASKS.add(task['message_id'])
                 asyncio.create_task(process_anime_request(bot, task))
             
-            # Throttle if system is overloaded
             await asyncio.sleep(0.5 if current_load > CPU_THRESHOLD else 0.1)
         else:
             await asyncio.sleep(1)
 
-async def turbo_search(image_bytes: bytes) -> Optional[Dict]:
-    """Ultra-reliable anime detection with retries"""
+async def turbo_search(image_data: bytes) -> Optional[Dict]:
+    """Anime detection with retries"""
     headers = {'x-trace-key': TRACE_MOE_KEY} if TRACE_MOE_KEY else {}
-    url = "https://api.trace.moe/search"
-
-    data = aiohttp.FormData()
-    data.add_field('image', image_bytes, filename='image.jpg', content_type='image/jpeg')
-
-    for attempt in range(3):  # 3 attempts
+    
+    for attempt in range(3):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data, headers=headers, timeout=15) as resp:
+                form_data = aiohttp.FormData()
+                form_data.add_field('image', image_data, filename='image.jpg')
+                
+                async with session.post(
+                    "https://api.trace.moe/search",
+                    data=form_data,
+                    headers=headers,
+                    timeout=15
+                ) as resp:
                     if resp.status == 200:
                         return await resp.json()
-                    logger.error(f"Trace.moe attempt {attempt+1} failed with status {resp.status}")
+                    logger.error(f"Attempt {attempt+1} failed: HTTP {resp.status}")
         except Exception as e:
-            logger.error(f"Trace.moe attempt {attempt+1} failed: {e}")
-            if attempt == 2:  # Last attempt failed
+            logger.error(f"Attempt {attempt+1} failed: {str(e)}")
+            if attempt == 2:
                 return None
             await asyncio.sleep(1)
     return None
 
 async def fetch_anilist(anilist_id: int) -> Dict:
-    """Bulletproof AniList metadata fetch"""
-    query = """query($id: Int) { 
+    """Fetch anime metadata from AniList"""
+    query = """query($id: Int) {
         Media(id: $id, type: ANIME) {
-            title { romaji english } 
-            episodes 
-            siteUrl 
-            coverImage { large } 
-        } 
+            title { romaji english }
+            episodes
+            siteUrl
+            coverImage { large }
+        }
     }"""
     
-    for attempt in range(3):  # 3 attempts
+    for attempt in range(3):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    ANILIST_API, 
-                    json={'query': query, 'variables': {'id': anilist_id}}, 
+                    ANILIST_API,
+                    json={'query': query, 'variables': {'id': anilist_id}},
                     timeout=15
                 ) as resp:
                     if resp.status == 200:
-                        json_data = await resp.json()
-                        return json_data.get('data', {}).get('Media', {})
-                    logger.error(f"AniList attempt {attempt+1} failed with status {resp.status}")
+                        data = await resp.json()
+                        return data.get('data', {}).get('Media', {})
+                    logger.error(f"AniList attempt {attempt+1} failed: HTTP {resp.status}")
         except Exception as e:
-            logger.error(f"AniList attempt {attempt+1} failed: {e}")
+            logger.error(f"AniList attempt {attempt+1} failed: {str(e)}")
             if attempt == 2:
                 return {}
             await asyncio.sleep(1)
     return {}
 
 def format_response(data: Dict) -> str:
-    """Professional box-style formatting"""
-    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown Title')
+    """Format the anime information"""
+    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
     is_movie = data.get('episodes', 0) == 1
-
+    
     return (
         f"╔══════════════════════════╗\n"
         f"  🎬 <b>{title}</b>\n"
         f"╚══════════════════════════╝\n"
-        f"• {'🎥 Movie' if is_movie else f'📺 Episode: {data.get('episode', 'N/A')}'}\n"
+        f"• {'🎥 Movie' if is_movie else f'📺 Episode: {data.get("episode", "N/A")}'}\n"
         f"• ⏱ <b>Timestamp:</b> {data.get('timestamp', '00:00')}\n"
         f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
         f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>"
     )
 
 async def process_anime_request(bot: Client, task: Dict):
-    """Handles each request with maximum reliability"""
+    """Process each anime search request"""
     try:
         message = await bot.get_messages(task['chat_id'], task['message_id'])
         if not message or not message.reply_to_message:
             return
 
-        # Handle both photo and document cases
+        # Get the image file ID
         if message.reply_to_message.photo:
-            photo = message.reply_to_message.photo
-            file_id = photo.file_id
+            file_id = message.reply_to_message.photo.file_id
         elif (message.reply_to_message.document and 
               message.reply_to_message.document.mime_type.startswith('image/')):
             file_id = message.reply_to_message.document.file_id
@@ -123,27 +123,15 @@ async def process_anime_request(bot: Client, task: Dict):
             await message.reply_text("❌ Please reply to an image with /findanime")
             return
 
-        # Download the image with progress
+        # Download the image directly as bytes
         await bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_PHOTO)
-        image_bytes = BytesIO()
-        downloaded = await bot.download_media(
-            file_id,
-            in_memory=True,
-            file_name=image_bytes
-        )
+        image_data = await bot.download_media(file_id, in_memory=True)
         
-        # Ensure we have bytes data
-        if hasattr(downloaded, 'getvalue'):
-            image_data = downloaded.getvalue()
-        else:
-            downloaded.seek(0)
-            image_data = downloaded.read()
-
         if not image_data:
-            await message.reply_text("❌ Failed to process image")
+            await message.reply_text("❌ Failed to download image")
             return
 
-        # Search with retries
+        # Search for anime
         trace_data = await turbo_search(image_data)
         if not trace_data or not trace_data.get('result'):
             await message.reply_text("❌ Couldn't identify the anime. Try a clearer image.")
@@ -152,7 +140,7 @@ async def process_anime_request(bot: Client, task: Dict):
         best_match = trace_data['result'][0]
         anilist_data = await fetch_anilist(best_match['anilist'])
 
-        # Calculate timestamp
+        # Prepare response data
         from_time = best_match.get('from', 0)
         timestamp = f"{int(from_time // 60):02}:{int(from_time % 60):02}"
 
@@ -169,7 +157,7 @@ async def process_anime_request(bot: Client, task: Dict):
 
         caption = format_response(response_data)
 
-        # Send results with perfect fallback
+        # Send results with fallback
         try:
             if response_data['video_url']:
                 await message.reply_video(
@@ -188,16 +176,12 @@ async def process_anime_request(bot: Client, task: Dict):
                     caption,
                     parse_mode=ParseMode.HTML
                 )
-
         except Exception as e:
-            logger.error(f"Error sending results: {e}")
-            await message.reply_text(
-                caption,
-                parse_mode=ParseMode.HTML
-            )
+            logger.error(f"Failed to send results: {str(e)}")
+            await message.reply_text(caption, parse_mode=ParseMode.HTML)
 
     except Exception as e:
-        logger.error(f"Processing error: {e}", exc_info=True)
+        logger.error(f"Processing failed: {str(e)}", exc_info=True)
         try:
             await message.reply_text("⚠️ An error occurred while processing your request")
         except:
@@ -228,7 +212,7 @@ def register_handlers(bot: Client):
                 action=ChatAction.TYPING
             )
         except Exception as e:
-            logger.error(f"Handler error: {e}")
+            logger.error(f"Handler error: {str(e)}")
 
 async def start_queue_processor(bot: Client):
     asyncio.create_task(adaptive_queue_processor(bot))
