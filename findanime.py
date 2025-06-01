@@ -1,23 +1,29 @@
-import compat  
+# findanime.py - Anime Finder for PTB v13 (works with Python 3.11-3.13)
 import asyncio
 import requests
 import psutil
 from collections import deque
-from telegram import Update
-from telegram.ext import CallbackContext  # Add this import
-from telegram import constants
-from telegram.ext import (
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
 
-# Import from your existing config
-from config import settings
+# Compatibility layer for Python 3.13
+import sys
+if sys.version_info >= (3, 13):
+    from backports import zoneinfo
+    import compat  # Create compat.py as shown below
+
+# Telegram imports (PTB v13 style)
+from telegram import Update, InputMediaPhoto, InputMediaVideo
+from telegram.ext import (
+    CallbackContext,  # Used instead of ContextTypes.DEFAULT_TYPE
+    CommandHandler,
+    MessageHandler,
+    filters
+)
+from telegram.constants import ParseMode, ChatAction
+
+# Import from config
+from config import TELEGRAM_TOKEN, TRACE_MOE_KEY
 
 # --- Config ---
-TRACE_MOE_KEY = getattr(__import__('config', fromlist=['TRACE_MOE_KEY']), 'TRACE_MOE_KEY', None)
 ANILIST_API = "https://graphql.anilist.co"
 
 # --- Adaptive Queue System ---
@@ -45,7 +51,7 @@ async def adaptive_queue_processor(app):
             await asyncio.sleep(1)
 
 async def turbo_search(image_url: str):
-    """Ultra-reliable anime detection with retries"""
+    """Anime detection with retries"""
     headers = {'x-trace-key': TRACE_MOE_KEY} if TRACE_MOE_KEY else {}
     params = {'url': image_url, 'cutBorders': True}
 
@@ -65,7 +71,7 @@ async def turbo_search(image_url: str):
             await asyncio.sleep(1)
 
 async def fetch_anilist(anilist_id: int):
-    """Bulletproof AniList metadata fetch"""
+    """Fetch AniList metadata"""
     query = """
     query($id: Int) {
         Media(id: $id, type: ANIME) {
@@ -87,8 +93,8 @@ async def fetch_anilist(anilist_id: int):
         return {}
 
 def format_response(data: dict) -> str:
-    """Professional box-style formatting"""
-    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown Title')
+    """Format anime info response"""
+    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
     is_movie = data.get('episodes', 0) == 1
     timestamp = data.get('timestamp', '00:00')
 
@@ -103,7 +109,7 @@ def format_response(data: dict) -> str:
     )
 
 async def process_anime_request(task, app):
-    """Handles each request with maximum reliability"""
+    """Process each anime search request"""
     try:
         update = task['update']
         context = task['context']
@@ -141,26 +147,20 @@ async def process_anime_request(task, app):
 
         try:
             if response_data.get('video_url'):
-                sent_msg = await message.reply_video(
+                await message.reply_video(
                     response_data['video_url'],
                     caption=caption,
                     parse_mode=ParseMode.HTML
                 )
             elif response_data.get('cover_image'):
-                sent_msg = await message.reply_photo(
+                await message.reply_photo(
                     response_data['cover_image'],
                     caption=caption,
                     parse_mode=ParseMode.HTML
                 )
             else:
-                sent_msg = await message.reply_text(
+                await message.reply_text(
                     caption,
-                    parse_mode=ParseMode.HTML
-                )
-
-            if message.chat.type in ["group", "supergroup"]:
-                await sent_msg.reply_text(
-                    f"👆 For {message.from_user.mention_html()}",
                     parse_mode=ParseMode.HTML
                 )
 
@@ -172,7 +172,7 @@ async def process_anime_request(task, app):
     finally:
         ACTIVE_TASKS.discard(message.message_id)
 
-async def findanime(update: Update, context: CallbackContext):  # Changed this line
+async def findanime(update: Update, context: CallbackContext):
     """Handle /findanime command"""
     try:
         message = update.message
@@ -194,7 +194,7 @@ async def findanime(update: Update, context: CallbackContext):  # Changed this l
     except Exception as e:
         print(f"Command error: {e}")
 
-async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_mention(update: Update, context: CallbackContext):
     """Handle @bot mentions in groups"""
     if update.message and context.bot.username:
         if f"@{context.bot.username}" in update.message.text:
