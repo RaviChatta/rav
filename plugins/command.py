@@ -88,17 +88,31 @@ async def command_handler(client: Client, message: Message):
                 # Then handle campaign
                 elif args[0].startswith("adds_"):
                     unique_code = args[0].replace("adds_", "")
+                    
+                    # Find user by code and ensure it's not used already
                     user = await hyoshcoder.get_user_by_code(unique_code)
                     
-                    if user:
-                        reward = await hyoshcoder.get_expend_points(user["_id"])
-                        if reward > 0:
-                            await hyoshcoder.add_points(user["_id"], reward)
-                            await hyoshcoder.set_expend_points(user["_id"], 0, None)
+                    if user and not user.get("code_used", False):
+                        user_id = user["_id"]
+                        reward = await hyoshcoder.get_expend_points(user_id)
+                
+                        if reward and reward > 0:
+                            await hyoshcoder.add_points(user_id, reward)
+                            await hyoshcoder.set_expend_points(user_id, 0, None)
+                
+                            # ✅ Mark code as used
+                            await hyoshcoder.col.update_one(
+                                {"_id": user_id},
+                                {"$set": {"code_used": True}}
+                            )
+                
                             cap = f"🎉 You earned {reward} points!"
-                            await client.send_message(chat_id=user["_id"], text=cap)
+                            await client.send_message(chat_id=user_id, text=cap)
+                        else:
+                            await message.reply("❌ This code has already been used or has no reward left.")
                     else:
                         await message.reply("❌ The link is invalid or already used.")
+
 
             # Send welcome message
             caption = Txt.START_TXT.format(user.mention)
