@@ -1197,7 +1197,7 @@ class Database:
             logging.error(f"Error saving {period} leaderboard: {e}")
 
     async def get_leaderboard(self, period: str = "daily", lb_type: str = "points", client: Optional[Client] = None) -> List[Dict]:
-    """Get leaderboard data with proper async handling"""
+        """Get leaderboard data with proper async handling"""
     try:
         # Determine date range
         today = datetime.datetime.now().date()
