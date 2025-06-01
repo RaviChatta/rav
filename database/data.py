@@ -502,7 +502,63 @@ class Database:
         except Exception as e:
             logging.error(f"Error tracking file rename for {user_id}: {e}")
             return False
+    async def get_user_rename_stats(self, user_id: int) -> Dict:
+    """Get comprehensive rename statistics for a user"""
+    stats = {
+        "total": 0,
+        "today": 0,
+        "this_week": 0,
+        "this_month": 0,
+        "daily_usage": 0
+    }
+    
+    try:
+        # Get basic user stats
+        user = await self.users.find_one({"_id": user_id})
+        if not user:
+            return stats
+            
+        stats["total"] = user["activity"].get("total_files_renamed", 0)
+        stats["daily_usage"] = user["activity"].get("daily_usage", 0)
+        
+        # Calculate time-based stats
+        today = datetime.datetime.now().date()
+        start_of_week = today - datetime.timedelta(days=today.weekday())
+        start_of_month = datetime.date(today.year, today.month, 1)
+        
+        stats["today"] = await self.file_stats.count_documents({
+            "user_id": user_id,
+            "date": today.isoformat()
+        })
+        
+        stats["this_week"] = await self.file_stats.count_documents({
+            "user_id": user_id,
+            "date": {"$gte": start_of_week.isoformat()}
+        })
+        
+        stats["this_month"] = await self.file_stats.count_documents({
+            "user_id": user_id,
+            "date": {"$gte": start_of_month.isoformat()}
+        })
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error getting rename stats: {e}")
+        return stats
 
+async def reset_daily_usage(self):
+    """Reset daily usage counters for all users (run as a daily job)"""
+    try:
+        await self.users.update_many(
+            {},
+            {"$set": {"activity.daily_usage": 0}}
+        )
+        logger.info("Reset daily usage counters for all users")
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting daily usage: {e}")
+        return False
     async def get_user_file_stats(self, user_id: int) -> Dict:
         """Get user's file rename statistics."""
         stats = {
