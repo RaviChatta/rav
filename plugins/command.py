@@ -150,7 +150,21 @@ async def command_handler(client: Client, message: Message):
                 "**Please select the type of media you want to set:**",
                 reply_markup=keyboard
             )
-
+        elif command == "set_caption":
+                        if len(message.command) == 1:
+                            caption = (
+                                "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
+                            )
+                            await message.reply_text(caption)
+                            return
+                        new_caption = message.text.split(" ", 1)[1]
+                        await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
+                        caption = ("**Your caption has been saved successfully ✅**")
+                        if img:
+                            await message.reply_photo(photo=img, caption=caption)
+                        else:
+                            await message.reply_text(text=caption)
+                    
         elif cmd in ["leaderboard", "lb"]:
             await show_leaderboard_ui(client, message)
 
@@ -271,41 +285,41 @@ async def command_handler(client: Client, message: Message):
         await message.reply_text("⚠️ An error occurred. Please try again.")
 
 
-# ... [rest of your existing code remains the same]
+
+
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client, message):
     mkn = await message.reply_text("Please wait...")
 
     try:
-        # Download original photo locally
+        # Download the photo
         file_path = await message.download()
 
-        # Open and process image
+        # Crop and enhance image locally
         with Image.open(file_path) as img:
             img = img.convert("RGB")
-
             w, h = img.size
             min_edge = min(w, h)
             left = (w - min_edge) // 2
             top = (h - min_edge) // 2
             img = img.crop((left, top, left + min_edge, top + min_edge))
-
             img = img.resize((320, 320), Image.LANCZOS)
-
             img = ImageEnhance.Sharpness(img).enhance(1.2)
             img = ImageEnhance.Contrast(img).enhance(1.1)
             img = ImageEnhance.Brightness(img).enhance(1.05)
+            # No upload needed — only processed locally
 
-            # If you want to save or do further processing, do it here
-            # For now, we don’t upload this processed image anywhere
-
-        # Save original Telegram file_id as thumbnail
+        # Save the original Telegram photo file_id
         await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
 
-        await mkn.edit_text("**Thumbnail saved successfully ✅️**")
+        # Confirm and auto-delete message after 5 seconds
+        success = await mkn.edit_text("**Thumbnail saved successfully ✅️**")
+        await asyncio.sleep(5)
+        await success.delete()
 
     except Exception as e:
         await mkn.edit_text(f"❌ Error saving thumbnail: {e}")
+
 
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
