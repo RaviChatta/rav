@@ -147,6 +147,10 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
+    # Ensure database is connected
+    if not hyoshcoder._is_connected:
+        await initialize_database()
+    
     data = query.data
     user_id = query.from_user.id
     
