@@ -1,27 +1,24 @@
-# findanime.py - Anime Finder for PTB v13 (works with Python 3.11-3.13)
 import asyncio
 import requests
 import psutil
 from collections import deque
 
-# Compatibility layer for Python 3.13
-import sys
-if sys.version_info >= (3, 13):
-    from backports import zoneinfo
-    import compat  # Create compat.py as shown below
+# Universal compatibility imports
+try:
+    from telegram import ParseMode, ChatAction
+except ImportError:
+    from telegram.constants import ParseMode, ChatAction
 
-# Telegram imports (PTB v13 style)
 from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import (
-    CallbackContext,  # Used instead of ContextTypes.DEFAULT_TYPE
+    CallbackContext,
     CommandHandler,
     MessageHandler,
     filters
 )
-from telegram.constants import ParseMode, ChatAction
 
 # Import from config
-from config import TELEGRAM_TOKEN, TRACE_MOE_KEY
+from config import settings
 
 # --- Config ---
 ANILIST_API = "https://graphql.anilist.co"
@@ -94,7 +91,7 @@ async def fetch_anilist(anilist_id: int):
 
 def format_response(data: dict) -> str:
     """Format anime info response"""
-    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
+    title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown Title')
     is_movie = data.get('episodes', 0) == 1
     timestamp = data.get('timestamp', '00:00')
 
@@ -147,20 +144,26 @@ async def process_anime_request(task, app):
 
         try:
             if response_data.get('video_url'):
-                await message.reply_video(
+                sent_msg = await message.reply_video(
                     response_data['video_url'],
                     caption=caption,
                     parse_mode=ParseMode.HTML
                 )
             elif response_data.get('cover_image'):
-                await message.reply_photo(
+                sent_msg = await message.reply_photo(
                     response_data['cover_image'],
                     caption=caption,
                     parse_mode=ParseMode.HTML
                 )
             else:
-                await message.reply_text(
+                sent_msg = await message.reply_text(
                     caption,
+                    parse_mode=ParseMode.HTML
+                )
+
+            if message.chat.type in ["group", "supergroup"]:
+                await sent_msg.reply_text(
+                    f"👆 For {message.from_user.mention_html()}",
                     parse_mode=ParseMode.HTML
                 )
 
