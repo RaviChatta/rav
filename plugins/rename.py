@@ -16,6 +16,9 @@ from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 import asyncio
 import uuid
 import shlex
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Global variables to manage operations
 renaming_operations = {}
@@ -32,6 +35,50 @@ async def get_user_semaphore(user_id):
         user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
 
+async def track_rename_operation(user_id: int, original_name: str, new_name: str, points_deducted: int):
+    """Track successful rename operations in database"""
+    try:
+        # Track in file_stats collection
+        await hyoshcoder.file_stats.insert_one({
+            "user_id": user_id,
+            "original_name": original_name,
+            "new_name": new_name,
+            "timestamp": datetime.now(),
+            "date": datetime.now().date().isoformat()
+        })
+        
+        # Update user's activity stats
+        await hyoshcoder.users.update_one(
+            {"_id": user_id},
+            {
+                "$inc": {
+                    "activity.total_files_renamed": 1,
+                    "activity.daily_usage": 1,
+                    "points.total_spent": points_deducted,
+                    "points.balance": -points_deducted
+                },
+                "$set": {
+                    "activity.last_usage_date": datetime.now().isoformat(),
+                    "activity.last_active": datetime.now().isoformat()
+                }
+            }
+        )
+        
+        # Record transaction
+        await hyoshcoder.transactions.insert_one({
+            "user_id": user_id,
+            "type": "file_rename",
+            "amount": -points_deducted,
+            "description": f"Renamed {original_name} to {new_name}",
+            "timestamp": datetime.now(),
+            "balance_after": (await hyoshcoder.get_points(user_id)) - points_deducted
+        })
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error tracking rename operation: {e}")
+        return False
+
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
     user_id = message.from_user.id
@@ -40,15 +87,22 @@ async def auto_rename_files(client, message):
     if not user_data:
         return await message.reply_text("❌ Unable to load your information. Please type /start to register.")
 
-    points_data = user_data.get("points", {})  # Get the points dictionary
-    user_points = points_data.get("balance", 0)  # Get the actual number from 'balance'
+    points_data = user_data.get("points", {})
+    user_points = points_data.get("balance", 0)
     format_template = user_data.get("format_template", "")
     media_preference = user_data.get("media_preference", "")
     sequential_mode = user_data.get("sequential_mode", False)
     src_info = await hyoshcoder.get_src_info(user_id)  
 
-    if user_points < 1:
-        return await message.reply_text("❌ You don't have enough balance to rename a file. Please recharge your points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
+    # Get points config
+    points_config = await hyoshcoder.get_config("points_config", {})
+    rename_cost = points_config.get("rename_cost", 1)
+
+    if user_points < rename_cost:
+        return await message.reply_text(
+            f"❌ You don't have enough points to rename this file (Cost: {rename_cost}).",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]])
+        )
 
     if not format_template:
         return await message.reply_text("Please first define an auto-rename format using /autorename")
@@ -258,7 +312,6 @@ async def auto_rename_files(client, message):
                 except Exception as e:
                     print(f"Thumbnail processing error: {e}")
 
-            # Removed chunk_size parameter as it's not supported in Pyrogram
             try:
                 if sequential_mode:
                     log_message = await client.send_document(
@@ -344,9 +397,17 @@ async def auto_rename_files(client, message):
                             progress=progress_for_pyrogram,
                             progress_args=("Upload in progress...", queue_message, time.time())
                         )
+                    
+                    # Track successful rename operation after upload
+                    await track_rename_operation(
+                        user_id=user_id,
+                        original_name=file_name,
+                        new_name=renamed_file_name,
+                        points_deducted=rename_cost
+                    )
+
             except FloodWait as e:
                 await asyncio.sleep(e.value + 5)
-                # You might want to add retry logic here
                 raise
             except Exception as e:
                 raise e
@@ -365,9 +426,6 @@ async def auto_rename_files(client, message):
             except Exception as cleanup_error:
                 print(f"Cleanup error: {cleanup_error}")
 
-            points_config = await hyoshcoder.get_config("points_config", {})
-            rename_cost = points_config.get("rename_cost", 1)  # Default to 1 if not set
-            await hyoshcoder.deduct_points(user_id, rename_cost)
             if file_id in renaming_operations:
                 del renaming_operations[file_id]
             
