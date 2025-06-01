@@ -4,8 +4,8 @@ import pytz
 import time
 from datetime import datetime, timedelta
 from pytz import timezone
-from pyrogram import Client
-from pyrogram.types import User
+from pyrogram import Client, filters
+from pyrogram.types import Message
 from aiohttp import web
 from route import web_server
 from config import settings
@@ -36,16 +36,16 @@ class Bot(Client):
         self.mention: Optional[str] = None
         self.username: Optional[str] = None
         self.uptime: Optional[str] = None
-        self.web_app = None  # Add web app reference
+        self.web_app = None
+        self.runner = None
 
     async def cleanup_tasks(self):
         """Handle periodic cleanup tasks"""
         while True:
             try:
-                # Add your cleanup logic here
-                await asyncio.sleep(3600)  # Run every hour
+                await asyncio.sleep(3600)
             except Exception as e:
-                logger.error(f"Cleanup task error: {e}")
+                logger.error(f"Cleanup task error: {e}", exc_info=False)
                 await asyncio.sleep(300)
 
     async def auto_refresh_leaderboards(self):
@@ -54,24 +54,23 @@ class Bot(Client):
             try:
                 await hyoshcoder.update_leaderboards()
                 logger.info("Leaderboards refreshed successfully")
-                await asyncio.sleep(3600)  # Refresh every hour
+                await asyncio.sleep(3600)
             except Exception as e:
-                logger.error(f"Error refreshing leaderboards: {e}")
-                await asyncio.sleep(300)  # Retry after 5 minutes
+                logger.error(f"Error refreshing leaderboards: {e}", exc_info=False)
+                await asyncio.sleep(300)
 
     async def start(self):
         await super().start()
         
-        # Initialize database with the client reference
         await initialize_database()
-        hyoshcoder.set_client(self)  # Pass the Pyrogram client to database
+        hyoshcoder.set_client(self)
 
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
         self.uptime = Config.BOT_UPTIME
 
-        print(f"{me.first_name} has started... ✨️")
+        logger.info(f"{me.first_name} has started... ✨️")
 
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
@@ -88,57 +87,51 @@ class Bot(Client):
                     )
                 )
             except Exception as e:
-                logger.error(f"Failed to send message in chat {chat_id}: {e}")
+                logger.error(f"Failed to send message in chat {chat_id}: {e}", exc_info=False)
 
-        # Start background tasks
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
-
-async def post_init(bot):
-    """Initialize additional services"""
-    try:
-        # Initialize anime finder with the bot instance
-        await setup_anime_finder(bot)
-        logger.info("Anime finder initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize anime finder: {e}")
-        raise
 
 async def start_services():
     """Start all bot services"""
     bot = Bot()
     await bot.start()
 
+    # Initialize anime finder
+    try:
+        await setup_anime_finder(bot)
+        logger.info("Anime finder initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize anime finder: {e}", exc_info=False)
+
     if Config.WEBHOOK:
         try:
             app = web.Application()
             app.router.add_routes(await web_server())
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, "0.0.0.0", 8000)
+            bot.runner = web.AppRunner(app)
+            await bot.runner.setup()
+            site = web.TCPSite(bot.runner, "0.0.0.0", 8000)
             await site.start()
-            bot.web_app = app  # Store reference
+            bot.web_app = app
             logger.info("Web server started successfully")
         except Exception as e:
-            logger.error(f"Failed to start web server: {e}")
+            logger.error(f"Failed to start web server: {e}", exc_info=False)
 
     try:
-        await post_init(bot)  # Initialize additional services
-        await asyncio.Event().wait()  # Keep bot running
+        await asyncio.Event().wait()
     except (asyncio.CancelledError, KeyboardInterrupt):
         logger.info("Shutdown signal received")
     finally:
         logger.info("Cleaning up before shutdown...")
-        if Config.WEBHOOK and bot.web_app:
+        if Config.WEBHOOK and bot.runner:
             try:
-                await runner.cleanup()
+                await bot.runner.cleanup()
             except Exception as e:
-                logger.error(f"Error during web server cleanup: {e}")
+                logger.error(f"Error during web server cleanup: {e}", exc_info=False)
         await bot.stop()
         logger.info("Bot shutdown complete")
 
 if __name__ == "__main__":
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -147,6 +140,10 @@ if __name__ == "__main__":
             logging.FileHandler('bot.log')
         ]
     )
+
+    # Set recursion limit to prevent stack overflow
+    import sys
+    sys.setrecursionlimit(10000)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -157,19 +154,17 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
+        logger.error(f"Fatal error: {e}", exc_info=False)
     finally:
         logger.info("Shutting down event loop...")
-        # Cancel all pending tasks
         pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
         for task in pending:
             task.cancel()
         
-        # Gather all tasks and handle exceptions
         try:
             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        except Exception as e:
-            logger.error(f"Error during task cancellation: {e}")
+        except Exception:
+            pass
         
         loop.close()
         logger.info("Event loop closed. Bot shutdown complete.")
