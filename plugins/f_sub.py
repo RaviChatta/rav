@@ -11,11 +11,11 @@ from database.data import hyoshcoder
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS  # Now accepts channel IDs (-100...)
-CHECK_DELAY = 1  # Ultra-fast checks
+FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS  # List of channel IDs (-100...)
+CHECK_DELAY = 1  # Fast checks
 
 async def not_subscribed(_, __, message: Message):
-    """Check if user is not subscribed (ADMIN BYPASS + BAN DETECTION)"""
+    """Check if user is not subscribed (with proper channel ID handling)"""
     if not FORCE_SUB_CHANNELS:
         return False
         
@@ -29,7 +29,7 @@ async def not_subscribed(_, __, message: Message):
         try:
             user = await message._client.get_chat_member(channel_id, user_id)
             if user.status == "kicked":
-                await message.reply("🚫 **BANNED!** You are banned from our channels. Contact admins.")
+                await message.reply("🚫 You're banned from our channels. Contact admins.")
                 return False
             if user.status == "left":
                 return True
@@ -39,40 +39,38 @@ async def not_subscribed(_, __, message: Message):
             await asyncio.sleep(e.value)
             return await not_subscribed(_, __, message)
         except Exception as e:
-            logger.error(f"ForceSub Error (Channel ID: {channel_id}): {e}")
+            logger.error(f"ForceSub Check Error (Channel ID: {channel_id}): {str(e)}")
             continue
             
     return False
 
 @Client.on_message(filters.private & filters.create(not_subscribed))
-async def universe_force_sub(client: Client, message: Message):
-    """ULTIMATE FORCE-SUB HANDLER FOR CHANNEL IDs"""
+async def force_sub_handler(client: Client, message: Message):
+    """Fixed handler for channel IDs"""
     if not FORCE_SUB_CHANNELS:
         return
         
     user_id = message.from_user.id
     user_mention = message.from_user.mention
     
-    # Get a stunning random image
-    UNIVERSE_IMAGE = await get_random_photo() # or "https://telegra.ph/file/3a4d5a6a6c3d4a7a9a8a9.jpg"
+    # Get media
+    UNIVERSE_IMAGE = await get_random_photo() or "https://telegra.ph/file/3a4d5a6a6c3d4a7a9a8a9.jpg"
     
     not_joined = []
     channel_info = []
     
-    # Fetch channel details
+    # Get channel info with proper error handling
     for channel_id in FORCE_SUB_CHANNELS:
         try:
             chat = await client.get_chat(channel_id)
-            invite_link = await client.export_chat_invite_link(channel_id)
+            try:
+                invite_link = await client.export_chat_invite_link(channel_id)
+            except:
+                invite_link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
             channel_info.append((channel_id, chat.title or f"Channel {channel_id}", invite_link))
         except Exception as e:
-            logger.error(f"Failed to get channel {channel_id} info: {e}")
-            try:
-                # Fallback to basic invite link generation
-                invite_link = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
-                channel_info.append((channel_id, f"Channel {channel_id}", invite_link))
-            except:
-                continue
+            logger.error(f"Failed to get channel {channel_id} info: {str(e)}")
+            continue
     
     # Check subscription status
     for channel_id, title, invite_link in channel_info:
@@ -83,52 +81,27 @@ async def universe_force_sub(client: Client, message: Message):
         except UserNotParticipant:
             not_joined.append((channel_id, title, invite_link))
         except Exception as e:
-            logger.error(f"ForceSub Check Error: {e}")
+            logger.error(f"Subscription check failed: {str(e)}")
             continue
     
     if not not_joined:
-        return await message.command_handler(client, message)  # Proceed if already joined
+        return await message.command_handler(client, message)
     
-    # ===== UNIVERSE-LEVEL BUTTONS ===== #
+    # Create buttons
     buttons = []
-    
-    # **1-TAP JOIN ALL BUTTON** (MAGIC LINK)
-    if len(not_joined) > 1:
-        buttons.append([
-            InlineKeyboardButton(
-                text="🌟 JOIN ALL CHANNELS (1-TAP) 🌟",
-                url=not_joined[0][2]  # First channel's invite link
-            )
-        ])
-    
-    # Individual channel buttons (fallback)
     for _, title, invite_link in not_joined:
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"🔔 {title}",
-                url=invite_link
-            )
-        ])
+        buttons.append([InlineKeyboardButton(f"🔔 Join {title}", url=invite_link)])
     
-    # **AUTO-VERIFY BUTTON** (NO SPAMMING "I'VE JOINED")
-    buttons.append([
-        InlineKeyboardButton(
-            text="✅ AUTOMATIC VERIFY",
-            callback_data="force_sub_verify"
-        )
-    ])
+    buttons.append([InlineKeyboardButton("✅ Verify Subscription", callback_data="force_sub_verify")])
     
-    # **UNIVERSE-LEVEL MESSAGE**
+    # Message text
     text = f"""
-    🚀 **ACCESS DENIED** 🚀
+    🚀 **ACCESS REQUIRED** 🚀
 
 **Hey {user_mention},**  
-You must join **{len(not_joined)} channel(s)** to use this bot!
+Join our channels to continue:
 
-**🔗 Required Channels:**  
 {'\n'.join(f'• **{title}**' for _, title, _ in not_joined)}
-
-**👉 Click "JOIN ALL" to unlock instantly!**
     """
     
     try:
@@ -139,16 +112,16 @@ You must join **{len(not_joined)} channel(s)** to use this bot!
             disable_web_page_preview=True
         )
     except Exception as e:
-        logger.error(f"ForceSub Send Error: {e}")
+        logger.error(f"Failed to send force sub message: {str(e)}")
         await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 @Client.on_callback_query(filters.regex("force_sub_verify"))
-async def auto_verify_force_sub(client: Client, callback: CallbackQuery):
-    """AUTO-VERIFY SYSTEM FOR CHANNEL IDs"""
+async def verify_subscription(client: Client, callback: CallbackQuery):
+    """Verification handler for channel IDs"""
     user = callback.from_user
     user_id = user.id
     
-    await callback.answer("⚡ Checking subscriptions...")
+    await callback.answer("🔍 Checking your subscription...")
     
     not_joined = []
     
@@ -160,60 +133,40 @@ async def auto_verify_force_sub(client: Client, callback: CallbackQuery):
         except UserNotParticipant:
             not_joined.append(channel_id)
         except Exception as e:
-            logger.error(f"Auto-Verify Error: {e}")
+            logger.error(f"Verification error: {str(e)}")
             continue
     
     if not not_joined:
-        # **SUCCESS - UNLOCK BOT**
         try:
             await callback.message.delete()
         except:
             pass
         
-        # **TRIGGER /start AUTOMATICALLY**
+        # Trigger start command
         fake_msg = callback.message
         fake_msg.text = "/start"
         fake_msg.from_user = user
         await fake_msg.command_handler(client, fake_msg)
     else:
-        # **FAILED - SHOW REMAINING CHANNELS**
         remaining = []
         for channel_id in not_joined:
             try:
                 chat = await client.get_chat(channel_id)
-                remaining.append(f"• **{chat.title}**")
+                remaining.append(f"• {chat.title}")
             except:
                 remaining.append(f"• Channel {channel_id}")
         
         text = f"""
         ❗ **INCOMPLETE SUBSCRIPTION** ❗
 
-You still need to join:  
+You still need to join:
 {'\n'.join(remaining)}
-
-**👉 Join and press VERIFY again!**
         """
-        
-        # Get new invite links for remaining channels
-        new_buttons = []
-        for channel_id in not_joined:
-            try:
-                invite_link = await client.export_chat_invite_link(channel_id)
-                new_buttons.append([
-                    InlineKeyboardButton(
-                        f"Join Channel {channel_id}",
-                        url=invite_link
-                    )
-                ])
-            except:
-                pass
-        
-        new_buttons.append([
-            InlineKeyboardButton("🔄 TRY AGAIN", callback_data="force_sub_verify")
-        ])
         
         await callback.message.edit_caption(
             caption=text,
-            reply_markup=InlineKeyboardMarkup(new_buttons)
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Try Again", callback_data="force_sub_verify")]
+            ])
         )
-        await callback.answer("Join all channels first!", show_alert=True)
+        await callback.answer("Please join all channels first!", show_alert=True)
