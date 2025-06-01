@@ -2,12 +2,11 @@ import motor.motor_asyncio
 import datetime
 import pytz
 import secrets
+import asyncio
 from config import settings
-# Add this with your other imports at the top of data.py
 from pyrogram import Client
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from bson.objectid import ObjectId
-from urllib.parse import urlencode
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, ConnectionFailure
 import logging
 from contextlib import asynccontextmanager
@@ -51,7 +50,7 @@ class Database:
             
             # Test connection
             await self._client.admin.command('ping')
-            logging.info("✅ Successfully connected to MongoDB")
+            logger.info("✅ Successfully connected to MongoDB")
             
             # Initialize database and collections
             self.db = self._client[self._database_name]
@@ -70,13 +69,13 @@ class Database:
             return True
             
         except (ServerSelectionTimeoutError, ConnectionFailure) as e:
-            logging.error(f"❌ Failed to connect to MongoDB: {e}")
+            logger.error(f"❌ Failed to connect to MongoDB: {e}")
             raise ConnectionError(f"Database connection failed: {e}") from e
         except PyMongoError as e:
-            logging.error(f"❌ MongoDB error: {e}")
+            logger.error(f"❌ MongoDB error: {e}")
             raise
         except Exception as e:
-            logging.error(f"❌ Unexpected error connecting to MongoDB: {e}")
+            logger.error(f"❌ Unexpected error connecting to MongoDB: {e}")
             raise
 
     @asynccontextmanager
@@ -96,26 +95,26 @@ class Database:
             # Users collection
             ("users", [("referrer_id", 1)]),
             ("users", [("ban_status.is_banned", 1)]),
-            ("users", [("points.balance", -1)]),  # Critical for leaderboard
+            ("users", [("points.balance", -1)]),
             ("users", [("activity.total_files_renamed", -1)]),
             
-            # Point links (keep your existing)
+            # Point links
             ("point_links", [("code", 1)], {"unique": True}),
             ("point_links", [("expires_at", 1)]),
             
-            # Transactions (modified)
+            # Transactions
             ("transactions", [("user_id", 1), ("timestamp", -1)]),
             ("transactions", [("type", 1), ("timestamp", -1)]),
             
-            # Leaderboards (new)
+            # Leaderboards
             ("leaderboards", [("period", 1), ("date_key", -1)]),
             
-            # File stats (modified)
+            # File stats
             ("file_stats", [("user_id", 1)]),
-            ("file_stats", [("date", 1)]),  # Single field index
+            ("file_stats", [("date", 1)]),
             ("file_stats", [("timestamp", -1)]),
             
-            # Config (keep your existing)
+            # Config
             ("config", [("key", 1)], {"unique": True})
         ]
     
@@ -124,7 +123,7 @@ class Database:
             try:
                 await self.db[collection].create_index(index_spec, **options[0])
             except Exception as e:
-                logging.error(f"Index error in {collection}: {e}")
+                logger.error(f"Index error in {collection}: {e}")
 
     def set_client(self, client: Client):
         """Store the Pyrogram client for Telegram API calls"""
@@ -202,10 +201,10 @@ class Database:
                 
             user_data = self.new_user(id)
             await self.users.insert_one(user_data)
-            logging.info(f"Added new user: {id}")
+            logger.info(f"Added new user: {id}")
             return True
         except PyMongoError as e:
-            logging.error(f"Error adding user {id}: {e}")
+            logger.error(f"Error adding user {id}: {e}")
             return False
 
     async def is_user_exist(self, id: int) -> bool:
@@ -214,7 +213,7 @@ class Database:
             user = await self.users.find_one({"_id": int(id)})
             return bool(user)
         except Exception as e:
-            logging.error(f"Error checking if user {id} exists: {e}")
+            logger.error(f"Error checking if user {id} exists: {e}")
             return False
 
     async def get_user(self, id: int) -> Optional[Dict[str, Any]]:
@@ -222,7 +221,7 @@ class Database:
         try:
             return await self.users.find_one({"_id": int(id)})
         except PyMongoError as e:
-            logging.error(f"Error getting user {id}: {e}")
+            logger.error(f"Error getting user {id}: {e}")
             return None
 
     async def get_user_by_code(self, code: str) -> Optional[Dict]:
@@ -245,7 +244,7 @@ class Database:
             )
             return True
         except PyMongoError as e:
-            logging.error(f"Error updating activity for {user_id}: {e}")
+            logger.error(f"Error updating activity for {user_id}: {e}")
             return False
 
     async def get_all_users(self, filter_banned: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
@@ -258,7 +257,7 @@ class Database:
             async for user in self.users.find(query):
                 yield user
         except PyMongoError as e:
-            logging.error(f"Error getting users: {e}")
+            logger.error(f"Error getting users: {e}")
             raise
 
     async def close(self):
@@ -266,16 +265,16 @@ class Database:
         try:
             if self._client:
                 self._client.close()
-                logging.info("Database connection closed")
+                logger.info("Database connection closed")
         except Exception as e:
-            logging.error(f"Error closing database connection: {e}")
+            logger.error(f"Error closing database connection: {e}")
 
     async def total_users_count(self) -> int:
         """Get total number of users."""
         try:
             return await self.users.count_documents({})
         except Exception as e:
-            logging.error(f"Error counting users: {e}")
+            logger.error(f"Error counting users: {e}")
             return 0
 
     async def total_banned_users_count(self) -> int:
@@ -283,7 +282,7 @@ class Database:
         try:
             return await self.users.count_documents({"ban_status.is_banned": True})
         except Exception as e:
-            logging.error(f"Error counting banned users: {e}")
+            logger.error(f"Error counting banned users: {e}")
             return 0
 
     async def total_premium_users_count(self) -> int:
@@ -291,7 +290,7 @@ class Database:
         try:
             return await self.users.count_documents({"premium.is_premium": True})
         except Exception as e:
-            logging.error(f"Error counting premium users: {e}")
+            logger.error(f"Error counting premium users: {e}")
             return 0
 
     async def get_daily_active_users(self) -> int:
@@ -304,7 +303,7 @@ class Database:
                 }
             })
         except Exception as e:
-            logging.error(f"Error counting daily active users: {e}")
+            logger.error(f"Error counting daily active users: {e}")
             return 0
 
     async def read_user(self, id: int) -> Optional[Dict]:
@@ -312,7 +311,7 @@ class Database:
         try:
             return await self.users.find_one({"_id": int(id)})
         except Exception as e:
-            logging.error(f"Error reading user {id}: {e}")
+            logger.error(f"Error reading user {id}: {e}")
             return None
 
     async def delete_user(self, user_id: int) -> bool:
@@ -324,7 +323,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error deleting user {user_id}: {e}")
+            logger.error(f"Error deleting user {user_id}: {e}")
             return False
 
     async def set_thumbnail(self, user_id: int, file_id: str) -> bool:
@@ -336,7 +335,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting thumbnail for {user_id}: {e}")
+            logger.error(f"Error setting thumbnail for {user_id}: {e}")
             return False
 
     async def get_thumbnail(self, user_id: int) -> Optional[str]:
@@ -345,7 +344,7 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             return user.get("file_id") if user else None
         except Exception as e:
-            logging.error(f"Error getting thumbnail for {user_id}: {e}")
+            logger.error(f"Error getting thumbnail for {user_id}: {e}")
             return None
 
     async def set_caption(self, user_id: int, caption: str) -> bool:
@@ -357,7 +356,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting caption for {user_id}: {e}")
+            logger.error(f"Error setting caption for {user_id}: {e}")
             return False
 
     async def get_caption(self, user_id: int) -> Optional[str]:
@@ -366,7 +365,7 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             return user.get("caption") if user else None
         except Exception as e:
-            logging.error(f"Error getting caption for {user_id}: {e}")
+            logger.error(f"Error getting caption for {user_id}: {e}")
             return None
 
     async def set_metadata_code(self, user_id: int, metadata_code: str) -> bool:
@@ -378,7 +377,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting metadata code for {user_id}: {e}")
+            logger.error(f"Error setting metadata code for {user_id}: {e}")
             return False
 
     async def get_metadata_code(self, user_id: int) -> Optional[str]:
@@ -400,7 +399,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting format template for user {user_id}: {e}")
+            logger.error(f"Error setting format template for user {user_id}: {e}")
             return False
 
     async def get_format_template(self, user_id: int) -> Optional[str]:
@@ -409,7 +408,7 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             return user.get("format_template") if user else None
         except Exception as e:
-            logging.error(f"Error getting format template for user {user_id}: {e}")
+            logger.error(f"Error getting format template for user {user_id}: {e}")
             return None
 
     async def set_media_preference(self, user_id: int, media_type: str) -> bool:
@@ -421,7 +420,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting media preference for user {user_id}: {e}")
+            logger.error(f"Error setting media preference for user {user_id}: {e}")
             return False
 
     async def get_media_preference(self, user_id: int) -> Optional[str]:
@@ -430,7 +429,7 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             return user.get("media_type") if user else None
         except Exception as e:
-            logging.error(f"Error getting media preference for user {user_id}: {e}")
+            logger.error(f"Error getting media preference for user {user_id}: {e}")
             return None
 
     async def set_metadata(self, user_id: int, bool_meta: bool) -> bool:
@@ -442,7 +441,7 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting metadata for user {user_id}: {e}")
+            logger.error(f"Error setting metadata for user {user_id}: {e}")
             return False
 
     async def get_metadata(self, user_id: int) -> bool:
@@ -451,7 +450,7 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             return user.get("metadata", True) if user else True
         except Exception as e:
-            logging.error(f"Error getting metadata for user {user_id}: {e}")
+            logger.error(f"Error getting metadata for user {user_id}: {e}")
             return True
 
     async def set_src_info(self, user_id: int, src_info: str) -> bool:
@@ -463,13 +462,13 @@ class Database:
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting src_info for {user_id}: {e}")
+            logger.error(f"Error setting src_info for {user_id}: {e}")
             return False
 
-    async def toggle_src_info(self, user_id: int) -> bool:
+    async def toggle_src_info(self, user_id: int) -> str:
         """Toggle source info preference for a user."""
-        current_setting = await self.get_src_info(user_id)
-        new_setting = "file_name" if current_setting == "metadata" else "metadata"
+        current_setting = await self.get_src_info(user_id) or "file_name"
+        new_setting = "file_caption" if current_setting == "file_name" else "file_name"
         await self.set_src_info(user_id, new_setting)
         return new_setting
 
@@ -479,31 +478,11 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             return user.get("settings", {}).get("src_info") if user else None
         except Exception as e:
-            logging.error(f"Error getting src_info for {user_id}: {e}")
+            logger.error(f"Error getting src_info for {user_id}: {e}")
             return None
 
     async def track_file_rename(self, user_id: int, file_name: str, new_name: str) -> bool:
         """Track a file rename operation."""
-        try:
-            await self.users.update_one(
-                {"_id": user_id},
-                {"$inc": {"activity.total_files_renamed": 1}}
-            )
-            
-            await self.file_stats.insert_one({
-                "user_id": user_id,
-                "original_name": file_name,
-                "new_name": new_name,
-                "timestamp": datetime.datetime.now(),
-                "date": datetime.datetime.now().date().isoformat()
-            })
-            
-            return True
-        except Exception as e:
-            logging.error(f"Error tracking file rename for {user_id}: {e}")
-            return False
-    async def track_file_rename(self, user_id: int, file_name: str, new_name: str) -> bool:
-    
         try:
             # Insert the rename record
             result = await self.file_stats.insert_one({
@@ -525,6 +504,7 @@ class Database:
         except Exception as e:
             logger.error(f"Error tracking file rename for user {user_id}: {e}")
             return False
+
     async def get_user_rename_stats(self, user_id: int) -> Dict:
         """Get comprehensive rename statistics for a user"""
         stats = {
@@ -570,18 +550,19 @@ class Database:
             logger.error(f"Error getting rename stats: {e}")
             return stats
 
-async def reset_daily_usage(self):
-    """Reset daily usage counters for all users (run as a daily job)"""
-    try:
-        await self.users.update_many(
-            {},
-            {"$set": {"activity.daily_usage": 0}}
-        )
-        logger.info("Reset daily usage counters for all users")
-        return True
-    except Exception as e:
-        logger.error(f"Error resetting daily usage: {e}")
-        return False
+    async def reset_daily_usage(self):
+        """Reset daily usage counters for all users (run as a daily job)"""
+        try:
+            await self.users.update_many(
+                {},
+                {"$set": {"activity.daily_usage": 0}}
+            )
+            logger.info("Reset daily usage counters for all users")
+            return True
+        except Exception as e:
+            logger.error(f"Error resetting daily usage: {e}")
+            return False
+
     async def get_user_file_stats(self, user_id: int) -> Dict:
         """Get user's file rename statistics."""
         stats = {
@@ -619,7 +600,7 @@ async def reset_daily_usage(self):
             
             return stats
         except Exception as e:
-            logging.error(f"Error getting file stats for {user_id}: {e}")
+            logger.error(f"Error getting file stats for {user_id}: {e}")
             return stats
 
     async def add_points(self, user_id: int, points: int, source: str = "system", 
@@ -649,7 +630,7 @@ async def reset_daily_usage(self):
             
             return True
         except Exception as e:
-            logging.error(f"Error adding points to {user_id}: {e}")
+            logger.error(f"Error adding points to {user_id}: {e}")
             return False
 
     async def deduct_points(self, user_id: int, points: int, reason: str = "system") -> bool:
@@ -681,7 +662,7 @@ async def reset_daily_usage(self):
             
             return True
         except Exception as e:
-            logging.error(f"Error deducting points from {user_id}: {e}")
+            logger.error(f"Error deducting points from {user_id}: {e}")
             return False
 
     async def get_points(self, user_id: int) -> int:
@@ -690,7 +671,7 @@ async def reset_daily_usage(self):
             user = await self.users.find_one({"_id": user_id})
             return user["points"]["balance"] if user else 0
         except Exception as e:
-            logging.error(f"Error getting points for {user_id}: {e}")
+            logger.error(f"Error getting points for {user_id}: {e}")
             return 0
 
     async def get_points_history(self, user_id: int, limit: int = 10) -> List[Dict]:
@@ -699,7 +680,7 @@ async def reset_daily_usage(self):
             cursor = self.transactions.find({"user_id": user_id}).sort("timestamp", -1).limit(limit)
             return await cursor.to_list(length=limit)
         except Exception as e:
-            logging.error(f"Error getting points history for {user_id}: {e}")
+            logger.error(f"Error getting points history for {user_id}: {e}")
             return []
 
     async def activate_premium(self, user_id: int, plan: str, duration_days: int, 
@@ -721,7 +702,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error activating premium for {user_id}: {e}")
+            logger.error(f"Error activating premium for {user_id}: {e}")
             return False
 
     async def check_premium_status(self, user_id: int) -> Dict:
@@ -739,7 +720,7 @@ async def reset_daily_usage(self):
                 return {"is_premium": True, "until": user["premium"]["until"], "plan": user["premium"]["plan"]}
             return {"is_premium": False, "reason": "No active subscription"}
         except Exception as e:
-            logging.error(f"Error checking premium status for {user_id}: {e}")
+            logger.error(f"Error checking premium status for {user_id}: {e}")
             return {"is_premium": False, "reason": "Error checking status"}
 
     async def deactivate_premium(self, user_id: int) -> bool:
@@ -755,7 +736,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error deactivating premium for {user_id}: {e}")
+            logger.error(f"Error deactivating premium for {user_id}: {e}")
             return False
 
     async def create_points_link(self, admin_id: int, points: int, 
@@ -787,7 +768,7 @@ async def reset_daily_usage(self):
             
             return code, full_url
         except Exception as e:
-            logging.error(f"Error creating points link: {e}")
+            logger.error(f"Error creating points link: {e}")
             return None, None
 
     async def claim_points_link(self, user_id: int, code: str) -> Dict:
@@ -841,7 +822,7 @@ async def reset_daily_usage(self):
                 "remaining_claims": link["claims_remaining"] - 1
             }
         except Exception as e:
-            logging.error(f"Error claiming points link {code} by {user_id}: {e}")
+            logger.error(f"Error claiming points link {code} by {user_id}: {e}")
             return {"success": False, "reason": "Internal error"}
 
     async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
@@ -887,7 +868,7 @@ async def reset_daily_usage(self):
             return {'success': True, 'code': code}
             
         except Exception as e:
-            logging.error(f"Error setting expend points: {e}")
+            logger.error(f"Error setting expend points: {e}")
             return {'success': False, 'error': str(e)}
 
     async def claim_expend_points(self, claimer_id: int, code: str) -> Dict:
@@ -950,7 +931,7 @@ async def reset_daily_usage(self):
             return {'success': True, 'points': record['amount']}
             
         except Exception as e:
-            logging.error(f"Error claiming expend points: {e}")
+            logger.error(f"Error claiming expend points: {e}")
             return {'success': False, 'error': str(e)}
 
     async def update_leaderboards(self):
@@ -1023,259 +1004,7 @@ async def reset_daily_usage(self):
             logger.error(f"Error getting {period} leaderboard data: {e}")
             return []
 
-    async def _update_daily_leaderboard(self):
-        """Update daily leaderboard."""
-        try:
-            today = datetime.datetime.now().date()
-            
-            points_leaders = await self.users.aggregate([
-                {"$match": {"ban_status.is_banned": False}},
-                {"$sort": {"points.balance": -1}},
-                {"$limit": 100},
-                {"$project": {
-                    "_id": 1,
-                    "username": 1,
-                    "value": "$points.balance",
-                    "is_premium": "$premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            rename_leaders = await self.file_stats.aggregate([
-                {"$match": {"date": today.isoformat()}},
-                {"$group": {
-                    "_id": "$user_id",
-                    "count": {"$sum": 1}
-                }},
-                {"$sort": {"count": -1}},
-                {"$limit": 100},
-                {"$lookup": {
-                    "from": "users",
-                    "localField": "_id",
-                    "foreignField": "_id",
-                    "as": "user"
-                }},
-                {"$unwind": "$user"},
-                {"$project": {
-                    "_id": 1,
-                    "username": "$user.username",
-                    "value": "$count",
-                    "is_premium": "$user.premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            await self._save_leaderboard("daily", today.isoformat(), {
-                "points": points_leaders,
-                "renames": rename_leaders
-            })
-        except Exception as e:
-            logging.error(f"Error updating daily leaderboard: {e}")
-
-    async def _update_weekly_leaderboard(self):
-        """Update weekly leaderboard."""
-        try:
-            today = datetime.datetime.now().date()
-            start_of_week = today - datetime.timedelta(days=today.weekday())
-            
-            weekly_points = await self.transactions.aggregate([
-                {
-                    "$match": {
-                        "type": "credit",
-                        "timestamp": {
-                            "$gte": datetime.datetime.combine(start_of_week, datetime.time.min)
-                        }
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$user_id",
-                        "value": {"$sum": "$amount"}
-                    }
-                },
-                {"$sort": {"value": -1}},
-                {"$limit": 100},
-                {"$lookup": {
-                    "from": "users",
-                    "localField": "_id",
-                    "foreignField": "_id",
-                    "as": "user"
-                }},
-                {"$unwind": "$user"},
-                {"$project": {
-                    "user_id": "$_id",
-                    "username": "$user.username",
-                    "value": 1,
-                    "is_premium": "$user.premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            weekly_renames = await self.file_stats.aggregate([
-                {
-                    "$match": {
-                        "date": {"$gte": start_of_week.isoformat()}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$user_id",
-                        "value": {"$sum": 1}
-                    }
-                },
-                {"$sort": {"value": -1}},
-                {"$limit": 100},
-                {"$lookup": {
-                    "from": "users",
-                    "localField": "_id",
-                    "foreignField": "_id",
-                    "as": "user"
-                }},
-                {"$unwind": "$user"},
-                {"$project": {
-                    "user_id": "$_id",
-                    "username": "$user.username",
-                    "value": 1,
-                    "is_premium": "$user.premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            await self._save_leaderboard("weekly", start_of_week.isoformat(), {
-                "points_earned": weekly_points,
-                "renames": weekly_renames
-            })
-        except Exception as e:
-            logging.error(f"Error updating weekly leaderboard: {e}")
-
-    async def _update_monthly_leaderboard(self):
-        """Update monthly leaderboard."""
-        try:
-            today = datetime.datetime.now().date()
-            start_of_month = datetime.date(today.year, today.month, 1)
-            
-            monthly_points = await self.transactions.aggregate([
-                {
-                    "$match": {
-                        "type": "credit",
-                        "timestamp": {
-                            "$gte": datetime.datetime.combine(start_of_month, datetime.time.min)
-                        }
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$user_id",
-                        "value": {"$sum": "$amount"}
-                    }
-                },
-                {"$sort": {"value": -1}},
-                {"$limit": 100},
-                {"$lookup": {
-                    "from": "users",
-                    "localField": "_id",
-                    "foreignField": "_id",
-                    "as": "user"
-                }},
-                {"$unwind": "$user"},
-                {"$project": {
-                    "user_id": "$_id",
-                    "username": "$user.username",
-                    "value": 1,
-                    "is_premium": "$user.premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            monthly_renames = await self.file_stats.aggregate([
-                {
-                    "$match": {
-                        "date": {"$gte": start_of_month.isoformat()}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$user_id",
-                        "value": {"$sum": 1}
-                    }
-                },
-                {"$sort": {"value": -1}},
-                {"$limit": 100},
-                {"$lookup": {
-                    "from": "users",
-                    "localField": "_id",
-                    "foreignField": "_id",
-                    "as": "user"
-                }},
-                {"$unwind": "$user"},
-                {"$project": {
-                    "user_id": "$_id",
-                    "username": "$user.username",
-                    "value": 1,
-                    "is_premium": "$user.premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            await self._save_leaderboard("monthly", start_of_month.isoformat(), {
-                "points_earned": monthly_points,
-                "renames": monthly_renames
-            })
-        except Exception as e:
-            logging.error(f"Error updating monthly leaderboard: {e}")
-
-    async def _update_alltime_leaderboard(self):
-        """Update all-time leaderboard."""
-        try:
-            points_leaders = await self.users.aggregate([
-                {"$match": {"ban_status.is_banned": False}},
-                {"$sort": {"points.balance": -1}},
-                {"$limit": 100},
-                {"$project": {
-                    "_id": 1,
-                    "username": 1,
-                    "value": "$points.balance",
-                    "is_premium": "$premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            rename_leaders = await self.users.aggregate([
-                {"$match": {"ban_status.is_banned": False}},
-                {"$sort": {"activity.total_files_renamed": -1}},
-                {"$limit": 100},
-                {"$project": {
-                    "_id": 1,
-                    "username": 1,
-                    "value": "$activity.total_files_renamed",
-                    "is_premium": "$premium.is_premium"
-                }}
-            ]).to_list(length=100)
-            
-            await self._save_leaderboard("alltime", "alltime", {
-                "points": points_leaders,
-                "renames": rename_leaders
-            })
-        except Exception as e:
-            logging.error(f"Error updating alltime leaderboard: {e}")
-
-    async def _save_leaderboard(self, period: str, date_key: str, data: Dict):
-        """Save leaderboard data to database."""
-        try:
-            if not any(data.values()):  # Check if any leaderboard data exists
-                logging.warning(f"Empty {period} leaderboard for {date_key}")
-                return
-                
-            await self.leaderboards.update_one(
-                {
-                    "period": period,
-                    "date_key": date_key
-                },
-                {
-                    "$set": {
-                        "data": data,
-                        "updated_at": datetime.datetime.now()
-                    }
-                },
-                upsert=True
-            )
-        except Exception as e:
-            logging.error(f"Error saving {period} leaderboard: {e}")
-
-    async def get_leaderboard(self, period: str = "daily", lb_type: str = "points", client: Optional[Client] = None) -> List[Dict]:
+    async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", client: Optional[Client] = None) -> List[Dict]:
         """Get leaderboard data with proper async handling"""
         try:
             # Determine date range
@@ -1395,7 +1124,7 @@ async def reset_daily_usage(self):
                 "claimed_points": 0
             }
         except Exception as e:
-            logging.error(f"Error getting points links stats: {e}")
+            logger.error(f"Error getting points links stats: {e}")
             return {
                 "total_links": 0,
                 "active_links": 0,
@@ -1470,7 +1199,7 @@ async def reset_daily_usage(self):
                 "top_earners": top_earners
             }
         except Exception as e:
-            logging.error(f"Error generating points report: {e}")
+            logger.error(f"Error generating points report: {e}")
             return {
                 "period": {
                     "start": (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat(),
@@ -1487,7 +1216,7 @@ async def reset_daily_usage(self):
             cursor = self.users.find({"ban_status.is_banned": True})
             return await cursor.to_list(length=None)
         except Exception as e:
-            logging.error(f"Error getting banned users: {e}")
+            logger.error(f"Error getting banned users: {e}")
             return []
 
     async def get_sequential_mode(self, user_id: int) -> bool:
@@ -1496,7 +1225,7 @@ async def reset_daily_usage(self):
             user = await self.users.find_one({"_id": user_id})
             return user.get("settings", {}).get("sequential_mode", False) if user else False
         except Exception as e:
-            logging.error(f"Error getting sequential mode for {user_id}: {e}")
+            logger.error(f"Error getting sequential mode for {user_id}: {e}")
             return False
     
     async def toggle_sequential_mode(self, user_id: int) -> bool:
@@ -1509,7 +1238,7 @@ async def reset_daily_usage(self):
             )
             return not current
         except Exception as e:
-            logging.error(f"Error toggling sequential mode for {user_id}: {e}")
+            logger.error(f"Error toggling sequential mode for {user_id}: {e}")
             return False
     
     async def get_user_channel(self, user_id: int) -> Optional[str]:
@@ -1518,7 +1247,7 @@ async def reset_daily_usage(self):
             user = await self.users.find_one({"_id": user_id})
             return user.get("settings", {}).get("user_channel") if user else None
         except Exception as e:
-            logging.error(f"Error getting user channel for {user_id}: {e}")
+            logger.error(f"Error getting user channel for {user_id}: {e}")
             return None
     
     async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
@@ -1530,7 +1259,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting user channel for {user_id}: {e}")
+            logger.error(f"Error setting user channel for {user_id}: {e}")
             return False
     
     async def get_leaderboard_period(self, user_id: int) -> str:
@@ -1539,7 +1268,7 @@ async def reset_daily_usage(self):
             user = await self.users.find_one({"_id": user_id})
             return user.get("settings", {}).get("leaderboard_period", "weekly") if user else "weekly"
         except Exception as e:
-            logging.error(f"Error getting leaderboard period for {user_id}: {e}")
+            logger.error(f"Error getting leaderboard period for {user_id}: {e}")
             return "weekly"
     
     async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
@@ -1551,7 +1280,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting leaderboard period for {user_id}: {e}")
+            logger.error(f"Error setting leaderboard period for {user_id}: {e}")
             return False
     
     async def get_leaderboard_type(self, user_id: int) -> str:
@@ -1560,7 +1289,7 @@ async def reset_daily_usage(self):
             user = await self.users.find_one({"_id": user_id})
             return user.get("settings", {}).get("leaderboard_type", "points") if user else "points"
         except Exception as e:
-            logging.error(f"Error getting leaderboard type for {user_id}: {e}")
+            logger.error(f"Error getting leaderboard type for {user_id}: {e}")
             return "points"
     
     async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
@@ -1572,7 +1301,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting leaderboard type for {user_id}: {e}")
+            logger.error(f"Error setting leaderboard type for {user_id}: {e}")
             return False
     
     async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
@@ -1590,7 +1319,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error banning user {user_id}: {e}")
+            logger.error(f"Error banning user {user_id}: {e}")
             return False
     
     async def remove_ban(self, user_id: int) -> bool:
@@ -1607,7 +1336,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error unbanning user {user_id}: {e}")
+            logger.error(f"Error unbanning user {user_id}: {e}")
             return False
     
     async def set_referrer(self, user_id: int, referrer_id: int) -> bool:
@@ -1628,7 +1357,7 @@ async def reset_daily_usage(self):
             )
             return True
         except Exception as e:
-            logging.error(f"Error setting referrer for {user_id}: {e}")
+            logger.error(f"Error setting referrer for {user_id}: {e}")
             return False
 
     async def is_refferer(self, user_id: int) -> Optional[int]:
@@ -1637,7 +1366,7 @@ async def reset_daily_usage(self):
             user = await self.users.find_one({"_id": user_id})
             return user.get("referral", {}).get("referrer_id") if user else None
         except Exception as e:
-            logging.error(f"Error getting referrer for user {user_id}: {e}")
+            logger.error(f"Error getting referrer for user {user_id}: {e}")
             return None
 
     async def total_renamed_files(self) -> int:
@@ -1648,13 +1377,13 @@ async def reset_daily_usage(self):
             ]).to_list(length=1)
             return result[0]["total"] if result else 0
         except Exception as e:
-            logging.error(f"Error counting total renamed files: {e}")
+            logger.error(f"Error counting total renamed files: {e}")
             return 0
 
     async def clear_all_user_channels(self) -> None:
         """Remove the 'user_channel' field from all user documents."""
         if not self.users:
-            logging.error("❌ 'users' collection is not initialized.")
+            logger.error("❌ 'users' collection is not initialized.")
             return
     
         try:
@@ -1662,9 +1391,9 @@ async def reset_daily_usage(self):
                 {},  # Match all documents
                 {"$unset": {"settings.user_channel": ""}}  # Use $unset to remove the field
             )
-            logging.info(f"✅ Removed 'user_channel' from {result.modified_count} users.")
+            logger.info(f"✅ Removed 'user_channel' from {result.modified_count} users.")
         except Exception as e:
-            logging.error(f"❌ Error while removing 'user_channel': {e}")
+            logger.error(f"❌ Error while removing 'user_channel': {e}")
 
     async def total_points_distributed(self) -> int:
         """Get total points distributed across all users."""
@@ -1674,7 +1403,7 @@ async def reset_daily_usage(self):
             ]).to_list(length=1)
             return result[0]["total"] if result else 0
         except Exception as e:
-            logging.error(f"Error counting total points distributed: {e}")
+            logger.error(f"Error counting total points distributed: {e}")
             return 0
     
     async def get_config(self, key: str, default=None):
@@ -1683,9 +1412,9 @@ async def reset_daily_usage(self):
             config = await self.config.find_one({"key": key})
             return config["value"] if config else default
         except Exception as e:
-            logging.error(f"Error getting config {key}: {e}")
+            logger.error(f"Error getting config {key}: {e}")
             return default
-    
+
 # Initialize database instance with retry logic
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
     
@@ -1703,6 +1432,5 @@ async def initialize_database():
                 logger.error(f"❌ Failed to initialize database after {max_retries} attempts: {e}")
                 raise
             logger.warning(f"⚠️ Database connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
-            import asyncio
             await asyncio.sleep(retry_delay)
             retry_delay *= 2  # Exponential backoff
