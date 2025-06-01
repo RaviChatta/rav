@@ -9,7 +9,7 @@ from pyrogram.enums import ParseMode, ChatAction
 from typing import Dict, Optional
 
 # Config
-TRACE_MOE_KEY = Config.TRACE_MOE_KEY  # Make sure to add this to your config
+#TRACE_MOE_KEY = Config.TRACE_MOE_KEY  # Make sure to add this to your config
 ANILIST_API = "https://graphql.anilist.co"
 CPU_THRESHOLD = 80
 
