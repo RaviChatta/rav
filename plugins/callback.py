@@ -234,7 +234,13 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         elif data == "leaderboard":
             try:
-                leaders = await hyoshcoder.get_leaderboard()
+                # Get the user's preferred leaderboard settings
+                period = await hyoshcoder.get_leaderboard_period(user_id)
+                lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+                
+                # Get leaderboard data
+                leaders = await hyoshcoder.get_leaderboard(period, lb_type)
+                
                 if not leaders:
                     response = {
                         'caption': "📭 No leaderboard data available yet",
@@ -244,27 +250,30 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         'photo': img
                     }
                 else:
-                    text = f"{EMOJI['leaderboard']} Weekly Points Leaderboard:\n\n"
-                    for i, user in enumerate(leaders[:10], 1):
+                    # Format the leaderboard text
+                    period_name = {
+                        "daily": "Daily",
+                        "weekly": "Weekly",
+                        "monthly": "Monthly",
+                        "alltime": "All-Time"
+                    }[period]
+                    
+                    type_name = {
+                        "points": f"{EMOJI['points']} Points",
+                        "renames": f"{EMOJI['rename']} Files Renamed",
+                        "referrals": f"{EMOJI['referral']} Referrals"
+                    }[lb_type]
+                    
+                    text = f"🏆 {period_name} Leaderboard - {type_name}\n\n"
+                    for i, user in enumerate(leaders, 1):
                         username = user.get('username', f"User {user['_id']}")
-                        text += f"{i}. {username} - {user.get('points', 0)} {EMOJI['points']} {'⭐' if user.get('premium', False) else ''}\n"
+                        text += f"{i}. {username} - {user['value']} {'⭐' if user.get('is_premium') else ''}\n"
                     
                     response = {
                         'caption': text,
-                        'reply_markup': get_leaderboard_keyboard(),
+                        'reply_markup': get_leaderboard_keyboard(period, lb_type),
                         'photo': img
                     }
-            except Exception as e:
-                logger.error(f"Error getting leaderboard: {e}")
-                response = {
-                    'caption': "⚠️ Error loading leaderboard data",
-                    'reply_markup': InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                    ]),
-                    'photo': img
-                }
-
-
         elif data == "freepoints":
             me = await client.get_me()
             unique_code = str(uuid.uuid4())[:8]
