@@ -223,10 +223,10 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error getting user {id}: {e}")
             return None
-
+  
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
         """Find user by their unique referral/ad code if it's not already used."""
-        user = await self.col.find_one({
+        user = await self.users.find_one({
             "unique_code": unique_code,
             "$or": [
                 {"code_used": {"$exists": False}},  # code_used not set
@@ -234,7 +234,6 @@ class Database:
             ]
         })
         return user
-  
 
     async def mark_ad_code_used(self, code: str) -> None:
         """Mark an ad code as used"""
