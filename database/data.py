@@ -503,37 +503,28 @@ class Database:
             logging.error(f"Error tracking file rename for {user_id}: {e}")
             return False
     async def track_file_rename(self, user_id: int, file_name: str, new_name: str) -> bool:
-        """Track a file rename operation in the database
     
-        Args:
-        user_id: ID of the user performing the rename
-        file_name: Original filename before renaming
-        new_name: New filename after renaming
-        
-        Returns:
-            bool: True if tracking was successful, False otherwise
-        """
-    try:
-        # Insert the rename record
-        result = await self.file_stats.insert_one({
-            "user_id": user_id,
-            "original_name": file_name,
-            "new_name": new_name,
-            "timestamp": datetime.datetime.now(),
-            "date": datetime.datetime.now().date().isoformat()
-        })
-        
-        # Also update the user's total rename count
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$inc": {"activity.total_files_renamed": 1}}
-        )
-        
-        return result.inserted_id is not None
-        
-    except Exception as e:
-        logger.error(f"Error tracking file rename for user {user_id}: {e}")
-        return False
+        try:
+            # Insert the rename record
+            result = await self.file_stats.insert_one({
+                "user_id": user_id,
+                "original_name": file_name,
+                "new_name": new_name,
+                "timestamp": datetime.datetime.now(),
+                "date": datetime.datetime.now().date().isoformat()
+            })
+            
+            # Also update the user's total rename count
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$inc": {"activity.total_files_renamed": 1}}
+            )
+            
+            return result.inserted_id is not None
+            
+        except Exception as e:
+            logger.error(f"Error tracking file rename for user {user_id}: {e}")
+            return False
     async def get_user_rename_stats(self, user_id: int) -> Dict:
         """Get comprehensive rename statistics for a user"""
     stats = {
