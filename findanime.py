@@ -5,7 +5,6 @@ import psutil
 from collections import deque
 from telegram import Update
 from telegram.ext import CallbackContext  # Add this import
-from telegram.constants import ParseMode, ChatAction
 from telegram import constants
 from telegram.ext import (
     CommandHandler,
