@@ -31,7 +31,7 @@ class Settings():
     ADMIN = [int(admin) for admin in os.getenv('ADMIN', '1047253913').split() if admin.isdigit()]
     
     # Liste des canaux pour le force subscribe (séparés par une virgule)
-    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '-1001333766434').split(',')
+    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '-1001646925412').split(',')
     
     # Récupération et conversion sécurisée des IDs de chat
     def safe_int(var_name, default=None):
