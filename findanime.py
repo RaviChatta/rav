@@ -1,17 +1,33 @@
-# findanime.py - Updated for PTB v13 compatibility
+# findanime.py - Fully compatible with Python 3.13 and PTB v13
 import asyncio
 import requests
 import psutil
+import mimetypes  # Replacement for imghdr
 from collections import deque
 
-# PTB v13 compatible imports
-from telegram import Update, ParseMode, ChatAction
-from telegram.ext import (
-    CallbackContext,
-    CommandHandler,
-    MessageHandler,
-    Filters  # Changed from filters to Filters
-)
+# Compatibility layer for Python 3.13
+import sys
+if sys.version_info >= (3, 13):
+    # Create imghdr replacement
+    class ImghdrCompat:
+        @staticmethod
+        def what(file, h=None):
+            mime = mimetypes.guess_type(file)[0]
+            return mime.split('/')[-1] if mime else None
+    sys.modules['imghdr'] = ImghdrCompat()
+
+# PTB v13 imports
+try:
+    from telegram import Update, ParseMode, ChatAction
+    from telegram.ext import (
+        CallbackContext,
+        CommandHandler,
+        MessageHandler,
+        Filters
+    )
+except ImportError as e:
+    print(f"Import error: {e}")
+    raise
 
 # --- Config ---
 TRACE_MOE_KEY = "your_trace_moe_key"  # Replace with your key
@@ -124,7 +140,7 @@ async def setup_anime_finder(app):
     asyncio.create_task(adaptive_queue_processor(app))
     app.add_handler(CommandHandler("findanime", findanime))
     app.add_handler(MessageHandler(
-        Filters.text & Filters.chat_type.groups,  # Updated filter syntax
+        Filters.text & Filters.chat_type.groups,
         handle_mention
     ))
     print("🎌 Anime Finder feature initialized successfully!")
