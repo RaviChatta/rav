@@ -13,55 +13,49 @@ logger.setLevel(logging.INFO)
 
 class ForceSubManager:
     def __init__(self):
-        self.channel_cache = {}
+        self.verified_channels = set()
         
-    async def ensure_bot_joined(self, client: Client, channel_id: int):
-        """Make sure bot has joined the channel"""
+    async def validate_channel(self, client: Client, channel_id: int):
+        """Validate channel and ensure bot has access"""
         try:
-            # Check if already joined
-            if channel_id in self.channel_cache:
+            if channel_id in self.verified_channels:
                 return True
                 
-            # Try to get chat details
-            chat = await client.get_chat(channel_id)
-            self.channel_cache[channel_id] = chat
-            return True
-            
-        except (ChannelInvalid, ChannelPrivate):
+            # First try to get basic channel info
             try:
-                # Try to join via invite link
-                invite = f"https://t.me/c/{str(channel_id).replace('-100', '')}"
-                await client.join_chat(invite)
-                self.channel_cache[channel_id] = await client.get_chat(channel_id)
+                chat = await client.get_chat(channel_id)
+            except (ChannelInvalid, ChannelPrivate):
+                logger.warning(f"Bot needs to join channel {channel_id} first")
+                # Try to join via alternative method
+                try:
+                    await client.join_chat(f"https://t.me/c/{str(channel_id).replace('-100', '')}")
+                    chat = await client.get_chat(channel_id)
+                except Exception as join_error:
+                    logger.error(f"Failed to join channel {channel_id}: {str(join_error)}")
+                    return False
+            
+            # Verify bot has admin privileges
+            try:
+                member = await client.get_chat_member(channel_id, "me")
+                if member.status not in ["administrator", "creator"]:
+                    logger.error(f"Bot is not admin in channel {channel_id}")
+                    return False
+                    
+                self.verified_channels.add(channel_id)
                 return True
-            except Exception as e:
-                logger.error(f"Failed to join channel {channel_id}: {str(e)}")
+                
+            except Exception as admin_error:
+                logger.error(f"Admin check failed for {channel_id}: {str(admin_error)}")
                 return False
+                
         except Exception as e:
-            logger.error(f"Channel check error {channel_id}: {str(e)}")
+            logger.error(f"Channel validation error for {channel_id}: {str(e)}")
             return False
 
 force_sub_manager = ForceSubManager()
 
-@Client.on_message(filters.private & filters.command("fs_debug"))
-async def debug_force_sub(client: Client, message: Message):
-    """Admin command to debug force sub channels"""
-    if message.from_user.id != settings.ADMIN:
-        return
-        
-    report = []
-    for channel_id in settings.FORCE_SUB_CHANNELS:
-        try:
-            joined = await force_sub_manager.ensure_bot_joined(client, channel_id)
-            status = "✅ Joined" if joined else "❌ Failed"
-            report.append(f"{channel_id}: {status}")
-        except Exception as e:
-            report.append(f"{channel_id}: ❌ Error ({str(e)})")
-    
-    await message.reply_text("Force Sub Debug:\n\n" + "\n".join(report))
-
 async def not_subscribed(_, client: Client, message: Message):
-    """Improved subscription check with channel validation"""
+    """Improved subscription check with proper channel validation"""
     if not settings.FORCE_SUB_CHANNELS:
         return False
         
@@ -73,8 +67,8 @@ async def not_subscribed(_, client: Client, message: Message):
         
     for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
-            # Ensure bot has joined first
-            if not await force_sub_manager.ensure_bot_joined(client, channel_id):
+            # Validate channel first
+            if not await force_sub_manager.validate_channel(client, channel_id):
                 continue
                 
             user = await client.get_chat_member(channel_id, user_id)
@@ -96,7 +90,7 @@ async def not_subscribed(_, client: Client, message: Message):
 
 @Client.on_message(filters.private & filters.create(not_subscribed))
 async def force_sub_handler(client: Client, message: Message):
-    """Fixed handler with channel validation"""
+    """Handler with robust channel validation"""
     if not settings.FORCE_SUB_CHANNELS:
         return
         
@@ -109,10 +103,10 @@ async def force_sub_handler(client: Client, message: Message):
     not_joined = []
     valid_channels = []
     
-    # Validate channels first
+    # Validate channels and get info
     for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
-            if await force_sub_manager.ensure_bot_joined(client, channel_id):
+            if await force_sub_manager.validate_channel(client, channel_id):
                 chat = await client.get_chat(channel_id)
                 try:
                     invite_link = await client.export_chat_invite_link(channel_id)
@@ -168,7 +162,7 @@ Join our channels to continue:
 
 @Client.on_callback_query(filters.regex("force_sub_verify"))
 async def verify_subscription(client: Client, callback: CallbackQuery):
-    """Improved verification with channel validation"""
+    """Verification with proper channel validation"""
     user = callback.from_user
     user_id = user.id
     
@@ -178,7 +172,7 @@ async def verify_subscription(client: Client, callback: CallbackQuery):
     
     for channel_id in settings.FORCE_SUB_CHANNELS:
         try:
-            if not await force_sub_manager.ensure_bot_joined(client, channel_id):
+            if not await force_sub_manager.validate_channel(client, channel_id):
                 continue
                 
             member = await client.get_chat_member(channel_id, user_id)
