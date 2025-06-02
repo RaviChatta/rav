@@ -8,10 +8,11 @@ from typing import Dict, Optional
 import logging
 import aiohttp
 from io import BytesIO
+import os
 
 logger = logging.getLogger(__name__)
 
-TRACE_MOE_KEY = None  # Set your API key if needed
+TRACE_MOE_KEY = os.getenv("TRACE_MOE_KEY")  # Get from environment
 ANILIST_API = "https://graphql.anilist.co"
 CPU_THRESHOLD = 80
 MAX_QUEUE_SIZE = 20
@@ -25,10 +26,12 @@ class AnimeFinder:
         self.bot = bot
         self.session = None
         self.handler = None
+        self.me = None  # Store bot info
 
     async def initialize(self):
         """Initialize aiohttp session and register handlers"""
         self.session = aiohttp.ClientSession()
+        self.me = await self.bot.get_me()  # Get bot info
         self.register_handlers()
         logger.info("Anime finder initialized successfully")
 
@@ -150,21 +153,23 @@ class AnimeFinder:
                 await message.reply_text("❌ Please reply to an image with /findanime")
                 return
 
-            # Download image
+            # Download image - Fixed BytesIO handling
             await self.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_PHOTO)
             try:
-                image_data = BytesIO()
                 file_id = (message.reply_to_message.photo.file_id if message.reply_to_message.photo 
                           else message.reply_to_message.document.file_id)
-                await self.bot.download_media(file_id, file_name=image_data)
-                image_bytes = image_data.getvalue()
+                
+                # Download to memory as bytes
+                image_bytes = await self.bot.download_media(file_id, in_memory=True)
+                if isinstance(image_bytes, BytesIO):
+                    image_bytes = image_bytes.getvalue()
+                
+                if not image_bytes:
+                    raise ValueError("Empty image data received")
+                    
             except Exception as e:
                 logger.error(f"Image download failed: {e}")
                 await message.reply_text("❌ Failed to download image")
-                return
-
-            if not image_bytes:
-                await message.reply_text("❌ Empty image received")
                 return
 
             # Search for anime
@@ -264,9 +269,3 @@ class AnimeFinder:
                     await message.reply_text("⚠️ An error occurred while processing your command")
                 except:
                     pass
-
-        # Store the handler using the proper Pyrogram method
-        for handler in self.bot.dispatcher.groups[0]:
-            if hasattr(handler.callback, '__name__') and handler.callback.__name__ == 'findanime_handler':
-                self.handler = handler
-                break
