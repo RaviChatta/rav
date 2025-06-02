@@ -4,7 +4,7 @@ from collections import deque
 from pyrogram import filters, Client
 from pyrogram.types import Message
 from pyrogram.enums import ParseMode, ChatAction
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 import logging
 import aiohttp
 from io import BytesIO
@@ -24,16 +24,19 @@ class AnimeFinder:
     def __init__(self, bot: Client):
         self.bot = bot
         self.session = None
-        self.is_processing = False
-        
+        self._handler = None  # To keep reference to the handler
+
     async def initialize(self):
         """Initialize aiohttp session"""
         self.session = aiohttp.ClientSession()
+        self.register_handlers()
 
     async def shutdown(self):
         """Cleanup resources"""
         if self.session:
             await self.session.close()
+        if self._handler:
+            self.bot.remove_handler(*self._handler)
 
     def get_system_load(self) -> float:
         """Get current system CPU load"""
@@ -41,6 +44,7 @@ class AnimeFinder:
 
     async def adaptive_queue_processor(self):
         """Smart queue that adjusts based on system load"""
+        logger.info("Starting anime finder queue processor")
         while True:
             try:
                 if REQUEST_QUEUE:
@@ -48,15 +52,16 @@ class AnimeFinder:
                     
                     if current_load < CPU_THRESHOLD:
                         task = REQUEST_QUEUE.popleft()
-                        ACTIVE_TASKS.add(task['message_id'])
-                        asyncio.create_task(self.process_anime_request(task))
+                        if task['message_id'] not in ACTIVE_TASKS:
+                            ACTIVE_TASKS.add(task['message_id'])
+                            asyncio.create_task(self.process_anime_request(task))
                     
                     await asyncio.sleep(0.5 if current_load > CPU_THRESHOLD else 0.1)
                 else:
                     await asyncio.sleep(1)
             except Exception as e:
-                logger.error(f"Queue processor error: {str(e)}")
-                await asyncio.sleep(1)
+                logger.error(f"Queue processor error: {e}", exc_info=True)
+                await asyncio.sleep(5)
 
     async def turbo_search(self, image_data: bytes) -> Optional[Dict]:
         """Anime detection with retries and timeout"""
@@ -77,7 +82,7 @@ class AnimeFinder:
                         return await resp.json()
                     logger.error(f"Attempt {attempt+1} failed: HTTP {resp.status}")
             except Exception as e:
-                logger.error(f"Attempt {attempt+1} failed: {str(e)}")
+                logger.error(f"Attempt {attempt+1} failed: {e}")
                 if attempt == 2:
                     return None
                 await asyncio.sleep(1)
@@ -106,7 +111,7 @@ class AnimeFinder:
                         return data.get('data', {}).get('Media', {})
                     logger.error(f"AniList attempt {attempt+1} failed: HTTP {resp.status}")
             except Exception as e:
-                logger.error(f"AniList attempt {attempt+1} failed: {str(e)}")
+                logger.error(f"AniList attempt {attempt+1} failed: {e}")
                 if attempt == 2:
                     return {}
                 await asyncio.sleep(1)
@@ -132,7 +137,7 @@ class AnimeFinder:
         try:
             message = await self.bot.get_messages(task['chat_id'], task['message_id'])
             if not message or not message.reply_to_message:
-                logger.warning("Message or reply not found")
+                logger.warning("Original message not found")
                 return
 
             # Validate image content
@@ -146,15 +151,12 @@ class AnimeFinder:
             await self.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_PHOTO)
             try:
                 image_data = BytesIO()
-                await self.bot.download_media(
-                    message.reply_to_message.photo.file_id if message.reply_to_message.photo 
-                    else message.reply_to_message.document.file_id,
-                    file_name=image_data
-                )
-                image_data.seek(0)
-                image_bytes = image_data.read()
+                file_id = (message.reply_to_message.photo.file_id if message.reply_to_message.photo 
+                          else message.reply_to_message.document.file_id)
+                await self.bot.download_media(file_id, file_name=image_data)
+                image_bytes = image_data.getvalue()
             except Exception as e:
-                logger.error(f"Image download failed: {str(e)}")
+                logger.error(f"Image download failed: {e}")
                 await message.reply_text("❌ Failed to download image")
                 return
 
@@ -209,7 +211,7 @@ class AnimeFinder:
                         disable_web_page_preview=True
                     )
             except Exception as e:
-                logger.error(f"Failed to send media: {str(e)}")
+                logger.error(f"Failed to send media: {e}")
                 await message.reply_text(
                     caption,
                     parse_mode=ParseMode.HTML,
@@ -217,7 +219,7 @@ class AnimeFinder:
                 )
 
         except Exception as e:
-            logger.error(f"Processing failed: {str(e)}", exc_info=True)
+            logger.error(f"Processing failed: {e}", exc_info=True)
             try:
                 await message.reply_text("⚠️ An error occurred while processing your request")
             except:
@@ -226,9 +228,9 @@ class AnimeFinder:
             ACTIVE_TASKS.discard(task['message_id'])
 
     def register_handlers(self):
-        """Register command handlers using the decorator pattern"""
+        """Register command handlers properly"""
         @self.bot.on_message(filters.command("findanime") & (filters.private | filters.group))
-        async def findanime_handler(client: Client, message: Message):
+        async def findanime_wrapper(client: Client, message: Message):
             try:
                 if not message.reply_to_message or not (
                     message.reply_to_message.photo or 
@@ -254,8 +256,11 @@ class AnimeFinder:
                 )
                 await message.reply_text("🔄 Your request has been queued. Please wait...")
             except Exception as e:
-                logger.error(f"Handler error: {str(e)}", exc_info=True)
+                logger.error(f"Handler error: {e}", exc_info=True)
                 try:
                     await message.reply_text("⚠️ An error occurred while processing your command")
                 except:
                     pass
+
+        # Store handler reference for proper cleanup
+        self._handler = self.bot.dispatcher.get_handler_by_func(findanime_wrapper.__name__)
