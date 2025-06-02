@@ -431,46 +431,47 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'adds_'))
 async def handle_ad_link(client: Client, message: Message):
     try:
-        unique_code = message.text.split("adds_")[1]
+        if len(message.command) < 2:
+            return await message.reply("❌ Invalid ad link format")
+            
+        code = message.command[1].replace("adds_", "")
         user_id = message.from_user.id
         
-        # Check if the code exists and hasn't been used
-        user_data = await hyoshcoder.get_user_by_code(unique_code)
-        
+        # Check if user exists and code is valid
+        user_data = await hyoshcoder.get_user_by_code(code, "ad")
         if not user_data:
-            await message.reply_text("❌ The link is invalid or already used.")
-            return
+            return await message.reply("❌ Invalid or expired ad link")
             
-        if user_data.get('ad_code_used', False):
-            await message.reply_text("❌ This ad link has already been used.")
-            return
+        # Find the specific code data
+        ad_code_data = next(
+            (c for c in user_data.get("ad_codes", []) 
+             if c["code"] == code and not c["used"]),
+            None
+        )
+        
+        if not ad_code_data:
+            return await message.reply("❌ This ad link has already been used")
             
-        reward = user_data.get('ad_reward', 0)
+        # Process reward
+        points = ad_code_data["points"]
+        await hyoshcoder.add_points(user_id, points, source="ad_campaign")
+        await hyoshcoder.mark_code_used(user_data["_id"], code, "ad")
         
-        if reward <= 0:
-            await message.reply_text("❌ No reward available for this link.")
-            return
-            
-        # Add points and mark code as used
-        await hyoshcoder.add_points(user_id, reward, "ad_reward", f"Ad reward from code {unique_code}")
-        await hyoshcoder.mark_ad_code_used(unique_code)
-        
-        await message.reply_text(f"🎉 You earned {reward} points!")
-        
-        # Notify the user who shared the link
-        if user_data['_id'] != user_id:
+        # Notify advertiser
+        if user_data["_id"] != user_id:
             try:
                 await client.send_message(
-                    user_data['_id'],
-                    f"🎉 Someone used your ad link! You earned {reward//2} points."
+                    user_data["_id"],
+                    f"📢 Your ad was viewed! User {message.from_user.mention} earned {points} points"
                 )
-                await hyoshcoder.add_points(user_data['_id'], reward//2, "referral_ad", f"Bonus for ad link usage by {user_id}")
-            except Exception as e:
-                logger.error(f"Error notifying referrer: {e}")
-                
+            except Exception:
+                logger.warning("Couldn't notify advertiser")
+        
+        return await message.reply(f"🎉 You earned {points} points!")
+        
     except Exception as e:
         logger.error(f"Ad link error: {e}")
-        await message.reply_text("An error occurred. Please try again later.")
+        await message.reply("⚠️ Please try again later")
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'points_'))
 async def handle_points_link(client: Client, message: Message):
     try:
