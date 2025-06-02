@@ -182,16 +182,16 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         elif data == "help":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("AutoRename", callback_data='file_names'),
-                 InlineKeyboardButton('Thumbnail', callback_data='thumbnail'),
-                 InlineKeyboardButton('Caption', callback_data='caption')],
-                [InlineKeyboardButton('Metadata', callback_data='meta'),
-                 InlineKeyboardButton('Set Media', callback_data='setmedia'),
-                 InlineKeyboardButton('Set Dump', callback_data='setdump')],
+                [InlineKeyboardButton("ᴀᴜᴛᴏʀᴇɴᴀᴍᴇ", callback_data='file_names'),
+                 InlineKeyboardButton('ᴛʜᴜᴍʙ', callback_data='thumbnail'),
+                 InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', callback_data='caption')],
+                [InlineKeyboardButton('ᴍᴇᴛᴀᴅᴀᴛᴀ', callback_data='meta'),
+                 InlineKeyboardButton('ᴍᴇᴅɪᴀ', callback_data='setmedia'),
+                 InlineKeyboardButton('ᴅᴜᴍᴘ', callback_data='setdump')],
                 [InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
-                 InlineKeyboardButton('Premium', callback_data='premiumx'),
+                 InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ', callback_data='premiumx'),
                  InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')],
-                [InlineKeyboardButton('Home', callback_data='home')]
+                [InlineKeyboardButton('ʜᴏᴍᴇ', callback_data='home')]
             ])
             response = {
                 'caption': Txt.HELP_TXT.format(client.mention),
