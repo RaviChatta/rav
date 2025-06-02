@@ -170,11 +170,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
                 [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
                  InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
-                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints'),
-                 InlineKeyboardButton(f"{EMOJI['premium']} Go Premium", callback_data='premiumx')],
-                [InlineKeyboardButton("🆕 Updates", url='https://t.me/Raaaaavi'),
-                 InlineKeyboardButton("🛟 Support", url='https://t.me/Raaaaavi')]
+                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints')],
+                [InlineKeyboardButton("❌ Close", callback_data='close')]
             ])
+
             response = {
                 'caption': Txt.START_TXT.format(query.from_user.mention),
                 'reply_markup': btn,
