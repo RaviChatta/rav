@@ -202,8 +202,11 @@ async def force_sub_check(client: Client, message: Message):
 async def verify_subscription_callback(client: Client, callback: CallbackQuery):
     """Handle subscription verification"""
     try:
-        await callback.answer()
+        await callback.answer("Checking subscriptions...")
         user_id = callback.from_user.id
+        
+        # Add delay to ensure Telegram updates membership status
+        await asyncio.sleep(2)
         
         # Check premium status
         premium_status = await hyoshcoder.check_premium_status(user_id)
@@ -230,6 +233,10 @@ async def verify_subscription_callback(client: Client, callback: CallbackQuery):
                 ])
             )
         else:
+            # Get fresh channel info
+            for channel in missing:
+                await sub_manager.validate_channel(client, channel)
+                
             buttons = await sub_manager.generate_buttons(missing)
             if buttons:
                 try:
@@ -238,13 +245,17 @@ async def verify_subscription_callback(client: Client, callback: CallbackQuery):
                     pass
                     
             await callback.answer(
-                "❌ Please join all required channels!",
+                "❌ Still missing some channels! Please:\n"
+                "1. Join ALL channels\n"
+                "2. Press 'View Channel'\n"
+                "3. Wait 5 seconds\n"
+                "4. Try again",
                 show_alert=True
             )
     except Exception as e:
         logger.error(f"Verify callback error: {e}")
         await callback.answer(
-            "⚠️ An error occurred. Please try again.",
+            "⚠️ Verification failed. Please try again later.",
             show_alert=True
         )
 
