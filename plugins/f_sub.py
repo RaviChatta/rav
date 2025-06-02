@@ -2,7 +2,7 @@ import os
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from pyrogram.errors import UserNotParticipant
-from config import Settings
+from config import settings
 
 FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS
 IMAGE_URL = "https://files.catbox.moe/px9br5.png"
