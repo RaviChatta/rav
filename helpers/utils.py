@@ -211,13 +211,22 @@ async def get_random_animation() -> Optional[str]:
     except Exception as e:
         logger.error(f"Error getting random animation: {e}")
         return None
-async def get_shortlink(url, api, link):
+async def get_shortlink(url: str, api: str, link: str, max_retries: int = 3) -> str:
     """
-    Creates a shortlink using Shortzy.
+    Creates a shortlink with retry mechanism and fallback
     """
     shortzy = Shortzy(api_key=api, base_site=url)
-    shortlink = await shortzy.convert(link)
-    return shortlink
+    
+    for attempt in range(max_retries):
+        try:
+            shortlink = await shortzy.convert(link)
+            return shortlink
+        except Exception as e:
+            logger.warning(f"Shortlink attempt {attempt + 1} failed: {str(e)}")
+            if attempt == max_retries - 1:
+                logger.error("Falling back to original URL")
+                return link  # Fallback to original URL
+            await asyncio.sleep(1)  # Wait before retrying
 async def safe_edit_message(target: Union[Message, CallbackQuery], text: str, **kwargs):
     """Safely edit a message with error handling"""
     try:
