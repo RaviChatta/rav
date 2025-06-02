@@ -107,7 +107,7 @@ class Database:
             ("transactions", [("type", 1), ("timestamp", -1)]),
             
             # Leaderboards
-            ("leaderboards", [("period", 1), ("date_key", -1)]),
+            ("leaderboards", [("period", 1), ("type", 1), ("updated_at", -1)]),
             
             # File stats
             ("file_stats", [("user_id", 1)]),
@@ -942,32 +942,14 @@ class Database:
             return {'success': False, 'error': str(e)}
 
     async def update_leaderboards(self):
-        """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
-        try:
-            # Update daily leaderboard
-            await self._update_leaderboard_period("daily")
-            
-            # Update weekly leaderboard (only on Sundays)
-            if datetime.datetime.now().weekday() == 6:  # Sunday
-                await self._update_leaderboard_period("weekly")
-                
-            # Update monthly leaderboard (on 1st of month)
-            if datetime.datetime.now().day == 1:
-                await self._update_leaderboard_period("monthly")
-                
-            # Always update all-time leaderboard
-            await self._update_leaderboard_period("alltime")
-            
-            logger.info("Leaderboards updated successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update leaderboards: {e}")
-            return False
+            """Legacy method - now uses the new caching system"""
+            return await self.update_leaderboard_cache()
+
 
     async def _update_leaderboard_period(self, period: str):
-        """Update a specific leaderboard period"""
+        """Legacy method - now uses the new caching system"""
         try:
-            leaders = await self._get_leaderboard_data(period)
+            leaders = await self.get_leaderboard(period, "points")
             await self.leaderboards.update_one(
                 {"period": period},
                 {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
@@ -976,168 +958,182 @@ class Database:
         except Exception as e:
             logger.error(f"Error updating {period} leaderboard: {e}")
 
+
+
     async def _get_leaderboard_data(self, period: str) -> List[Dict]:
-        """Get leaderboard data for a specific period"""
-        try:
-            if period == "alltime":
-                pipeline = [
-                    {"$sort": {"points.balance": -1}},
-                    {"$limit": 100},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "points": "$points.balance",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ]
-            else:
-                days = 1 if period == "daily" else 7 if period == "weekly" else 30
-                start_date = datetime.datetime.now() - datetime.timedelta(days=days)
-                
-                pipeline = [
-                    {"$match": {"last_active": {"$gte": start_date}}},
-                    {"$sort": {"points.balance": -1}},
-                    {"$limit": 100},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "points": "$points.balance",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ]
-            
-            return await self.users.aggregate(pipeline).to_list(length=100)
-        except Exception as e:
-            logger.error(f"Error getting {period} leaderboard data: {e}")
-            return []
+        """Legacy method - now uses the new get_leaderboard()"""
+        return await self.get_leaderboard(period, "points")
 
-    async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", client: Optional[Client] = None) -> List[Dict]:
-        """Get leaderboard data with proper async handling"""
-        try:
-            # Determine date range
-            today = datetime.datetime.now().date()
-            if period == "daily":
-                start_date = today
-            elif period == "weekly":
-                start_date = today - datetime.timedelta(days=today.weekday())
-            elif period == "monthly":
-                start_date = datetime.date(today.year, today.month, 1)
-            else:  # alltime
-                start_date = None
-    
-            pipeline = []
-            
-            if period == "alltime":
-                field = {
-                    "points": "points.balance",
-                    "renames": "activity.total_files_renamed",
-                    "referrals": "referral.referred_count"
-                }.get(lb_type, "points.balance")
-                
-                pipeline.extend([
-                    {"$sort": {field: -1}},
-                    {"$limit": 10},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "value": f"${field}",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ])
-            else:
-                if start_date is None:
-                    raise ValueError("Invalid period specified for leaderboard")
-                    
-                collection = "transactions" if lb_type == "points" else "file_stats"
-                group_field = {"$sum": "$amount"} if lb_type == "points" else {"$sum": 1}
-                
-                pipeline.extend([
-                    {"$match": {
-                        "timestamp" if lb_type == "points" else "date": {
-                            "$gte": (
-                                datetime.datetime.combine(start_date, datetime.time.min) 
-                                if lb_type == "points" 
-                                else start_date.isoformat()
-                            )
-                    }}},
-                    {"$group": {"_id": "$user_id", "value": group_field}},
-                    {"$sort": {"value": -1}},
-                    {"$limit": 10},
-                    {"$lookup": {
-                        "from": "users",
-                        "localField": "_id",
-                        "foreignField": "_id",
-                        "as": "user"
-                    }},
-                    {"$unwind": "$user"},
-                    {"$project": {
-                        "_id": "$_id",
-                        "username": "$user.username",
-                        "value": 1,
-                        "is_premium": "$user.premium.is_premium"
-                    }}
-                ])
-    
-            # Get users from proper collection
-            collection = self.db.transactions if lb_type == "points" else self.db.file_stats
-            users = await collection.aggregate(pipeline).to_list(length=10)
-            
-            # Get usernames from Telegram if missing and client is provided
-            if client:
-                for user in users:
-                    if not user.get('username'):
-                        try:
-                            tg_user = await client.get_users(user['_id'])
-                            user['username'] = tg_user.username or tg_user.first_name
-                        except Exception:
-                            user['username'] = f"User {user['_id']}"
-            
-            return users
-            
-        except Exception as e:
-            logger.error(f"Leaderboard error: {e}")
-            return []
 
-    async def get_points_links_stats(self, admin_id: int = None) -> Dict:
-        """Get statistics about points links."""
+    async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", limit: int = 10) -> List[Dict]:
+          """
+          Get leaderboard data with proper aggregation
+          
+          Args:
+              period: Time period (daily, weekly, monthly, alltime)
+              lb_type: Type of leaderboard (points, renames, referrals)
+              limit: Number of entries to return
+              
+          Returns:
+              List of user documents with ranking data
+          """
+          try:
+              # Determine date range
+              date_filter = {}
+              if period != "alltime":
+                  now = datetime.datetime.utcnow()
+                  if period == "daily":
+                      start_date = now - datetime.timedelta(days=1)
+                  elif period == "weekly":
+                      start_date = now - datetime.timedelta(weeks=1)
+                  elif period == "monthly":
+                      start_date = now - datetime.timedelta(days=30)
+                  date_filter = {"timestamp": {"$gte": start_date}}
+  
+              # Build aggregation pipeline based on leaderboard type
+              if lb_type == "points":
+                  pipeline = [
+                      {"$match": {"type": "credit", **date_filter}},
+                      {"$group": {
+                          "_id": "$user_id",
+                          "value": {"$sum": "$amount"}
+                      }}
+                  ]
+              elif lb_type == "renames":
+                  pipeline = [
+                      {"$match": date_filter},
+                      {"$group": {
+                          "_id": "$user_id",
+                          "value": {"$sum": 1}
+                      }}
+                  ]
+              elif lb_type == "referrals":
+                  pipeline = [
+                      {"$group": {
+                          "_id": "$_id",
+                          "value": {"$sum": "$referral.referred_count"}
+                      }}
+                  ]
+              else:
+                  raise ValueError(f"Invalid leaderboard type: {lb_type}")
+  
+              # Common pipeline stages
+              pipeline.extend([
+                  {"$sort": {"value": -1}},
+                  {"$limit": limit},
+                  {"$lookup": {
+                      "from": "users",
+                      "localField": "_id",
+                      "foreignField": "_id",
+                      "as": "user"
+                  }},
+                  {"$unwind": "$user"},
+                  {"$project": {
+                      "_id": 1,
+                      "username": "$user.username",
+                      "value": 1,
+                      "is_premium": "$user.premium.is_premium"
+                  }}
+              ])
+  
+              # Execute query on appropriate collection
+              collection = self.users if lb_type == "referrals" else self.transactions if lb_type == "points" else self.file_stats
+              results = await collection.aggregate(pipeline).to_list(length=limit)
+              
+              # Add ranking
+              for i, user in enumerate(results, 1):
+                  user["rank"] = i
+                  if not user.get("username"):
+                      user["username"] = f"User {user['_id']}"
+              
+              return results
+              
+          except Exception as e:
+              logger.error(f"Error getting {period} {lb_type} leaderboard: {e}")
+              return []
+     async def update_leaderboard_cache(self):
+        """Update all cached leaderboard data"""
         try:
-            match = {"is_active": True} if not admin_id else {"created_by": admin_id}
+            periods = ["daily", "weekly", "monthly", "alltime"]
+            types = ["points", "renames", "referrals"]
             
-            stats = await self.point_links.aggregate([
-                {"$match": match},
-                {"$group": {
-                    "_id": None,
-                    "total_links": {"$sum": 1},
-                    "active_links": {
-                        "$sum": {
-                            "$cond": [
-                                {"$and": [
-                                    {"$gt": ["$expires_at", datetime.datetime.now()]},
-                                    {"$gt": ["$claims_remaining", 0]}
-                                ]},
-                                1, 0
-                            ]
-                        }
-                    },
-                    "total_points": {"$sum": {"$multiply": ["$points", "$max_claims"]}},
-                    "claimed_points": {"$sum": {"$multiply": ["$points", {"$subtract": ["$max_claims", "$claims_remaining"]}]}}
-                }}
-            ]).to_list(length=1)
+            for period in periods:
+                for lb_type in types:
+                    data = await self.get_leaderboard(period, lb_type, limit=100)
+                    await self.leaderboards.update_one(
+                        {"period": period, "type": lb_type},
+                        {"$set": {"data": data, "updated_at": datetime.datetime.utcnow()}},
+                        upsert=True
+                    )
             
-            return stats[0] if stats else {
-                "total_links": 0,
-                "active_links": 0,
-                "total_points": 0,
-                "claimed_points": 0
-            }
+            logger.info("Successfully updated all leaderboard caches")
+            return True
         except Exception as e:
-            logger.error(f"Error getting points links stats: {e}")
-            return {
-                "total_links": 0,
-                "active_links": 0,
-                "total_points": 0,
-                "claimed_points": 0
-            }
+            logger.error(f"Error updating leaderboard caches: {e}")
+            return False
+      async def get_cached_leaderboard(self, period: str, lb_type: str) -> List[Dict]:
+          """Get cached leaderboard data if recent, otherwise generate fresh"""
+          try:
+              # Check if cache exists and is recent (within 1 hour)
+              cache = await self.leaderboards.find_one(
+                  {"period": period, "type": lb_type}
+              )
+              
+              if cache and (datetime.datetime.utcnow() - cache["updated_at"]).total_seconds() < 3600:
+                  return cache["data"]
+              
+              # If cache is stale or missing, generate fresh data
+              fresh_data = await self.get_leaderboard(period, lb_type)
+              await self.leaderboards.update_one(
+                  {"period": period, "type": lb_type},
+                  {"$set": {"data": fresh_data, "updated_at": datetime.datetime.utcnow()}},
+                  upsert=True
+              )
+              return fresh_data
+              
+          except Exception as e:
+              logger.error(f"Error getting cached leaderboard: {e}")
+              return await self.get_leaderboard(period, lb_type)
+      async def get_points_links_stats(self, admin_id: int = None) -> Dict:
+          """Get statistics about points links."""
+          try:
+              match = {"is_active": True} if not admin_id else {"created_by": admin_id}
+              
+              stats = await self.point_links.aggregate([
+                  {"$match": match},
+                  {"$group": {
+                      "_id": None,
+                      "total_links": {"$sum": 1},
+                      "active_links": {
+                          "$sum": {
+                              "$cond": [
+                                  {"$and": [
+                                      {"$gt": ["$expires_at", datetime.datetime.now()]},
+                                      {"$gt": ["$claims_remaining", 0]}
+                                  ]},
+                                  1, 0
+                              ]
+                          }
+                      },
+                      "total_points": {"$sum": {"$multiply": ["$points", "$max_claims"]}},
+                      "claimed_points": {"$sum": {"$multiply": ["$points", {"$subtract": ["$max_claims", "$claims_remaining"]}]}}
+                  }}
+              ]).to_list(length=1)
+              
+              return stats[0] if stats else {
+                  "total_links": 0,
+                  "active_links": 0,
+                  "total_points": 0,
+                  "claimed_points": 0
+              }
+          except Exception as e:
+              logger.error(f"Error getting points links stats: {e}")
+              return {
+                  "total_links": 0,
+                  "active_links": 0,
+                  "total_points": 0,
+                  "claimed_points": 0
+              }
 
     async def generate_points_report(self, days: int = 7) -> Dict:
         """Generate a points activity report for admins."""
@@ -1271,7 +1267,7 @@ class Database:
     
     
     async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
-        """Set user's preferred leaderboard period with better validation"""
+        """Set user's preferred leaderboard period"""
         valid_periods = ["daily", "weekly", "monthly", "alltime"]
         if period not in valid_periods:
             logger.warning(f"Invalid period requested: {period}")
@@ -1281,76 +1277,47 @@ class Database:
             result = await self.users.update_one(
                 {"_id": user_id},
                 {"$set": {"settings.leaderboard_period": period}},
-                upsert=True  # Ensure the document exists
-            )
-            logger.debug(f"Set period for {user_id}: {period}. Modified: {result.modified_count}")
-            return result.acknowledged
-        except Exception as e:
-            logger.error(f"Error setting leaderboard period for {user_id}: {str(e)}", exc_info=True)
-            return False
-    
-    async def get_leaderboard_period(self, user_id: int) -> str:
-        """Get user's preferred leaderboard period with better fallbacks"""
-        try:
-            user = await self.users.find_one(
-                {"_id": user_id},
-                {"settings.leaderboard_period": 1}
-            )
-            
-            if not user:
-                # Create default settings if user doesn't exist
-                await self.users.insert_one({
-                    "_id": user_id,
-                    "settings": {"leaderboard_period": "weekly"}
-                })
-                return "weekly"
-                
-            return user.get("settings", {}).get("leaderboard_period", "weekly")
-        except Exception as e:
-            logger.error(f"Error getting leaderboard period for {user_id}: {str(e)}", exc_info=True)
-            return "weekly"
-    
-    async def get_leaderboard_type(self, user_id: int) -> str:
-        """Get user's preferred leaderboard type with better validation"""
-        try:
-            user = await self.users.find_one(
-                {"_id": user_id},
-                {"settings.leaderboard_type": 1}
-            )
-            
-            if not user:
-                # Create default settings if user doesn't exist
-                await self.users.insert_one({
-                    "_id": user_id,
-                    "settings": {"leaderboard_type": "points"}
-                })
-                return "points"
-                
-            lb_type = user.get("settings", {}).get("leaderboard_type", "points")
-            return lb_type if lb_type in ["points", "renames", "referrals"] else "points"
-        except Exception as e:
-            logger.error(f"Error getting leaderboard type for {user_id}: {str(e)}", exc_info=True)
-            return "points"
-    
-    async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
-        """Set user's preferred leaderboard type with validation"""
-        valid_types = ["points", "renames", "referrals"]
-        if lb_type not in valid_types:
-            logger.warning(f"Invalid leaderboard type requested: {lb_type}")
-            return False
-            
-        try:
-            result = await self.users.update_one(
-                {"_id": user_id},
-                {"$set": {"settings.leaderboard_type": lb_type}},
                 upsert=True
             )
-            logger.debug(f"Set type for {user_id}: {lb_type}. Modified: {result.modified_count}")
             return result.acknowledged
         except Exception as e:
-            logger.error(f"Error setting leaderboard type for {user_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error setting leaderboard period: {e}")
             return False
+    async def get_leaderboard_period(self, user_id: int) -> str:
+        """Get user's preferred leaderboard period"""
+        try:
+            user = await self.users.find_one({"_id": user_id})
+            return user.get("settings", {}).get("leaderboard_period", "weekly")
+        except Exception as e:
+            logger.error(f"Error getting leaderboard period: {e}")
+            return "weekly"
     
+
+    async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
+          """Set user's preferred leaderboard type"""
+          valid_types = ["points", "renames", "referrals"]
+          if lb_type not in valid_types:
+              logger.warning(f"Invalid leaderboard type: {lb_type}")
+              return False
+              
+          try:
+              result = await self.users.update_one(
+                  {"_id": user_id},
+                  {"$set": {"settings.leaderboard_type": lb_type}},
+                  upsert=True
+              )
+              return result.acknowledged
+          except Exception as e:
+              logger.error(f"Error setting leaderboard type: {e}")
+              return False
+    async def get_leaderboard_type(self, user_id: int) -> str:
+          """Get user's preferred leaderboard type"""
+          try:
+              user = await self.users.find_one({"_id": user_id})
+              return user.get("settings", {}).get("leaderboard_type", "points")
+          except Exception as e:
+              logger.error(f"Error getting leaderboard type: {e}")
+              return "points"
     async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
         """Ban a user from using the bot."""
         try:
