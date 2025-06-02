@@ -269,11 +269,11 @@ async def command_handler(client: Client, message: Message):
             
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("ᴀᴜᴛᴏʀᴇɴᴀᴍᴇ", callback_data='file_names'),
-                 InlineKeyboardButton('ᴛʜᴜᴍʙɴᴀɪʟ', callback_data='thumbnail'),
+                 InlineKeyboardButton('ᴛʜᴜᴍʙ', callback_data='thumbnail'),
                  InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', callback_data='caption')],
                 [InlineKeyboardButton('ᴍᴇᴛᴀᴅᴀᴛᴀ', callback_data='meta'),
-                 InlineKeyboardButton('ꜱᴇᴛ ᴍᴇᴅɪᴀ', callback_data='setmedia'),
-                 InlineKeyboardButton('ꜱᴇᴛ ᴅᴜᴍᴘ', callback_data='setdump')],
+                 InlineKeyboardButton('ᴍᴇᴅɪᴀ', callback_data='setmedia'),
+                 InlineKeyboardButton('ᴅᴜᴍᴘ', callback_data='setdump')],
                 [InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
                  InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ', callback_data='premiumx'),
                  InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')],
