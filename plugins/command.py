@@ -352,21 +352,17 @@ async def leaderboard_callback(client: Client, callback: CallbackQuery):
         lb_type = data_parts[2]  # points, renames, referrals
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
     
-    await show_leaderboard_ui(client, callback.message)
-    
-@Client.on_callback_query(filters.regex(r'^lb_type_'))
-async def leaderboard_type_callback(client: Client, callback_query: CallbackQuery):
-    """Handle leaderboard type changes"""
-    user_id = callback_query.from_user.id
-    lb_type = callback_query.data.split('_')[-1]  # points, renames, referrals
-    
-    await hyoshcoder.set_leaderboard_type(user_id, lb_type)
-    await show_leaderboard_ui(client, callback_query.message)
+    await callback.answer()  # Acknowledge the button press
+    await show_leaderboard_ui(client, callback)
 
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
     """Improved leaderboard display with working buttons"""
-    user_id = message.from_user.id if isinstance(message, Message) else message.from_user.id
-    msg = message if isinstance(message, Message) else message.message
+    if isinstance(message, CallbackQuery):
+        user_id = message.from_user.id
+        msg = message.message
+    else:
+        user_id = message.from_user.id
+        msg = message
     
     period = await hyoshcoder.get_leaderboard_period(user_id)
     lb_type = await hyoshcoder.get_leaderboard_type(user_id)
@@ -387,20 +383,23 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
             if user.get('is_premium'):
                 text += "   💎 PREMIUM\n"
     
-    # Active button styling
-    active_btn_style = {"text": f"• {period.upper()} •" if "period" in callback.data else f"• {lb_type.upper()} •"}
+    # Create buttons with active state indicators
+    def make_button(label, data, is_active):
+        if is_active:
+            label = f"• {label} •"
+        return InlineKeyboardButton(label, callback_data=data)
     
     buttons = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("DAILY", callback_data="lb_period_daily"),
-            InlineKeyboardButton("WEEKLY", callback_data="lb_period_weekly"),
-            InlineKeyboardButton("MONTHLY", callback_data="lb_period_monthly"),
-            InlineKeyboardButton("ALL-TIME", callback_data="lb_period_alltime")
+            make_button("DAILY", "lb_period_daily", period == "daily"),
+            make_button("WEEKLY", "lb_period_weekly", period == "weekly"),
+            make_button("MONTHLY", "lb_period_monthly", period == "monthly"),
+            make_button("ALL-TIME", "lb_period_alltime", period == "alltime")
         ],
         [
-            InlineKeyboardButton("POINTS", callback_data="lb_type_points"),
-            InlineKeyboardButton("FILES", callback_data="lb_type_renames"),
-            InlineKeyboardButton("REFERRALS", callback_data="lb_type_referrals")
+            make_button("POINTS", "lb_type_points", lb_type == "points"),
+            make_button("FILES", "lb_type_renames", lb_type == "renames"),
+            make_button("REFERRALS", "lb_type_referrals", lb_type == "referrals")
         ],
         [InlineKeyboardButton("BACK", callback_data="help")]
     ])
