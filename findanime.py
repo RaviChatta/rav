@@ -24,19 +24,22 @@ class AnimeFinder:
     def __init__(self, bot: Client):
         self.bot = bot
         self.session = None
-        self._handler = None  # To keep reference to the handler
+        self.handler = None
 
     async def initialize(self):
-        """Initialize aiohttp session"""
+        """Initialize aiohttp session and register handlers"""
         self.session = aiohttp.ClientSession()
         self.register_handlers()
+        logger.info("Anime finder initialized successfully")
 
     async def shutdown(self):
         """Cleanup resources"""
-        if self.session:
-            await self.session.close()
-        if self._handler:
-            self.bot.remove_handler(*self._handler)
+        try:
+            if self.session:
+                await self.session.close()
+                logger.info("Closed aiohttp session")
+        except Exception as e:
+            logger.error(f"Error closing session: {e}")
 
     def get_system_load(self) -> float:
         """Get current system CPU load"""
@@ -230,7 +233,7 @@ class AnimeFinder:
     def register_handlers(self):
         """Register command handlers properly"""
         @self.bot.on_message(filters.command("findanime") & (filters.private | filters.group))
-        async def findanime_wrapper(client: Client, message: Message):
+        async def findanime_handler(client: Client, message: Message):
             try:
                 if not message.reply_to_message or not (
                     message.reply_to_message.photo or 
@@ -262,5 +265,8 @@ class AnimeFinder:
                 except:
                     pass
 
-        # Store handler reference for proper cleanup
-        self._handler = self.bot.dispatcher.get_handler_by_func(findanime_wrapper.__name__)
+        # Store the handler using the proper Pyrogram method
+        for handler in self.bot.dispatcher.groups[0]:
+            if hasattr(handler.callback, '__name__') and handler.callback.__name__ == 'findanime_handler':
+                self.handler = handler
+                break
