@@ -337,6 +337,9 @@ async def addthumbs(client, message):
 
 
 
+from pyrogram import Client, filters
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
     """Handle /leaderboard command"""
@@ -492,19 +495,37 @@ async def handle_points_link(client: Client, message: Message):
         logger.error(f"Points link claim error: {e}")
         await message.reply_text("❌ Invalid points link")
 @Client.on_callback_query(filters.regex(r'^lb_period_'))
-async def leaderboard_period_callback(client: Client, callback_query: CallbackQuery):
+async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
     """Handle leaderboard period changes"""
-    user_id = callback_query.from_user.id
-    period = callback_query.data.split('_')[-1]  # daily, weekly, monthly, alltime
-    
-    await hyoshcoder.set_leaderboard_period(user_id, period)
-    await show_leaderboard_ui(client, callback_query.message)
+    try:
+        user_id = callback.from_user.id
+        period = callback.data.split('_')[-1]  # daily, weekly, monthly, alltime
+        
+        if period not in ["daily", "weekly", "monthly", "alltime"]:
+            await callback.answer("Invalid period", show_alert=True)
+            return
+            
+        await hyoshcoder.set_leaderboard_period(user_id, period)
+        await show_leaderboard_ui(client, callback.message)
+        await callback.answer(f"Showing {period} leaderboard")
+    except Exception as e:
+        await callback.answer("Failed to update period", show_alert=True)
+        logger.error(f"Period callback error: {e}")
 
 @Client.on_callback_query(filters.regex(r'^lb_type_'))
-async def leaderboard_type_callback(client: Client, callback_query: CallbackQuery):
+async def leaderboard_type_callback(client: Client, callback: CallbackQuery):
     """Handle leaderboard type changes"""
-    user_id = callback_query.from_user.id
-    lb_type = callback_query.data.split('_')[-1]  # points, renames, referrals
-    
-    await hyoshcoder.set_leaderboard_type(user_id, lb_type)
-    await show_leaderboard_ui(client, callback_query.message)
+    try:
+        user_id = callback.from_user.id
+        lb_type = callback.data.split('_')[-1]  # points, renames, referrals
+        
+        if lb_type not in ["points", "renames", "referrals"]:
+            await callback.answer("Invalid type", show_alert=True)
+            return
+            
+        await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+        await show_leaderboard_ui(client, callback.message)
+        await callback.answer(f"Showing {lb_type} leaderboard")
+    except Exception as e:
+        await callback.answer("Failed to update type", show_alert=True)
+        logger.error(f"Type callback error: {e}")
