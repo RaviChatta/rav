@@ -339,78 +339,91 @@ async def addthumbs(client, message):
 async def leaderboard_command(client: Client, message: Message):
     await show_leaderboard_ui(client, message)
 
-@Client.on_callback_query(filters.regex(r'^lb_(period|type)_'))
+@Client.on_callback_query(filters.regex(r'^lb_(period|type|refresh)_'))
 async def leaderboard_callback(client: Client, callback: CallbackQuery):
     """Handle all leaderboard button presses"""
     user_id = callback.from_user.id
-    data_parts = callback.data.split('_')
+    data = callback.data
     
-    if data_parts[1] == "period":
-        period = data_parts[2]  # daily, weekly, monthly, alltime
+    if data.startswith("lb_period_"):
+        period = data.split("_")[2]
         await hyoshcoder.set_leaderboard_period(user_id, period)
-    else:
-        lb_type = data_parts[2]  # points, renames, referrals
+    elif data.startswith("lb_type_"):
+        lb_type = data.split("_")[2]
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
     
-    await callback.answer()  # Acknowledge the button press
+    await callback.answer()
     await show_leaderboard_ui(client, callback)
 
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
-    """Improved leaderboard display with working buttons"""
-    if isinstance(message, CallbackQuery):
-        user_id = message.from_user.id
-        msg = message.message
-    else:
-        user_id = message.from_user.id
-        msg = message
-    
+    """Display leaderboard with interactive buttons"""
+    # Get message object and user ID
+    msg = message if isinstance(message, Message) else message.message
+    user_id = message.from_user.id
+
+    # Get user preferences
     period = await hyoshcoder.get_leaderboard_period(user_id)
     lb_type = await hyoshcoder.get_leaderboard_type(user_id)
     
+    # Get leaderboard data
     leaders = await hyoshcoder.get_leaderboard(period, lb_type)
     
+    # Prepare text message
     if not leaders:
-        text = "📊 No leaderboard data yet!"
-        buttons = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="help")]])
+        text = (
+            "📊 No leaderboard data available yet!\n\n"
+            "Start earning by:\n"
+            "⭐ Uploading files (points)\n"
+            "📁 Renaming files (renames)\n"
+            "👥 Referring friends (referrals)"
+        )
     else:
-        emoji = {"points": "⭐", "renames": "📁", "referrals": "👥"}.get(lb_type, "🏆")
-        text = f"🏆 {period.upper()} {lb_type.upper()} LEADERBOARD:\n\n"
+        emoji = {
+            "points": "⭐", 
+            "renames": "📁", 
+            "referrals": "👥"
+        }.get(lb_type, "🏆")
         
-        for i, user in enumerate(leaders[:10], 1):
+        text = f"🏆 **{period.upper()} {lb_type.upper()} LEADERBOARD**\n\n"
+        
+        for i, user in enumerate(leaders, 1):
             username = user.get('username', f"User {user['_id']}")
             value = user['value']
-            text += f"{i}. {username} - {value} {emoji}\n"
+            text += f"{i}. {username} - {value} {emoji}"
             if user.get('is_premium'):
-                text += "   💎 PREMIUM\n"
-    
-    # Create buttons with active state indicators
-    def make_button(label, data, is_active):
-        if is_active:
-            label = f"• {label} •"
-        return InlineKeyboardButton(label, callback_data=data)
+                text += " 💎"
+            text += "\n"
+
+    # Create interactive buttons
+    def create_button(text, callback_data, is_active):
+        return InlineKeyboardButton(
+            text=f"• {text} •" if is_active else text,
+            callback_data=callback_data
+        )
     
     buttons = InlineKeyboardMarkup([
         [
-            make_button("DAILY", "lb_period_daily", period == "daily"),
-            make_button("WEEKLY", "lb_period_weekly", period == "weekly"),
-            make_button("MONTHLY", "lb_period_monthly", period == "monthly"),
-            make_button("ALL-TIME", "lb_period_alltime", period == "alltime")
+            create_button("DAILY", "lb_period_daily", period == "daily"),
+            create_button("WEEKLY", "lb_period_weekly", period == "weekly"),
+            create_button("MONTHLY", "lb_period_monthly", period == "monthly"),
+            create_button("ALLTIME", "lb_period_alltime", period == "alltime")
         ],
         [
-            make_button("POINTS", "lb_type_points", lb_type == "points"),
-            make_button("FILES", "lb_type_renames", lb_type == "renames"),
-            make_button("REFERRALS", "lb_type_referrals", lb_type == "referrals")
+            create_button("POINTS", "lb_type_points", lb_type == "points"),
+            create_button("FILES", "lb_type_renames", lb_type == "renames"),
+            create_button("REFERRALS", "lb_type_referrals", lb_type == "referrals")
         ],
-        [InlineKeyboardButton("BACK", callback_data="help")]
+        [InlineKeyboardButton("🔄 Refresh", callback_data="lb_refresh_")]
     ])
     
+    # Send or update message
     try:
         if isinstance(message, CallbackQuery):
             await msg.edit_text(text, reply_markup=buttons)
         else:
-            await msg.reply_text(text, reply_markup=buttons)
+            await msg.reply(text, reply_markup=buttons)
     except Exception as e:
-        logger.error(f"Leaderboard error: {e}")
+        logger.error(f"Leaderboard UI error: {e}")
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'adds_'))
 async def handle_ad_link(client: Client, message: Message):
     try:
