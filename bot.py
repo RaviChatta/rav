@@ -64,22 +64,12 @@ class Bot(Client):
                 await asyncio.sleep(300)
 
     async def initialize_anime_finder(self):
-        """Initialize the anime finder service"""
         if not self.is_anime_finder_enabled:
-            logger.info("Anime finder is disabled in config")
             return
-
-        try:
-            self.anime_finder = AnimeFinder(self)
-            await self.anime_finder.initialize()
-            self.anime_finder.register_handlers()
-            asyncio.create_task(self.anime_finder.adaptive_queue_processor())
-            logger.info("Anime finder initialized successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize anime finder: {e}", exc_info=True)
-            return False
-
+    
+        self.anime_finder = AnimeFinder(self)
+        await self.anime_finder.initialize()
+        asyncio.create_task(self.anime_finder.adaptive_queue_processor())
     async def start(self):
         await super().start()
         
