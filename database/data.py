@@ -1269,46 +1269,86 @@ class Database:
             logger.error(f"Error setting user channel for {user_id}: {e}")
             return False
     
-    async def get_leaderboard_period(self, user_id: int) -> str:
-        """Get user's preferred leaderboard period."""
-        try:
-            user = await self.users.find_one({"_id": user_id})
-            return user.get("settings", {}).get("leaderboard_period", "weekly") if user else "weekly"
-        except Exception as e:
-            logger.error(f"Error getting leaderboard period for {user_id}: {e}")
-            return "weekly"
     
     async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
-        """Set user's preferred leaderboard period."""
+        """Set user's preferred leaderboard period with better validation"""
+        valid_periods = ["daily", "weekly", "monthly", "alltime"]
+        if period not in valid_periods:
+            logger.warning(f"Invalid period requested: {period}")
+            return False
+            
         try:
-            await self.users.update_one(
+            result = await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"settings.leaderboard_period": period}}
+                {"$set": {"settings.leaderboard_period": period}},
+                upsert=True  # Ensure the document exists
             )
-            return True
+            logger.debug(f"Set period for {user_id}: {period}. Modified: {result.modified_count}")
+            return result.acknowledged
         except Exception as e:
-            logger.error(f"Error setting leaderboard period for {user_id}: {e}")
+            logger.error(f"Error setting leaderboard period for {user_id}: {str(e)}", exc_info=True)
             return False
     
-    async def get_leaderboard_type(self, user_id: int) -> str:
-        """Get user's preferred leaderboard type."""
+    async def get_leaderboard_period(self, user_id: int) -> str:
+        """Get user's preferred leaderboard period with better fallbacks"""
         try:
-            user = await self.users.find_one({"_id": user_id})
-            return user.get("settings", {}).get("leaderboard_type", "points") if user else "points"
+            user = await self.users.find_one(
+                {"_id": user_id},
+                {"settings.leaderboard_period": 1}
+            )
+            
+            if not user:
+                # Create default settings if user doesn't exist
+                await self.users.insert_one({
+                    "_id": user_id,
+                    "settings": {"leaderboard_period": "weekly"}
+                })
+                return "weekly"
+                
+            return user.get("settings", {}).get("leaderboard_period", "weekly")
         except Exception as e:
-            logger.error(f"Error getting leaderboard type for {user_id}: {e}")
+            logger.error(f"Error getting leaderboard period for {user_id}: {str(e)}", exc_info=True)
+            return "weekly"
+    
+    async def get_leaderboard_type(self, user_id: int) -> str:
+        """Get user's preferred leaderboard type with better validation"""
+        try:
+            user = await self.users.find_one(
+                {"_id": user_id},
+                {"settings.leaderboard_type": 1}
+            )
+            
+            if not user:
+                # Create default settings if user doesn't exist
+                await self.users.insert_one({
+                    "_id": user_id,
+                    "settings": {"leaderboard_type": "points"}
+                })
+                return "points"
+                
+            lb_type = user.get("settings", {}).get("leaderboard_type", "points")
+            return lb_type if lb_type in ["points", "renames", "referrals"] else "points"
+        except Exception as e:
+            logger.error(f"Error getting leaderboard type for {user_id}: {str(e)}", exc_info=True)
             return "points"
     
     async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
-        """Set user's preferred leaderboard type."""
+        """Set user's preferred leaderboard type with validation"""
+        valid_types = ["points", "renames", "referrals"]
+        if lb_type not in valid_types:
+            logger.warning(f"Invalid leaderboard type requested: {lb_type}")
+            return False
+            
         try:
-            await self.users.update_one(
+            result = await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"settings.leaderboard_type": lb_type}}
+                {"$set": {"settings.leaderboard_type": lb_type}},
+                upsert=True
             )
-            return True
+            logger.debug(f"Set type for {user_id}: {lb_type}. Modified: {result.modified_count}")
+            return result.acknowledged
         except Exception as e:
-            logger.error(f"Error setting leaderboard type for {user_id}: {e}")
+            logger.error(f"Error setting leaderboard type for {user_id}: {str(e)}", exc_info=True)
             return False
     
     async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
