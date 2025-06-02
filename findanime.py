@@ -24,7 +24,8 @@ class AnimeFinder:
     def __init__(self, bot: Client):
         self.bot = bot
         self.session = None
-
+        self.is_processing = False
+        
     async def initialize(self):
         """Initialize aiohttp session"""
         self.session = aiohttp.ClientSession()
@@ -41,16 +42,20 @@ class AnimeFinder:
     async def adaptive_queue_processor(self):
         """Smart queue that adjusts based on system load"""
         while True:
-            if REQUEST_QUEUE:
-                current_load = self.get_system_load()
-                
-                if current_load < CPU_THRESHOLD:
-                    task = REQUEST_QUEUE.popleft()
-                    ACTIVE_TASKS.add(task['message_id'])
-                    asyncio.create_task(self.process_anime_request(task))
-                
-                await asyncio.sleep(0.5 if current_load > CPU_THRESHOLD else 0.1)
-            else:
+            try:
+                if REQUEST_QUEUE:
+                    current_load = self.get_system_load()
+                    
+                    if current_load < CPU_THRESHOLD:
+                        task = REQUEST_QUEUE.popleft()
+                        ACTIVE_TASKS.add(task['message_id'])
+                        asyncio.create_task(self.process_anime_request(task))
+                    
+                    await asyncio.sleep(0.5 if current_load > CPU_THRESHOLD else 0.1)
+                else:
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Queue processor error: {str(e)}")
                 await asyncio.sleep(1)
 
     async def turbo_search(self, image_data: bytes) -> Optional[Dict]:
@@ -127,6 +132,7 @@ class AnimeFinder:
         try:
             message = await self.bot.get_messages(task['chat_id'], task['message_id'])
             if not message or not message.reply_to_message:
+                logger.warning("Message or reply not found")
                 return
 
             # Validate image content
@@ -219,38 +225,37 @@ class AnimeFinder:
         finally:
             ACTIVE_TASKS.discard(task['message_id'])
 
-    async def findanime_handler(self, bot: Client, message: Message):
-        """Handle /findanime command"""
-        try:
-            if not message.reply_to_message or not (
-                message.reply_to_message.photo or 
-                (message.reply_to_message.document and 
-                 message.reply_to_message.document.mime_type.startswith('image/'))
-            ):
-                await message.reply_text("🔍 Reply to an anime screenshot with /findanime")
-                return
-
-            if len(REQUEST_QUEUE) >= MAX_QUEUE_SIZE:
-                await message.reply_text("🚧 Queue is full. Please try again later.")
-                return
-
-            REQUEST_QUEUE.append({
-                'message_id': message.id,
-                'chat_id': message.chat.id,
-                'reply_to': message.reply_to_message.id
-            })
-
-            await bot.send_chat_action(
-                chat_id=message.chat.id,
-                action=ChatAction.TYPING
-            )
-            await message.reply_text("🔄 Your request has been queued. Please wait...")
-        except Exception as e:
-            logger.error(f"Handler error: {str(e)}")
-
     def register_handlers(self):
-        """Register command handlers"""
-        self.bot.add_handler(
-            filters.command("findanime") & (filters.private | filters.group),
-            self.findanime_handler
-        )
+        """Register command handlers using the decorator pattern"""
+        @self.bot.on_message(filters.command("findanime") & (filters.private | filters.group))
+        async def findanime_handler(client: Client, message: Message):
+            try:
+                if not message.reply_to_message or not (
+                    message.reply_to_message.photo or 
+                    (message.reply_to_message.document and 
+                     message.reply_to_message.document.mime_type.startswith('image/'))
+                ):
+                    await message.reply_text("🔍 Reply to an anime screenshot with /findanime")
+                    return
+
+                if len(REQUEST_QUEUE) >= MAX_QUEUE_SIZE:
+                    await message.reply_text("🚧 Queue is full. Please try again later.")
+                    return
+
+                REQUEST_QUEUE.append({
+                    'message_id': message.id,
+                    'chat_id': message.chat.id,
+                    'reply_to': message.reply_to_message.id
+                })
+
+                await client.send_chat_action(
+                    chat_id=message.chat.id,
+                    action=ChatAction.TYPING
+                )
+                await message.reply_text("🔄 Your request has been queued. Please wait...")
+            except Exception as e:
+                logger.error(f"Handler error: {str(e)}", exc_info=True)
+                try:
+                    await message.reply_text("⚠️ An error occurred while processing your command")
+                except:
+                    pass
