@@ -224,24 +224,32 @@ class Database:
             logger.error(f"Error getting user {id}: {e}")
             return None
   
-    async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
-        """Find user by their unique referral/ad code if it's not already used."""
-        user = await self.users.find_one({
-            "unique_code": unique_code,
-            "$or": [
-                {"code_used": {"$exists": False}},  # code_used not set
-                {"code_used": False}                # code_used is False
-            ]
-        })
-        return user
-
-    async def mark_ad_code_used(self, code: str) -> None:
-        """Mark an ad code as used"""
+    async def get_user_by_code(self, unique_code: str, code_type: str = "referral") -> Optional[Dict]:
+        """Find user by code with type distinction (referral/ad)"""
+        query = {
+            f"{code_type}_codes.code": unique_code,
+            f"{code_type}_codes.used": False
+        }
+        return await self.users.find_one(query)
+    
+    async def mark_code_used(self, user_id: int, code: str, code_type: str):
+        """Mark a specific code type as used"""
         await self.users.update_one(
-            {"ad_code": code},
-            {"$set": {"ad_code_used": True}}
+            {"_id": user_id, f"{code_type}_codes.code": code},
+            {"$set": {f"{code_type}_codes.$.used": True}}
         )
-
+    
+    async def create_ad_campaign(self, user_id: int, points: int, num_codes: int = 5):
+        """Generate multiple ad codes for a user"""
+        codes = [str(uuid.uuid4())[:8] for _ in range(num_codes)]
+        ad_codes = [{"code": c, "points": points, "used": False} for c in codes]
+        
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$push": {"ad_codes": {"$each": ad_codes}}},
+            upsert=True
+        )
+        return codes
     async def update_user_activity(self, user_id: int) -> bool:
         """Update user's last active timestamp."""
         try:
