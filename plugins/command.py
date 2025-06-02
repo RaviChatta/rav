@@ -335,13 +335,16 @@ async def addthumbs(client, message):
         await mkn.edit_text(f"❌ Error saving thumbnail: {e}")
 
 
+
+
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
+    """Handle /leaderboard command"""
     await show_leaderboard_ui(client, message)
 
 @Client.on_callback_query(filters.regex(r'^lb_(period|type|refresh)_'))
 async def leaderboard_callback(client: Client, callback: CallbackQuery):
-    """Handle all leaderboard button presses"""
+    """Handle leaderboard button presses"""
     user_id = callback.from_user.id
     data = callback.data
     
@@ -351,24 +354,25 @@ async def leaderboard_callback(client: Client, callback: CallbackQuery):
     elif data.startswith("lb_type_"):
         lb_type = data.split("_")[2]
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+    elif data == "lb_refresh_":
+        await callback.answer("Refreshing leaderboard...")
     
-    await callback.answer()
     await show_leaderboard_ui(client, callback)
 
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
-    """Display leaderboard with interactive buttons"""
-    # Get message object and user ID
+    """Display the leaderboard with interactive buttons"""
+    # Get message and user info
     msg = message if isinstance(message, Message) else message.message
     user_id = message.from_user.id
-
+    
     # Get user preferences
     period = await hyoshcoder.get_leaderboard_period(user_id)
     lb_type = await hyoshcoder.get_leaderboard_type(user_id)
     
     # Get leaderboard data
-    leaders = await hyoshcoder.get_leaderboard(period, lb_type)
+    leaders = await hyoshcoder.get_cached_leaderboard(period, lb_type)
     
-    # Prepare text message
+    # Prepare the message text
     if not leaders:
         text = (
             "📊 No leaderboard data available yet!\n\n"
@@ -386,14 +390,14 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         
         text = f"🏆 **{period.upper()} {lb_type.upper()} LEADERBOARD**\n\n"
         
-        for i, user in enumerate(leaders, 1):
+        for user in leaders:
             username = user.get('username', f"User {user['_id']}")
             value = user['value']
-            text += f"{i}. {username} - {value} {emoji}"
+            text += f"{user['rank']}. {username} - {value} {emoji}"
             if user.get('is_premium'):
                 text += " 💎"
             text += "\n"
-
+    
     # Create interactive buttons
     def create_button(text, callback_data, is_active):
         return InlineKeyboardButton(
@@ -416,14 +420,14 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         [InlineKeyboardButton("🔄 Refresh", callback_data="lb_refresh_")]
     ])
     
-    # Send or update message
+    # Send or update the message
     try:
         if isinstance(message, CallbackQuery):
             await msg.edit_text(text, reply_markup=buttons)
         else:
             await msg.reply(text, reply_markup=buttons)
     except Exception as e:
-        logger.error(f"Leaderboard UI error: {e}")
+        logger.error(f"Error showing leaderboard UI: {e}")
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'adds_'))
 async def handle_ad_link(client: Client, message: Message):
     try:
