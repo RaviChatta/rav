@@ -86,88 +86,88 @@ async def command_handler(client: Client, message: Message):
                             await message.reply("❌ The user who invited you does not exist.")
                 
                 # Then handle campaign
-               elif args[0].startswith("adds_"):
-                  try:
-                      unique_code = args[0].replace("adds_", "")
-                      current_user_id = message.from_user.id
-                      
-                      # Get campaign details using the code
-                      campaign = await hyoshcoder.get_campaign_by_code(unique_code)
-                      
-                      if not campaign:
-                          await message.reply("❌ Invalid campaign link")
-                          return
-                          
-                      if campaign.get('used', False):
-                          await message.reply("⚠️ This link has already been redeemed")
-                          return
-                          
-                      if campaign.get('expires_at', datetime.now()) < datetime.now():
-                          await message.reply("⌛ This campaign has expired")
-                          return
-                          
-                      # Process in transaction to prevent double spending
-                      async with await hyoshcoder.start_session() as session:
-                          async with session.start_transaction():
-                              # Verify again within transaction
-                              fresh_campaign = await hyoshcoder.get_campaign_by_code(unique_code, session=session)
-                              if fresh_campaign.get('used', False):
-                                  await message.reply("⚠️ This link was just redeemed by someone else")
-                                  await session.abort_transaction()
-                                  return
-                              
-                              # Add points
-                              reward = campaign['reward']
-                              await hyoshcoder.add_points(
-                                  current_user_id, 
-                                  reward,
-                                  session=session,
-                                  reason=f"Ad campaign: {campaign['_id']}"
-                              )
-                              
-                              # Mark as used
-                              await hyoshcoder.mark_campaign_used(
-                                  campaign['_id'],
-                                  current_user_id,
-                                  session=session
-                              )
-                              
-                              # Record transaction
-                              await hyoshcoder.record_transaction(
-                                  user_id=current_user_id,
-                                  amount=reward,
-                                  transaction_type="ad_reward",
-                                  reference_id=campaign['_id'],
-                                  session=session
-                              )
-                              
-                      # Success message
-                      success_msg = (
-                          f"🎉 You earned {reward} points!\n\n"
-                          f"Campaign: {campaign.get('name', 'Unknown')}\n"
-                          f"Remaining: {campaign.get('remaining_budget', 0)} points left"
-                      )
-                      await message.reply(success_msg)
-                      
-                      # Notify campaign owner if different user
-                      if campaign['owner_id'] != current_user_id:
-                          try:
-                              owner_msg = (
-                                  f"📢 Your ad campaign was viewed!\n\n"
-                                  f"User: {message.from_user.mention}\n"
-                                  f"Campaign: {campaign.get('name', 'Unknown')}\n"
-                                  f"Points awarded: {reward}"
-                              )
-                              await client.send_message(
-                                  chat_id=campaign['owner_id'],
-                                  text=owner_msg
-                              )
-                          except Exception as e:
-                              logger.error(f"Failed to notify campaign owner: {e}")
-              
-                  except Exception as e:
-                      logger.error(f"Ad campaign redemption error: {str(e)}", exc_info=True)
-                      await message.reply("⚠️ An error occurred during redemption. Please try again.")
+                elif args[0].startswith("adds_"):
+                    try:
+                        unique_code = args[0].replace("adds_", "")
+                        current_user_id = message.from_user.id
+                        
+                        # Get campaign details using the code
+                        campaign = await hyoshcoder.get_campaign_by_code(unique_code)
+                        
+                        if not campaign:
+                            await message.reply("❌ Invalid campaign link")
+                            return
+                            
+                        if campaign.get('used', False):
+                            await message.reply("⚠️ This link has already been redeemed")
+                            return
+                            
+                        if campaign.get('expires_at', datetime.now()) < datetime.now():
+                            await message.reply("⌛ This campaign has expired")
+                            return
+                            
+                        # Process in transaction to prevent double spending
+                        async with await hyoshcoder.start_session() as session:
+                            async with session.start_transaction():
+                                # Verify again within transaction
+                                fresh_campaign = await hyoshcoder.get_campaign_by_code(unique_code, session=session)
+                                if fresh_campaign.get('used', False):
+                                    await message.reply("⚠️ This link was just redeemed by someone else")
+                                    await session.abort_transaction()
+                                    return
+                                
+                                # Add points
+                                reward = campaign['reward']
+                                await hyoshcoder.add_points(
+                                    current_user_id, 
+                                    reward,
+                                    session=session,
+                                    reason=f"Ad campaign: {campaign['_id']}"
+                                )
+                                
+                                # Mark as used
+                                await hyoshcoder.mark_campaign_used(
+                                    campaign['_id'],
+                                    current_user_id,
+                                    session=session
+                                )
+                                
+                                # Record transaction
+                                await hyoshcoder.record_transaction(
+                                    user_id=current_user_id,
+                                    amount=reward,
+                                    transaction_type="ad_reward",
+                                    reference_id=campaign['_id'],
+                                    session=session
+                                )
+                                
+                        # Success message
+                        success_msg = (
+                            f"🎉 You earned {reward} points!\n\n"
+                            f"Campaign: {campaign.get('name', 'Unknown')}\n"
+                            f"Remaining: {campaign.get('remaining_budget', 0)} points left"
+                        )
+                        await message.reply(success_msg)
+                        
+                        # Notify campaign owner if different user
+                        if campaign['owner_id'] != current_user_id:
+                            try:
+                                owner_msg = (
+                                    f"📢 Your ad campaign was viewed!\n\n"
+                                    f"User: {message.from_user.mention}\n"
+                                    f"Campaign: {campaign.get('name', 'Unknown')}\n"
+                                    f"Points awarded: {reward}"
+                                )
+                                await client.send_message(
+                                    chat_id=campaign['owner_id'],
+                                    text=owner_msg
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to notify campaign owner: {e}")
+                
+                    except Exception as e:
+                        logger.error(f"Ad campaign redemption error: {str(e)}", exc_info=True)
+                        await message.reply("⚠️ An error occurred during redemption. Please try again.")
 
 
             # Send welcome message
