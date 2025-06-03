@@ -143,20 +143,20 @@ class AnimeFinder:
         return {}
 
     def format_response(self, data: Dict) -> str:
-        """Format the anime information into a nice message"""
+        """Format anime info in a stylish mobile-friendly design"""
         title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
         is_movie = data.get('episodes', 0) == 1
         
         return (
-            f"╔══════════════════════════╗\n"
-            f"  🎬 <b>{title}</b>\n"
-            f"╚══════════════════════════╝\n"
-            f"• {'🎥 Movie' if is_movie else f'📺 Episode: {data.get("episode", "N/A")}'}\n"
-            f"• ⏱ <b>Timestamp:</b> {data.get('timestamp', '00:00')}\n"
-            f"• 📊 <b>Confidence:</b> {data.get('confidence', 0):.1f}%\n"
-            f"• 🔗 <a href='{data.get('anilist_url', '#')}'>More Info</a>"
+            f"# {data.get('id', '0000')[:4]}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>🎌 TITLE</b> 🟧 <i>{title}</i> 🟧\n\n"
+            f"<b>▷ EPISODES:</b> ⟨ {data.get('episode', 'N/A')} / {data.get('episodes', '?')} ⟩\n"
+            f"<b>◇ MATCH CONFIDENCE:</b> {data.get('confidence', 0):.2f}%\n"
+            f"<b>◷ TIMESTAMP:</b> ⏳ {data.get('timestamp', '00:00')} ⏳\n\n"
+            f"<a href='{data.get('anilist_url', '#')}'>[MORE INFO] 🌬</a>\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
         )
-
     async def download_image_to_temp(self, file_id: str) -> Optional[bytes]:
         """Download image to temporary file and return bytes"""
         try:
