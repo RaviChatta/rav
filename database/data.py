@@ -1011,7 +1011,8 @@ class Database:
             logger.error(f"Error getting {period} leaderboard data: {e}")
             return []
 
-     async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", limit: int = 10) -> List[Dict]:
+
+   async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", limit: int = 10) -> List[Dict]:
           """Get leaderboard data with proper aggregation"""
           try:
               # Determine date range
