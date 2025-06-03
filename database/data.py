@@ -1012,126 +1012,126 @@ class Database:
             return []
 
 
-   async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", limit: int = 10) -> List[Dict]:
-          """Get leaderboard data with proper aggregation"""
-          try:
-              # Determine date range
-              now = datetime.datetime.utcnow()
-              date_filter = {}
-              
-              if period == "daily":
-                  start_date = now - datetime.timedelta(days=1)
-                  date_filter = {"timestamp": {"$gte": start_date}}
-              elif period == "weekly":
-                  start_date = now - datetime.timedelta(weeks=1)
-                  date_filter = {"timestamp": {"$gte": start_date}}
-              elif period == "monthly":
-                  start_date = now - datetime.timedelta(days=30)
-                  date_filter = {"timestamp": {"$gte": start_date}}
-              
-              pipeline = []
-              
-              if lb_type == "points":
-                  # Points leaderboard - sum of all points transactions
-                  pipeline = [
-                      {"$match": {"type": "credit", **date_filter}},
-                      {"$group": {
-                          "_id": "$user_id",
-                          "total_points": {"$sum": "$amount"}
-                      }},
-                      {"$sort": {"total_points": -1}},
-                      {"$limit": limit},
-                      {"$lookup": {
-                          "from": "users",
-                          "localField": "_id",
-                          "foreignField": "_id",
-                          "as": "user"
-                      }},
-                      {"$unwind": "$user"},
-                      {"$project": {
-                          "_id": 1,
-                          "username": "$user.username",
-                          "value": "$total_points",
-                          "is_premium": "$user.premium.is_premium"
-                      }}
-                  ]
-                  
-              elif lb_type == "renames":
-                  # Renames leaderboard - count of file rename operations
-                  pipeline = [
-                      {"$match": date_filter},
-                      {"$group": {
-                          "_id": "$user_id",
-                          "total_renames": {"$sum": 1}
-                      }},
-                      {"$sort": {"total_renames": -1}},
-                      {"$limit": limit},
-                      {"$lookup": {
-                          "from": "users",
-                          "localField": "_id",
-                          "foreignField": "_id",
-                          "as": "user"
-                      }},
-                      {"$unwind": "$user"},
-                      {"$project": {
-                          "_id": 1,
-                          "username": "$user.username",
-                          "value": "$total_renames",
-                          "is_premium": "$user.premium.is_premium"
-                      }}
-                  ]
-                  
-              elif lb_type == "referrals":
-                  # Referrals leaderboard - count of referrals
-                  pipeline = [
-                      {"$match": {"referral.referred_count": {"$gt": 0}}},
-                      {"$project": {
-                          "_id": 1,
-                          "username": 1,
-                          "value": "$referral.referred_count",
-                          "is_premium": "$premium.is_premium"
-                      }},
-                      {"$sort": {"value": -1}},
-                      {"$limit": limit}
-                  ]
-              
-              if not pipeline:
-                  return []
-                  
-              collection = self.transactions if lb_type == "points" else self.file_stats if lb_type == "renames" else self.users
-              results = await collection.aggregate(pipeline).to_list(length=limit)
-              
-              # Add ranking
-              for i, user in enumerate(results, 1):
-                  user["rank"] = i
-                  if not user.get("username"):
-                      user["username"] = f"User {user['_id']}"
-              
-              return results
-              
-          except Exception as e:
-              logger.error(f"Error getting {period} {lb_type} leaderboard: {e}")
-              return []
-      async def update_leaderboard_cache(self):
-          """Update all cached leaderboard data"""
-          try:
-              periods = ["daily", "weekly", "monthly", "alltime"]
-              types = ["points", "renames", "referrals"]
-              
-              for period in periods:
-                  for lb_type in types:
-                      data = await self.get_leaderboard(period, lb_type, limit=100)
-                      await self.leaderboards.update_one(
-                          {"period": period, "type": lb_type},
-                          {"$set": {"data": data, "updated_at": datetime.datetime.utcnow()}},
-                          upsert=True
-                      )
-              
-              logger.info("Successfully updated all leaderboard caches")
-              return True
-          except Exception as e:
-              logger.error(f"Error updating leaderboard caches: {e}")
-              return False
+    async def get_leaderboard(self, period: str = "weekly", lb_type: str = "points", limit: int = 10) -> List[Dict]:
+            """Get leaderboard data with proper aggregation"""
+            try:
+                # Determine date range
+                now = datetime.datetime.utcnow()
+                date_filter = {}
+                
+                if period == "daily":
+                    start_date = now - datetime.timedelta(days=1)
+                    date_filter = {"timestamp": {"$gte": start_date}}
+                elif period == "weekly":
+                    start_date = now - datetime.timedelta(weeks=1)
+                    date_filter = {"timestamp": {"$gte": start_date}}
+                elif period == "monthly":
+                    start_date = now - datetime.timedelta(days=30)
+                    date_filter = {"timestamp": {"$gte": start_date}}
+                
+                pipeline = []
+                
+                if lb_type == "points":
+                    # Points leaderboard - sum of all points transactions
+                    pipeline = [
+                        {"$match": {"type": "credit", **date_filter}},
+                        {"$group": {
+                            "_id": "$user_id",
+                            "total_points": {"$sum": "$amount"}
+                        }},
+                        {"$sort": {"total_points": -1}},
+                        {"$limit": limit},
+                        {"$lookup": {
+                            "from": "users",
+                            "localField": "_id",
+                            "foreignField": "_id",
+                            "as": "user"
+                        }},
+                        {"$unwind": "$user"},
+                        {"$project": {
+                            "_id": 1,
+                            "username": "$user.username",
+                            "value": "$total_points",
+                            "is_premium": "$user.premium.is_premium"
+                        }}
+                    ]
+                    
+                elif lb_type == "renames":
+                    # Renames leaderboard - count of file rename operations
+                    pipeline = [
+                        {"$match": date_filter},
+                        {"$group": {
+                            "_id": "$user_id",
+                            "total_renames": {"$sum": 1}
+                        }},
+                        {"$sort": {"total_renames": -1}},
+                        {"$limit": limit},
+                        {"$lookup": {
+                            "from": "users",
+                            "localField": "_id",
+                            "foreignField": "_id",
+                            "as": "user"
+                        }},
+                        {"$unwind": "$user"},
+                        {"$project": {
+                            "_id": 1,
+                            "username": "$user.username",
+                            "value": "$total_renames",
+                            "is_premium": "$user.premium.is_premium"
+                        }}
+                    ]
+                    
+                elif lb_type == "referrals":
+                    # Referrals leaderboard - count of referrals
+                    pipeline = [
+                        {"$match": {"referral.referred_count": {"$gt": 0}}},
+                        {"$project": {
+                            "_id": 1,
+                            "username": 1,
+                            "value": "$referral.referred_count",
+                            "is_premium": "$premium.is_premium"
+                        }},
+                        {"$sort": {"value": -1}},
+                        {"$limit": limit}
+                    ]
+                
+                if not pipeline:
+                    return []
+                    
+                collection = self.transactions if lb_type == "points" else self.file_stats if lb_type == "renames" else self.users
+                results = await collection.aggregate(pipeline).to_list(length=limit)
+                
+                # Add ranking
+                for i, user in enumerate(results, 1):
+                    user["rank"] = i
+                    if not user.get("username"):
+                        user["username"] = f"User {user['_id']}"
+                
+                return results
+                
+            except Exception as e:
+                logger.error(f"Error getting {period} {lb_type} leaderboard: {e}")
+                return []
+        async def update_leaderboard_cache(self):
+            """Update all cached leaderboard data"""
+            try:
+                periods = ["daily", "weekly", "monthly", "alltime"]
+                types = ["points", "renames", "referrals"]
+                
+                for period in periods:
+                    for lb_type in types:
+                        data = await self.get_leaderboard(period, lb_type, limit=100)
+                        await self.leaderboards.update_one(
+                            {"period": period, "type": lb_type},
+                            {"$set": {"data": data, "updated_at": datetime.datetime.utcnow()}},
+                            upsert=True
+                        )
+                
+                logger.info("Successfully updated all leaderboard caches")
+                return True
+            except Exception as e:
+                logger.error(f"Error updating leaderboard caches: {e}")
+                return False
 
     async def get_cached_leaderboard(self, period: str, lb_type: str) -> List[Dict]:
         """Get cached leaderboard data if recent, otherwise generate fresh"""
