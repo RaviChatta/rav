@@ -131,17 +131,20 @@ class Database:
         logger.info("Pyrogram client set for database operations")
     
     def new_user(self, id: int) -> Dict[str, Any]:
-        """Create a new user document with comprehensive default values."""
+        """Create a new user document with ad campaign support."""
         now = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
         return {
             "_id": int(id),
             "username": None,
             "join_date": now.isoformat(),
+            # Media settings
             "file_id": None,
             "caption": None,
             "metadata": True,
             "metadata_code": None,
             "format_template": None,
+            
+            # Ban status
             "ban_status": {
                 "is_banned": False,
                 "ban_duration": 0,
@@ -150,25 +153,41 @@ class Database:
                 "unbanned_by": None,
                 "unban_reason": None
             },
+            
+            # Points system (enhanced for ad campaigns)
             "points": {
                 "balance": 70,
                 "total_earned": 70,
                 "total_spent": 0,
-                "last_earned": now.isoformat()
+                "last_earned": now.isoformat(),
+                "sources": {
+                    "ads": 0,
+                    "referrals": 0,
+                    "uploads": 0,
+                    "bonuses": 0
+                }
             },
+            
+            # Premium features
             "premium": {
                 "is_premium": False,
                 "since": None,
                 "until": None,
                 "plan": None,
-                "payment_method": None
+                "payment_method": None,
+                "ad_multiplier": 1.0  # New field for ad point multipliers
             },
+            
+            # Referral system (compatible with ad campaigns)
             "referral": {
                 "referrer_id": None,
                 "referred_count": 0,
                 "referral_earnings": 0,
-                "referred_users": []
+                "referred_users": [],
+                "ad_codes": []  # New field for tracking shared ad links
             },
+            
+            # User settings
             "settings": {
                 "sequential_mode": False,
                 "user_channel": None,
@@ -176,23 +195,45 @@ class Database:
                 "language": "en",
                 "notifications": True,
                 "leaderboard_period": "weekly",
-                "leaderboard_type": "points"
+                "leaderboard_type": "points",
+                "ad_notifications": True  # New field for ad notifications
             },
+            
+            # Activity tracking (enhanced for ads)
             "activity": {
                 "last_active": now.isoformat(),
                 "total_files_renamed": 0,
                 "daily_usage": 0,
-                "last_usage_date": None
+                "last_usage_date": None,
+                "ad_views": 0,  # New field
+                "ad_earnings": 0,  # New field
+                "last_ad_view": None  # New field
             },
+            
+            # Security
             "security": {
                 "two_factor": False,
                 "last_login": None,
-                "login_history": []
+                "login_history": [],
+                "ad_ratelimit": None  # New field for rate limiting ads
             },
+            
+            # Ad campaign management (new section)
+            "campaigns": {
+                "created": 0,
+                "active": [],
+                "total_spent": 0,
+                "total_views": 0
+            },
+            
+            # System flags
             "deleted": False,
-            "deleted_at": None
+            "deleted_at": None,
+            "flags": {
+                "ad_verified": False,  # New field for ad verification status
+                "ad_ban": False  # New field for ad abuse prevention
+            }
         }
-
     async def add_user(self, id: int) -> bool:
         """Add a new user with comprehensive initialization."""
         try:
@@ -940,6 +981,91 @@ class Database:
         except Exception as e:
             logger.error(f"Error claiming expend points: {e}")
             return {'success': False, 'error': str(e)}
+    async def create_ad_campaign(self, user_id: int, name: str, points: int, max_views: int):
+        """Create a new ad campaign for a user"""
+        campaign_id = str(uuid.uuid4())
+        code = str(uuid.uuid4())[:8]
+        
+        campaign = {
+            "_id": campaign_id,
+            "owner_id": user_id,
+            "name": name,
+            "points_per_view": points,
+            "max_views": max_views,
+            "views": 0,
+            "created_at": datetime.now(),
+            "expires_at": datetime.now() + timedelta(days=7),
+            "code": code,
+            "active": True
+        }
+        
+        # Deduct points from user
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$inc": {
+                "points.balance": -points * max_views,
+                "points.total_spent": points * max_views,
+                "campaigns.created": 1
+            }}
+        )
+        
+        # Store campaign
+        await self.campaigns.insert_one(campaign)
+        return code
+    
+    async def process_ad_view(self, code: str, viewer_id: int):
+        """Process when a user views an ad"""
+        async with await self._client.start_session() as session:
+            async with session.start_transaction():
+                # Get campaign
+                campaign = await self.campaigns.find_one(
+                    {"code": code, "active": True},
+                    session=session
+                )
+                
+                if not campaign or campaign['views'] >= campaign['max_views']:
+                    await session.abort_transaction()
+                    return False
+                    
+                # Calculate points with premium multiplier
+                user = await self.users.find_one(
+                    {"_id": viewer_id},
+                    {"premium.ad_multiplier": 1},
+                    session=session
+                )
+                multiplier = user.get('premium', {}).get('ad_multiplier', 1.0)
+                points = int(campaign['points_per_view'] * multiplier)
+                
+                # Update user stats
+                await self.users.update_one(
+                    {"_id": viewer_id},
+                    {"$inc": {
+                        "points.balance": points,
+                        "points.total_earned": points,
+                        "points.sources.ads": points,
+                        "activity.ad_views": 1,
+                        "activity.ad_earnings": points
+                    }},
+                    session=session
+                )
+                
+                # Update campaign
+                await self.campaigns.update_one(
+                    {"_id": campaign['_id']},
+                    {"$inc": {"views": 1}},
+                    session=session
+                )
+                
+                # Record transaction
+                await self.transactions.insert_one({
+                    "user_id": viewer_id,
+                    "type": "ad_view",
+                    "amount": points,
+                    "campaign_id": campaign['_id'],
+                    "timestamp": datetime.now()
+                }, session=session)
+                
+        return points
     async def get_campaign_by_code(self, code: str, session=None) -> Optional[Dict]:
         """Get campaign details by redemption code"""
         return await self.campaigns.find_one(
