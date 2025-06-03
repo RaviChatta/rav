@@ -86,32 +86,88 @@ async def command_handler(client: Client, message: Message):
                             await message.reply("❌ The user who invited you does not exist.")
                 
                 # Then handle campaign
-                elif args[0].startswith("adds_"):
-                    unique_code = args[0].replace("adds_", "")
-                    
-                    # Find user by code and ensure it's not used already
-                    user = await hyoshcoder.get_user_by_code(unique_code)
-                    
-                    if user and not user.get("code_used", False):
-                        user_id = user["_id"]
-                        reward = await hyoshcoder.get_expend_points(user_id)
-                
-                        if reward and reward > 0:
-                            await hyoshcoder.add_points(user_id, reward)
-                            await hyoshcoder.set_expend_points(user_id, 0, None)
-                
-                            # ✅ Mark code as used
-                            await hyoshcoder.col.update_one(
-                                {"_id": user_id},
-                                {"$set": {"code_used": True}}
-                            )
-                
-                            cap = f"🎉 You earned {reward} points!"
-                            await client.send_message(chat_id=user_id, text=cap)
-                        else:
-                            await message.reply("❌ This code has already been used or has no reward left.")
-                    else:
-                        await message.reply("❌ The link is invalid or already used.")
+               elif args[0].startswith("adds_"):
+                  try:
+                      unique_code = args[0].replace("adds_", "")
+                      current_user_id = message.from_user.id
+                      
+                      # Get campaign details using the code
+                      campaign = await hyoshcoder.get_campaign_by_code(unique_code)
+                      
+                      if not campaign:
+                          await message.reply("❌ Invalid campaign link")
+                          return
+                          
+                      if campaign.get('used', False):
+                          await message.reply("⚠️ This link has already been redeemed")
+                          return
+                          
+                      if campaign.get('expires_at', datetime.now()) < datetime.now():
+                          await message.reply("⌛ This campaign has expired")
+                          return
+                          
+                      # Process in transaction to prevent double spending
+                      async with await hyoshcoder.start_session() as session:
+                          async with session.start_transaction():
+                              # Verify again within transaction
+                              fresh_campaign = await hyoshcoder.get_campaign_by_code(unique_code, session=session)
+                              if fresh_campaign.get('used', False):
+                                  await message.reply("⚠️ This link was just redeemed by someone else")
+                                  await session.abort_transaction()
+                                  return
+                              
+                              # Add points
+                              reward = campaign['reward']
+                              await hyoshcoder.add_points(
+                                  current_user_id, 
+                                  reward,
+                                  session=session,
+                                  reason=f"Ad campaign: {campaign['_id']}"
+                              )
+                              
+                              # Mark as used
+                              await hyoshcoder.mark_campaign_used(
+                                  campaign['_id'],
+                                  current_user_id,
+                                  session=session
+                              )
+                              
+                              # Record transaction
+                              await hyoshcoder.record_transaction(
+                                  user_id=current_user_id,
+                                  amount=reward,
+                                  transaction_type="ad_reward",
+                                  reference_id=campaign['_id'],
+                                  session=session
+                              )
+                              
+                      # Success message
+                      success_msg = (
+                          f"🎉 You earned {reward} points!\n\n"
+                          f"Campaign: {campaign.get('name', 'Unknown')}\n"
+                          f"Remaining: {campaign.get('remaining_budget', 0)} points left"
+                      )
+                      await message.reply(success_msg)
+                      
+                      # Notify campaign owner if different user
+                      if campaign['owner_id'] != current_user_id:
+                          try:
+                              owner_msg = (
+                                  f"📢 Your ad campaign was viewed!\n\n"
+                                  f"User: {message.from_user.mention}\n"
+                                  f"Campaign: {campaign.get('name', 'Unknown')}\n"
+                                  f"Points awarded: {reward}"
+                              )
+                              await client.send_message(
+                                  chat_id=campaign['owner_id'],
+                                  text=owner_msg
+                              )
+                          except Exception as e:
+                              logger.error(f"Failed to notify campaign owner: {e}")
+              
+                  except Exception as e:
+                      logger.error(f"Ad campaign redemption error: {str(e)}", exc_info=True)
+                      await message.reply("⚠️ An error occurred during redemption. Please try again.")
 
 
             # Send welcome message
@@ -364,85 +420,161 @@ async def leaderboard_callback(client: Client, callback: CallbackQuery):
 
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
     """Display the leaderboard with interactive buttons"""
-    # Get message and user info
-    msg = message if isinstance(message, Message) else message.message
-    user_id = message.from_user.id
-    
-    # Get user preferences
-    period = await hyoshcoder.get_leaderboard_period(user_id)
-    lb_type = await hyoshcoder.get_leaderboard_type(user_id)
-    
-    # Get leaderboard data
-    leaders = await hyoshcoder.get_cached_leaderboard(period, lb_type)
-    
-    # Prepare the message text
-    if not leaders:
-        text = (
-            "📊 No leaderboard data available yet!\n\n"
-            "Start earning by:\n"
-            "⭐ Uploading files (points)\n"
-            "📁 Renaming files (renames)\n"
-            "👥 Referring friends (referrals)"
-        )
-    else:
-        emoji = {
-            "points": "⭐", 
-            "renames": "📁", 
-            "referrals": "👥"
-        }.get(lb_type, "🏆")
-        
-        text = f"🏆 **{period.upper()} {lb_type.upper()} LEADERBOARD**\n\n"
-        
-        for user in leaders:
-            username = user.get('username', f"User {user['_id']}")
-            value = user['value']
-            text += f"{user['rank']}. {username} - {value} {emoji}"
-            if user.get('is_premium'):
-                text += " 💎"
-            text += "\n"
-    
-    # Create interactive buttons
-    def create_button(text, callback_data, is_active):
-        return InlineKeyboardButton(
-            text=f"• {text} •" if is_active else text,
-            callback_data=callback_data
-        )
-    
-    buttons = InlineKeyboardMarkup([
-        [
-            create_button("DAILY", "lb_period_daily", period == "daily"),
-            create_button("WEEKLY", "lb_period_weekly", period == "weekly"),
-            create_button("MONTHLY", "lb_period_monthly", period == "monthly"),
-            create_button("ALLTIME", "lb_period_alltime", period == "alltime")
-        ],
-        [
-            create_button("POINTS", "lb_type_points", lb_type == "points"),
-            create_button("FILES", "lb_type_renames", lb_type == "renames"),
-            create_button("REFERRALS", "lb_type_referrals", lb_type == "referrals")
-        ],
-        [InlineKeyboardButton("🔄 Refresh", callback_data="lb_refresh_")]
-    ])
-    
-    # Send or update the message
     try:
+        msg = message if isinstance(message, Message) else message.message
+        user_id = message.from_user.id
+        
+        period = await hyoshcoder.get_leaderboard_period(user_id)
+        lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+        
+        leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
+        
+        if not leaders:
+            text = "📊 No leaderboard data available yet!\n\n"
+            if lb_type == "points":
+                text += "Earn points by using the bot's features!"
+            elif lb_type == "renames":
+                text += "Rename files to appear on this leaderboard!"
+            elif lb_type == "referrals":
+                text += "Refer friends to appear here!"
+        else:
+            emoji = {
+                "points": "⭐", 
+                "renames": "📁", 
+                "referrals": "👥"
+            }.get(lb_type, "🏆")
+            
+            text = f"🏆 **{period.upper()} {lb_type.upper()} LEADERBOARD**\n\n"
+            
+            for user in leaders:
+                username = user.get('username', f"User {user['_id']}")
+                value = user['value']
+                text += f"{user['rank']}. {username} - {value} {emoji}"
+                if user.get('is_premium'):
+                    text += " 💎"
+                text += "\n"
+        
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "DAILY" if period != "daily" else f"• DAILY •",
+                    callback_data="lb_period_daily"
+                ),
+                InlineKeyboardButton(
+                    "WEEKLY" if period != "weekly" else f"• WEEKLY •",
+                    callback_data="lb_period_weekly"
+                ),
+                InlineKeyboardButton(
+                    "MONTHLY" if period != "monthly" else f"• MONTHLY •",
+                    callback_data="lb_period_monthly"
+                ),
+                InlineKeyboardButton(
+                    "ALLTIME" if period != "alltime" else f"• ALLTIME •",
+                    callback_data="lb_period_alltime"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "POINTS" if lb_type != "points" else f"• POINTS •",
+                    callback_data="lb_type_points"
+                ),
+                InlineKeyboardButton(
+                    "RENAMES" if lb_type != "renames" else f"• RENAMES •",
+                    callback_data="lb_type_renames"
+                ),
+                InlineKeyboardButton(
+                    "REFERRALS" if lb_type != "referrals" else f"• REFERRALS •",
+                    callback_data="lb_type_referrals"
+                )
+            ],
+            [InlineKeyboardButton("🔄 Refresh", callback_data="lb_refresh_")]
+        ])
+        
         if isinstance(message, CallbackQuery):
             await msg.edit_text(text, reply_markup=buttons)
+            await message.answer("Leaderboard updated!")
         else:
             await msg.reply(text, reply_markup=buttons)
+            
     except Exception as e:
         logger.error(f"Error showing leaderboard UI: {e}")
+        if isinstance(message, CallbackQuery):
+            await message.answer("Failed to load leaderboard", show_alert=True)
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'adds_'))
 async def handle_ad_link(client: Client, message: Message):
-    # Extract code from URL like: https://t.me/bot?start=adds_ABC123
-    code = message.command[1].replace("adds_", "")  
-    
-    # Redeem the point link
-    result = await db.redeem_point_link(code, message.from_user.id)
-    
-    if result["success"]:
-        await message.reply(f"🎉 You earned {result['points']} points!")
-    else:
-        await message.reply(f"❌ {result['error']}")
+    try:
+        if len(message.command) < 2:
+            return await message.reply("❌ Invalid link format")
+
+        code = message.command[1].replace("adds_", "")
+        user_id = message.from_user.id
+
+        # Get the link details with better error reporting
+        link = await db.point_links.find_one({
+            "code": code,
+            "used": False,
+            "expires_at": {"$gt": datetime.now()}
+        })
+
+        if not link:
+            # Check why it failed to give specific error
+            expired = await db.point_links.find_one({
+                "code": code,
+                "expires_at": {"$lte": datetime.now()}
+            })
+            
+            if expired:
+                return await message.reply("❌ This link has expired")
+                
+            used = await db.point_links.find_one({
+                "code": code,
+                "used": True
+            })
+            
+            if used:
+                return await message.reply("❌ This link was already used")
+                
+            return await message.reply("❌ Invalid link code")
+
+        # Process redemption in a transaction
+        async with await db._client.start_session() as session:
+            async with session.start_transaction():
+                # Mark as used
+                await db.point_links.update_one(
+                    {"_id": link["_id"]},
+                    {"$set": {
+                        "used": True,
+                        "used_by": user_id,
+                        "used_at": datetime.now()
+                    }},
+                    session=session
+                )
+
+                # Add points
+                await db.users.update_one(
+                    {"_id": user_id},
+                    {"$inc": {
+                        "points.balance": link["points"],
+                        "points.total_earned": link["points"]
+                    }},
+                    session=session
+                )
+
+                # Record transaction
+                await db.transactions.insert_one({
+                    "user_id": user_id,
+                    "type": "point_link",
+                    "amount": link["points"],
+                    "timestamp": datetime.now(),
+                    "reference_id": f"link_{link['_id']}",
+                    "campaign_id": link.get("campaign_id")
+                }, session=session)
+
+        await message.reply(f"🎉 You earned {link['points']} points!")
+
+    except Exception as e:
+        logger.error(f"Ad link error: {str(e)}", exc_info=True)
+        await message.reply("⚠️ Please try again later")
 @Client.on_message(filters.private & filters.command("start") & filters.regex(r'points_'))
 async def handle_points_link(client: Client, message: Message):
     try:
