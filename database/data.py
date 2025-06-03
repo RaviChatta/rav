@@ -940,7 +940,32 @@ class Database:
         except Exception as e:
             logger.error(f"Error claiming expend points: {e}")
             return {'success': False, 'error': str(e)}
-
+    async def get_campaign_by_code(self, code: str, session=None) -> Optional[Dict]:
+        """Get campaign details by redemption code"""
+        return await self.campaigns.find_one(
+            {"codes.code": code},
+            {
+                "_id": 1,
+                "name": 1,
+                "reward": 1,
+                "owner_id": 1,
+                "expires_at": 1,
+                "codes.$": 1,
+                "remaining_budget": 1
+            },
+            session=session
+        )
+    
+    async def mark_campaign_used(self, campaign_id: str, user_id: int, session=None):
+        """Mark a campaign code as used"""
+        await self.campaigns.update_one(
+            {"_id": campaign_id, "codes.code": code},
+            {
+                "$set": {"codes.$.used": True, "codes.$.used_by": user_id, "codes.$.used_at": datetime.now()},
+                "$inc": {"remaining_budget": -reward}
+            },
+            session=session
+        )
     async def update_leaderboards(self):
         """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
         try:
