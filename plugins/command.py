@@ -88,31 +88,73 @@ async def command_handler(client: Client, message: Message):
                 # Then handle campaign
                 elif args[0].startswith("adds_"):
                     try:
-                        code = args[0].replace("adds_", "")
-                        campaign = await hyoshcoder.get_campaign_by_code(code)
-                        
+                        code = args[0].replace("adds_", "").strip()
+                        if not code:
+                            await message.reply("❌ Missing campaign code")
+                            return
+                
+                        # Case-insensitive search with expiry check
+                        campaign = await hyoshcoder.campaigns.find_one({
+                            "$expr": {"$eq": [
+                                {"$toLower": "$code"},
+                                {"$toLower": code}
+                            ]},
+                            "active": True,
+                            "expires_at": {"$gt": datetime.now()}
+                        })
+                
                         if not campaign:
                             await message.reply("❌ Invalid or expired campaign link")
                             return
-                            
-                        if campaign['used_views'] >= campaign['total_views']:
+                
+                        if campaign["used_views"] >= campaign["max_views"]:
                             await message.reply("⚠️ This campaign has reached its view limit")
                             return
-                            
-                        # Process the view
-                        await hyoshcoder.campaigns.update_one(
-                            {"_id": campaign['_id']},
-                            {"$inc": {"used_views": 1}}
+                
+                        # Process in transaction
+                        async with await hyoshcoder.start_session() as session:
+                            async with session.start_transaction():
+                                # Verify again within transaction
+                                fresh_campaign = await hyoshcoder.campaigns.find_one(
+                                    {"_id": campaign["_id"]},
+                                    session=session
+                                )
+                                
+                                if fresh_campaign["used_views"] >= fresh_campaign["max_views"]:
+                                    await session.abort_transaction()
+                                    await message.reply("⚠️ Campaign limit reached just now")
+                                    return
+                
+                                # Update campaign
+                                await hyoshcoder.campaigns.update_one(
+                                    {"_id": campaign["_id"]},
+                                    {"$inc": {"used_views": 1}},
+                                    session=session
+                                )
+                
+                                # Add points (with premium multiplier)
+                                user = await hyoshcoder.users.find_one(
+                                    {"_id": message.from_user.id},
+                                    {"premium.ad_multiplier": 1},
+                                    session=session
+                                )
+                                multiplier = user.get("premium", {}).get("ad_multiplier", 1.0)
+                                points = int(campaign["points_per_view"] * multiplier)
+                
+                                await hyoshcoder.add_points(
+                                    message.from_user.id, 
+                                    points,
+                                    session=session,
+                                    reason=f"Campaign: {campaign['_id']}"
+                                )
+                
+                        await message.reply(
+                            f"🎉 You earned {points} points from {campaign.get('name', 'the campaign')}!\n"
+                            f"🔄 {campaign['max_views'] - campaign['used_views'] - 1} views remaining"
                         )
-                        
-                        # Add points to user
-                        points = campaign['points_per_view']
-                        await hyoshcoder.add_points(message.from_user.id, points)
-                        
-                        await message.reply(f"🎉 You earned {points} points from {campaign['name']}!")
-                        
+                
                     except Exception as e:
-                        logger.error(f"Campaign error: {e}")
+                        logger.error(f"Campaign redemption error: {e}", exc_info=True)
                         await message.reply("⚠️ An error occurred. Please try again.")
 
             # Send welcome message
