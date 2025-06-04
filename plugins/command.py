@@ -303,43 +303,29 @@ async def command_handler(client: Client, message: Message):
 
 
 @Client.on_message(filters.private & filters.photo)
-async def addthumbs(client, message):
-    mkn = await message.reply_text("Please wait...")
-
+async def addthumbs(client, message: Message):
+    """Handle thumbnail upload and processing"""
     try:
-        # Download the photo
-        file_path = await message.download()
+        folder = "thumbnails"
+        makedirs(folder, exist_ok=True)
 
-        # Crop and enhance image locally
-        with Image.open(file_path) as img:
-            img = img.convert("RGB")
-            w, h = img.size
-            min_edge = min(w, h)
-            left = (w - min_edge) // 2
-            top = (h - min_edge) // 2
-            img = img.crop((left, top, left + min_edge, top + min_edge))
-            img = img.resize((320, 320), Image.LANCZOS)
-            img = ImageEnhance.Sharpness(img).enhance(1.2)
-            img = ImageEnhance.Contrast(img).enhance(1.1)
-            img = ImageEnhance.Brightness(img).enhance(1.05)
-            # No upload needed — only processed locally
+        file_path = ospath.join(folder, f"thumb_{message.from_user.id}.jpg")
+        await message.download(file_path)
 
-        # Save the original Telegram photo file_id
+        try:
+            with Image.open(file_path) as img:
+                img = img.convert("RGB")
+                img.thumbnail((320, 320))
+                img.save(file_path, "JPEG", quality=85)
+        except Exception as e:
+            logger.warning(f"Thumbnail processing error: {str(e)}")
+
         await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
-
-        # Confirm and auto-delete message after 5 seconds
-        success = await mkn.edit_text("**Thumbnail saved successfully ✅️**")
-        await asyncio.sleep(5)
-        await success.delete()
+        await message.reply_text("Thumbnail saved ✅")
 
     except Exception as e:
-        await mkn.edit_text(f"❌ Error saving thumbnail: {e}")
+        await message.reply_text(f"❌ Failed to save thumbnail: {e}")
 
-
-
-
-from pyrogram import Client, filters
-from pyrogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
