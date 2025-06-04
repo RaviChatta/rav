@@ -286,26 +286,22 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error getting user {id}: {e}")
             return None
-    async def create_campaign(self, owner_id: int, name: str, points_per_view: int, total_views: int):
-        """Create a new ad campaign"""
-        campaign_id = str(uuid.uuid4())
-        code = str(uuid.uuid4())[:8]
-        
+    async def create_campaign(self, owner_id: int, name: str, points: int, max_views: int):
+        """Create a new campaign with proper datetime handling"""
         campaign = {
-            "_id": campaign_id,
+            "_id": str(uuid.uuid4()),
+            "code": str(uuid.uuid4())[:8],
             "owner_id": owner_id,
             "name": name,
-            "points_per_view": points_per_view,
-            "total_views": total_views,
+            "points_per_view": points,
+            "max_views": max_views,
             "used_views": 0,
-            "created_at": datetime.now(),
-            "expires_at": datetime.now() + timedelta(days=7),
-            "code": code,
+            "created_at": datetime.now(pytz.UTC),
+            "expires_at": datetime.now(pytz.UTC) + timedelta(days=7),
             "active": True
         }
-        
         await self.campaigns.insert_one(campaign)
-        return code
+        return campaign["code"]
 
     async def get_campaign_by_code(self, code: str):
         """Get campaign by its redemption code"""
