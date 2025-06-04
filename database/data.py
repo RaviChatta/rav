@@ -287,29 +287,29 @@ class Database:
             logger.error(f"Error getting user {id}: {e}")
             return None
     async def create_campaign(self, owner_id: int, name: str, points_per_view: int, total_views: int):
-      """Create a new ad campaign"""
-      campaign_id = str(uuid.uuid4())
-      code = str(uuid.uuid4())[:8]
-      
-      campaign = {
-          "_id": campaign_id,
-          "owner_id": owner_id,
-          "name": name,
-          "points_per_view": points_per_view,
-          "total_views": total_views,
-          "used_views": 0,
-          "created_at": datetime.now(),
-          "expires_at": datetime.now() + timedelta(days=7),
-          "code": code,
-          "active": True
-      }
-      
-      await self.campaigns.insert_one(campaign)
-      return code
-  
-  async def get_campaign_by_code(self, code: str):
-      """Get campaign by its redemption code"""
-      return await self.campaigns.find_one({"code": code, "active": True})
+        """Create a new ad campaign"""
+        campaign_id = str(uuid.uuid4())
+        code = str(uuid.uuid4())[:8]
+        
+        campaign = {
+            "_id": campaign_id,
+            "owner_id": owner_id,
+            "name": name,
+            "points_per_view": points_per_view,
+            "total_views": total_views,
+            "used_views": 0,
+            "created_at": datetime.now(),
+            "expires_at": datetime.now() + timedelta(days=7),
+            "code": code,
+            "active": True
+        }
+        
+        await self.campaigns.insert_one(campaign)
+        return code
+
+    async def get_campaign_by_code(self, code: str):
+        """Get campaign by its redemption code"""
+        return await self.campaigns.find_one({"code": code, "active": True})
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
         """Find user by their unique referral/ad code if it's not already used."""
         user = await self.users.find_one({
