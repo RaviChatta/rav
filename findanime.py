@@ -143,20 +143,28 @@ class AnimeFinder:
         return {}
 
     def format_response(self, data: Dict) -> str:
-        """Format anime info in a stylish mobile-friendly design"""
+        """Format anime info like screenshot with clean mobile-friendly design (HTML)"""
         title = data.get('title', {}).get('english') or data.get('title', {}).get('romaji', 'Unknown')
-        is_movie = data.get('episodes', 0) == 1
+        episode = data.get('episode', 'N/A')
+        total_eps = data.get('episodes', '1')
+        confidence = data.get('confidence', 0)
+        timestamp = data.get('timestamp', '00:00 – 00:00')
+        url = data.get('anilist_url', '#')
         
+        is_movie = str(total_eps) == "1"
+        movie_tag = "🎞️ <b>Type:</b> <code>Movie</code>\n" if is_movie else ""
+    
         return (
-            f"# {data.get('id', '0000')[:4]}\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>🎌 TITLE</b> 🟧 <i>{title}</i> 🟧\n\n"
-            f"<b>▷ EPISODES:</b> ⟨ {data.get('episode', 'N/A')} / {data.get('episodes', '?')} ⟩\n"
-            f"<b>◇ MATCH CONFIDENCE:</b> {data.get('confidence', 0):.2f}%\n"
-            f"<b>◷ TIMESTAMP:</b> ⏳ {data.get('timestamp', '00:00')} ⏳\n\n"
-            f"<a href='{data.get('anilist_url', '#')}'>[MORE INFO] 🌬</a>\n"
-            f"━━━━━━━━━━━━━━━━━━━━"
+            "╭━━《 <b>ANIME RESULT</b> 》━━╮\n\n"
+            f"📖 <b>Title:</b> <code>{title}</code>\n"
+            f"{movie_tag}"
+            f"🎬 <b>Episodes:</b> « {episode} / {total_eps} »\n"
+            f"🎯 <b>Match Confidence:</b> <code>{confidence:.2f}%</code>\n"
+            f"⏰ <b>TimeStamp:</b> <code>{timestamp}</code>\n\n"
+            "╰━━━━━━━━━━━━━━━━━━━━━━╯\n"
+            f"<a href='{url}'>🔗 <b>[ MORE INFO ]</b></a>"
         )
+
     async def download_image_to_temp(self, file_id: str) -> Optional[bytes]:
         """Download image to temporary file and return bytes"""
         try:
