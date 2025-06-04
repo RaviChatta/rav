@@ -16,6 +16,9 @@ from config import settings
 from scripts import Txt
 from PIL import Image, ImageEnhance
 from io import BytesIO
+from datetime import datetime, timedelta
+import pytz
+from pyrogram.errors import PeerIdInvalid
 from pyrogram.enums import ChatMemberStatus
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
@@ -93,28 +96,26 @@ async def command_handler(client: Client, message: Message):
                             await message.reply("❌ Missing campaign code")
                             return
                 
-                        # Case-insensitive search with expiry check
+                        # Get campaign with proper datetime comparison
                         campaign = await hyoshcoder.campaigns.find_one({
-                            "$expr": {"$eq": [
-                                {"$toLower": "$code"},
-                                {"$toLower": code}
-                            ]},
+                            "code": code,
                             "active": True,
-                            "expires_at": {"$gt": datetime.now()}
+                            "expires_at": {"$gt": datetime.now(pytz.UTC)}
                         })
                 
                         if not campaign:
                             await message.reply("❌ Invalid or expired campaign link")
                             return
                 
+                        # Check view limits
                         if campaign["used_views"] >= campaign["max_views"]:
                             await message.reply("⚠️ This campaign has reached its view limit")
                             return
                 
-                        # Process in transaction
+                        # Process redemption
                         async with await hyoshcoder.start_session() as session:
                             async with session.start_transaction():
-                                # Verify again within transaction
+                                # Verify campaign again within transaction
                                 fresh_campaign = await hyoshcoder.campaigns.find_one(
                                     {"_id": campaign["_id"]},
                                     session=session
@@ -122,17 +123,17 @@ async def command_handler(client: Client, message: Message):
                                 
                                 if fresh_campaign["used_views"] >= fresh_campaign["max_views"]:
                                     await session.abort_transaction()
-                                    await message.reply("⚠️ Campaign limit reached just now")
+                                    await message.reply("⚠️ Campaign limit was just reached")
                                     return
                 
-                                # Update campaign
+                                # Update campaign views
                                 await hyoshcoder.campaigns.update_one(
                                     {"_id": campaign["_id"]},
                                     {"$inc": {"used_views": 1}},
                                     session=session
                                 )
                 
-                                # Add points (with premium multiplier)
+                                # Calculate points with premium multiplier
                                 user = await hyoshcoder.users.find_one(
                                     {"_id": message.from_user.id},
                                     {"premium.ad_multiplier": 1},
@@ -141,21 +142,39 @@ async def command_handler(client: Client, message: Message):
                                 multiplier = user.get("premium", {}).get("ad_multiplier", 1.0)
                                 points = int(campaign["points_per_view"] * multiplier)
                 
+                                # Add points to user
                                 await hyoshcoder.add_points(
-                                    message.from_user.id, 
-                                    points,
+                                    user_id=message.from_user.id,
+                                    points=points,
                                     session=session,
-                                    reason=f"Campaign: {campaign['_id']}"
+                                    reason=f"Campaign: {campaign.get('name', 'Unknown')}"
                                 )
                 
-                        await message.reply(
-                            f"🎉 You earned {points} points from {campaign.get('name', 'the campaign')}!\n"
-                            f"🔄 {campaign['max_views'] - campaign['used_views'] - 1} views remaining"
+                                # Record transaction
+                                await hyoshcoder.transactions.insert_one({
+                                    "user_id": message.from_user.id,
+                                    "type": "campaign_reward",
+                                    "amount": points,
+                                    "timestamp": datetime.now(pytz.UTC),
+                                    "campaign_id": campaign["_id"]
+                                }, session=session)
+                
+                        # Success message
+                        success_msg = (
+                            f"🎉 You earned {points} points!\n\n"
+                            f"Campaign: {campaign.get('name', 'Unknown')}\n"
+                            f"Views remaining: {campaign['max_views'] - campaign['used_views'] - 1}"
                         )
+                        
+                        try:
+                            await message.reply(success_msg)
+                        except PeerIdInvalid:
+                            logger.warning(f"Couldn't message user {message.from_user.id}")
+                            # You might want to refund the points here if messaging fails
                 
                     except Exception as e:
-                        logger.error(f"Campaign redemption error: {e}", exc_info=True)
-                        await message.reply("⚠️ An error occurred. Please try again.")
+                        logger.error(f"Campaign redemption error: {str(e)}", exc_info=True)
+                        await message.reply("⚠️ An error occurred. Please try again later.")
 
             # Send welcome message
             caption = Txt.START_TXT.format(user.mention)
@@ -343,7 +362,6 @@ async def command_handler(client: Client, message: Message):
 
 
 
-
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client, message: Message):
     """Handle thumbnail upload and processing"""
@@ -357,16 +375,25 @@ async def addthumbs(client, message: Message):
         try:
             with Image.open(file_path) as img:
                 img = img.convert("RGB")
-                img.thumbnail((320, 320))
+                w, h = img.size
+                min_edge = min(w, h)
+                left = (w - min_edge) // 2
+                top = (h - min_edge) // 2
+                img = img.crop((left, top, left + min_edge, top + min_edge))
+                img = img.resize((320, 320), Image.LANCZOS)
+                img = ImageEnhance.Sharpness(img).enhance(1.2)
+                img = ImageEnhance.Contrast(img).enhance(1.1)
+                img = ImageEnhance.Brightness(img).enhance(1.05)
                 img.save(file_path, "JPEG", quality=85)
         except Exception as e:
             logger.warning(f"Thumbnail processing error: {str(e)}")
 
         await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
-        await message.reply_text("Thumbnail saved ✅")
+        await message.reply_text("**Thumbnail saved successfully ✅**")
 
     except Exception as e:
-        await message.reply_text(f"❌ Failed to save thumbnail: {e}")
+        await message.reply_text(f"❌ Error saving thumbnail: {e}")
+
 
 
 @Client.on_message(filters.command(["leaderboard", "lb"]))
