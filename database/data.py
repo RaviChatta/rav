@@ -91,40 +91,61 @@ class Database:
                     raise e
 
     async def _create_indexes(self):
-        """Create optimized indexes for all collections."""
+        """Create optimized indexes for all collections with campaign support."""
         indexes = [
-            # Users collection
+            # Users collection (enhanced for campaigns)
             ("users", [("referrer_id", 1)]),
             ("users", [("ban_status.is_banned", 1)]),
             ("users", [("points.balance", -1)]),
             ("users", [("activity.total_files_renamed", -1)]),
+            ("users", [("premium.is_premium", 1)]),
+            ("users", [("activity.last_ad_view", -1)]),  # New for ad rate limiting
             
-            # Point links
-            ("point_links", [("code", 1)], {"unique": True}),
+            # Point links (enhanced for campaigns)
+            ("point_links", [("code", 1)], {
+                "unique": True,
+                "partialFilterExpression": {"used": False}
+            }),
             ("point_links", [("expires_at", 1)]),
+            ("point_links", [("user_id", 1), ("expires_at", 1)]),
+            ("point_links", [("campaign_id", 1)]),  # New for campaign tracking
             
-            # Transactions
+            # New campaigns collection indexes
+            ("campaigns", [("code", 1)], {"unique": True}),
+            ("campaigns", [("owner_id", 1)]),
+            ("campaigns", [("expires_at", 1)]),
+            ("campaigns", [("active", 1), ("expires_at", 1)]),
+            ("campaigns", [("used_views", 1), ("total_views", 1)]),
+            
+            # Transactions (enhanced for ad tracking)
             ("transactions", [("user_id", 1), ("timestamp", -1)]),
             ("transactions", [("type", 1), ("timestamp", -1)]),
+            ("transactions", [("campaign_id", 1)]),  # New for ad analytics
+            ("transactions", [("reference_id", 1)], {"unique": True, "sparse": True}),
             
-            # Leaderboards
+            # Leaderboards (unchanged)
             ("leaderboards", [("period", 1), ("type", 1), ("updated_at", -1)]),
             
-            # File stats
+            # File stats (unchanged)
             ("file_stats", [("user_id", 1)]),
             ("file_stats", [("date", 1)]),
             ("file_stats", [("timestamp", -1)]),
             
-            # Config
+            # Config (unchanged)
             ("config", [("key", 1)], {"unique": True})
         ]
-    
+        
         for entry in indexes:
-            collection, index_spec, *options = entry if len(entry) > 2 else [*entry, {}]
+            collection, keys, *options = entry if len(entry) > 2 else [*entry, {}]
+            opts = options[0] if options else {}
             try:
-                await self.db[collection].create_index(index_spec, **options[0])
+                await self.db[collection].create_index(keys, **opts)
+                logger.debug(f"Created index on {collection} for {keys}")
             except Exception as e:
-                logger.error(f"Index error in {collection}: {e}")
+                logger.error(f"Failed to create index on {collection}: {e}")
+                # For critical indexes, you might want to raise the exception
+                if collection == "campaigns" and "code" in keys:
+                    raise
 
     def set_client(self, client: Client):
         """Store the Pyrogram client for Telegram API calls"""
