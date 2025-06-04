@@ -32,7 +32,7 @@ class Database:
         self.leaderboards = None
         self.file_stats = None
         self.config = None
-
+        self.campaigns = None
     async def connect(self, max_pool_size: int = 100, min_pool_size: int = 10, max_idle_time_ms: int = 30000):
         """Establish database connection with enhanced settings and error handling."""
         try:
@@ -62,6 +62,7 @@ class Database:
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
             self.config = self.db.config
+            self.campaigns = self.db.campaigns
             self._is_connected = True
 
             # Create indexes
@@ -264,7 +265,30 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error getting user {id}: {e}")
             return None
+    async def create_campaign(self, owner_id: int, name: str, points_per_view: int, total_views: int):
+      """Create a new ad campaign"""
+      campaign_id = str(uuid.uuid4())
+      code = str(uuid.uuid4())[:8]
+      
+      campaign = {
+          "_id": campaign_id,
+          "owner_id": owner_id,
+          "name": name,
+          "points_per_view": points_per_view,
+          "total_views": total_views,
+          "used_views": 0,
+          "created_at": datetime.now(),
+          "expires_at": datetime.now() + timedelta(days=7),
+          "code": code,
+          "active": True
+      }
+      
+      await self.campaigns.insert_one(campaign)
+      return code
   
+  async def get_campaign_by_code(self, code: str):
+      """Get campaign by its redemption code"""
+      return await self.campaigns.find_one({"code": code, "active": True})
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
         """Find user by their unique referral/ad code if it's not already used."""
         user = await self.users.find_one({
