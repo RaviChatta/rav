@@ -76,52 +76,55 @@ async def command_handler(client: Client, message: Message):
                 if args[0].startswith("refer_"):
                     referrer_id = int(args[0].replace("refer_", ""))
                     reward = 10
-                    
                     ref = await hyoshcoder.is_refferer(user_id)
                     if ref:
-                        pass  # Already referred
-                    elif referrer_id != user_id:
+                        return
+                    if referrer_id != user_id:
                         referrer = await hyoshcoder.read_user(referrer_id)
+            
                         if referrer:
                             await hyoshcoder.set_referrer(user_id, referrer_id)
                             await hyoshcoder.add_points(referrer_id, reward)
                             cap = f"🎉 {message.from_user.mention} joined the bot through your referral! You received {reward} points."
-                            await client.send_message(chat_id=referrer_id, text=cap)
-                        else:
-                            await message.reply("❌ The user who invited you does not exist.")
-                
+                            await client.send_message(
+                                chat_id=referrer_id,
+                                text=cap
+                            )
+            
                 # Then handle campaign
-               if args and args[0].startswith("adds_"):
+                elif args[0].startswith("adds_"):
                     unique_code = args[0].replace("adds_", "")
                     user = await hyoshcoder.get_user_by_code(unique_code)
-                    reward = await hyoshcoder.get_expend_points(user["_id"])
-
+            
                     if not user:
                         await message.reply("❌ The link is invalid or already used.")
                         return
-
+            
+                    reward = await hyoshcoder.get_expend_points(user["_id"])
                     await hyoshcoder.add_points(user["_id"], reward)
                     await hyoshcoder.set_expend_points(user["_id"], 0, None)
+            
                     cap = f"🎉 You earned {reward} points!"
                     await client.send_message(
                         chat_id=user["_id"],
-                        text=cap      
+                        text=cap
+                    )
+            
                 # Handle points link redemption
                 elif args[0].startswith("points_"):
                     code = args[0].replace("points_", "")
                     result = await hyoshcoder.claim_expend_points(user_id, code)
-                    
+            
                     if result["success"]:
                         await message.reply_text(
-                            f"🎉 You claimed {result['points']} points!\n"
-                            "Thanks for supporting the bot!"
+                            f"🎉 You claimed {result['points']} points!\nThanks for supporting the bot!"
                         )
                     else:
                         await message.reply_text(f"❌ Could not claim points: {result['error']}")
-
+            
             # Send welcome message
             caption = Txt.START_TXT.format(user.mention)
-            
+
             if anim:
                 await message.reply_animation(
                     animation=anim,
