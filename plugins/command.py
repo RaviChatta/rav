@@ -23,6 +23,7 @@ from pyrogram.enums import ChatMemberStatus
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
+from os import makedirs, path as ospath
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -32,7 +33,7 @@ ADMIN_USER_ID = settings.ADMIN
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "view_dump", "viewdump",
-    "del_dump", "deldump", "profile", "leaderboard", "lb", "freepoints"
+    "del_dump", "deldump", "profile", "leaderboard", "lb", "freepoints", "genpoints"
 ]))
 async def command_handler(client: Client, message: Message):
     user_id = message.from_user.id
@@ -176,6 +177,19 @@ async def command_handler(client: Client, message: Message):
                         logger.error(f"Campaign redemption error: {str(e)}", exc_info=True)
                         await message.reply("⚠️ An error occurred. Please try again later.")
 
+                # Handle points link redemption
+                elif args[0].startswith("points_"):
+                    code = args[0].replace("points_", "")
+                    result = await hyoshcoder.claim_expend_points(user_id, code)
+                    
+                    if result["success"]:
+                        await message.reply_text(
+                            f"🎉 You claimed {result['points']} points!\n"
+                            "Thanks for supporting the bot!"
+                        )
+                    else:
+                        await message.reply_text(f"❌ Could not claim points: {result['error']}")
+
             # Send welcome message
             caption = Txt.START_TXT.format(user.mention)
             
@@ -226,21 +240,22 @@ async def command_handler(client: Client, message: Message):
                 "**Please select the type of media you want to set:**",
                 reply_markup=keyboard
             )
-        elif command == "set_caption":
-                        if len(message.command) == 1:
-                            caption = (
-                                "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
-                            )
-                            await message.reply_text(caption)
-                            return
-                        new_caption = message.text.split(" ", 1)[1]
-                        await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
-                        caption = ("**Your caption has been saved successfully ✅**")
-                        if img:
-                            await message.reply_photo(photo=img, caption=caption)
-                        else:
-                            await message.reply_text(text=caption)
-                    
+
+        elif cmd == "set_caption":
+            if len(args) == 0:
+                caption = (
+                    "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
+                )
+                await message.reply_text(caption)
+                return
+            new_caption = message.text.split(" ", 1)[1]
+            await hyoshcoder.set_caption(message.from_user.id, caption=new_caption)
+            caption = ("**Your caption has been saved successfully ✅**")
+            if img:
+                await message.reply_photo(photo=img, caption=caption)
+            else:
+                await message.reply_text(text=caption)
+
         elif cmd in ["leaderboard", "lb"]:
             await show_leaderboard_ui(client, message)
 
@@ -279,6 +294,44 @@ async def command_handler(client: Client, message: Message):
             )
             
             await message.reply_text(caption, reply_markup=buttons)
+
+        elif cmd == "genpoints":
+            if not is_admin:
+                await message.reply_text("❌ This command is only for admins!")
+                return
+                
+            points = 100
+            if len(args) > 0:
+                try:
+                    points = int(args[0])
+                except ValueError:
+                    await message.reply_text("❌ Invalid points value. Using default 100 points.")
+            
+            # Generate unique points ID
+            points_id = str(uuid.uuid4())[:8]
+            
+            # Create Telegram deep link
+            deep_link = f"https://t.me/{client.me.username}?start=points_{points_id}"
+            
+            # Shorten URL if configured
+            if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
+                try:
+                    short_url = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, deep_link)
+                except Exception as e:
+                    logger.error(f"Shortlink error: {e}")
+                    short_url = deep_link
+            else:
+                short_url = deep_link
+            
+            # Save points link to DB
+            await hyoshcoder.create_points_link(user_id, points_id, points)
+            
+            await message.reply(
+                f"🔑 **Get {points} Points**\n\n"
+                f"Click below link to claim your points:\n{short_url}\n\n"
+                "⚠️ Link valid for 24 hours | One-time use only",
+                disable_web_page_preview=True
+            )
 
         elif cmd == "set_dump":
             if len(args) == 0:
@@ -361,7 +414,6 @@ async def command_handler(client: Client, message: Message):
         await message.reply_text("⚠️ An error occurred. Please try again.")
 
 
-
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client, message: Message):
     """Handle thumbnail upload and processing"""
@@ -393,7 +445,6 @@ async def addthumbs(client, message: Message):
 
     except Exception as e:
         await message.reply_text(f"❌ Error saving thumbnail: {e}")
-
 
 
 @Client.on_message(filters.command(["leaderboard", "lb"]))
@@ -500,100 +551,7 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         logger.error(f"Error showing leaderboard UI: {e}")
         if isinstance(message, CallbackQuery):
             await message.answer("Failed to load leaderboard", show_alert=True)
-@Client.on_message(filters.private & filters.command("start") & filters.regex(r'adds_'))
-async def handle_ad_link(client: Client, message: Message):
-    try:
-        if len(message.command) < 2:
-            return await message.reply("❌ Invalid link format")
 
-        code = message.command[1].replace("adds_", "")
-        user_id = message.from_user.id
-
-        # Get the link details with better error reporting
-        link = await db.point_links.find_one({
-            "code": code,
-            "used": False,
-            "expires_at": {"$gt": datetime.now()}
-        })
-
-        if not link:
-            # Check why it failed to give specific error
-            expired = await db.point_links.find_one({
-                "code": code,
-                "expires_at": {"$lte": datetime.now()}
-            })
-            
-            if expired:
-                return await message.reply("❌ This link has expired")
-                
-            used = await db.point_links.find_one({
-                "code": code,
-                "used": True
-            })
-            
-            if used:
-                return await message.reply("❌ This link was already used")
-                
-            return await message.reply("❌ Invalid link code")
-
-        # Process redemption in a transaction
-        async with await db._client.start_session() as session:
-            async with session.start_transaction():
-                # Mark as used
-                await db.point_links.update_one(
-                    {"_id": link["_id"]},
-                    {"$set": {
-                        "used": True,
-                        "used_by": user_id,
-                        "used_at": datetime.now()
-                    }},
-                    session=session
-                )
-
-                # Add points
-                await db.users.update_one(
-                    {"_id": user_id},
-                    {"$inc": {
-                        "points.balance": link["points"],
-                        "points.total_earned": link["points"]
-                    }},
-                    session=session
-                )
-
-                # Record transaction
-                await db.transactions.insert_one({
-                    "user_id": user_id,
-                    "type": "point_link",
-                    "amount": link["points"],
-                    "timestamp": datetime.now(),
-                    "reference_id": f"link_{link['_id']}",
-                    "campaign_id": link.get("campaign_id")
-                }, session=session)
-
-        await message.reply(f"🎉 You earned {link['points']} points!")
-
-    except Exception as e:
-        logger.error(f"Ad link error: {str(e)}", exc_info=True)
-        await message.reply("⚠️ Please try again later")
-@Client.on_message(filters.private & filters.command("start") & filters.regex(r'points_'))
-async def handle_points_link(client: Client, message: Message):
-    try:
-        code = message.text.split("points_")[1]
-        user_id = message.from_user.id
-        
-        result = await hyoshcoder.claim_expend_points(user_id, code)
-        
-        if result["success"]:
-            await message.reply_text(
-                f"🎉 You claimed {result['points']} points!\n"
-                "Thanks for supporting the bot!"
-            )
-        else:
-            await message.reply_text(f"❌ Could not claim points: {result['error']}")
-            
-    except Exception as e:
-        logger.error(f"Points link claim error: {e}")
-        await message.reply_text("❌ Invalid points link")
 @Client.on_callback_query(filters.regex(r'^lb_period_'))
 async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
     """Handle leaderboard period changes"""
