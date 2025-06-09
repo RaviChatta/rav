@@ -318,37 +318,21 @@ async def command_handler(client: Client, message: Message):
 
 
 @Client.on_message(filters.private & filters.photo)
-async def addthumbs(client, message: Message):
-    """Handle thumbnail upload and processing"""
+async def addthumbs(client, message):
+    """Handle thumbnail setting"""
     try:
-        folder = "thumbnails"
-        makedirs(folder, exist_ok=True)
-
-        file_path = ospath.join(folder, f"thumb_{message.from_user.id}.jpg")
-        await message.download(file_path)
-
-        try:
-            with Image.open(file_path) as img:
-                img = img.convert("RGB")
-                w, h = img.size
-                min_edge = min(w, h)
-                left = (w - min_edge) // 2
-                top = (h - min_edge) // 2
-                img = img.crop((left, top, left + min_edge, top + min_edge))
-                img = img.resize((320, 320), Image.LANCZOS)
-                img = ImageEnhance.Sharpness(img).enhance(1.2)
-                img = ImageEnhance.Contrast(img).enhance(1.1)
-                img = ImageEnhance.Brightness(img).enhance(1.05)
-                img.save(file_path, "JPEG", quality=85)
-        except Exception as e:
-            logger.warning(f"Thumbnail processing error: {str(e)}")
-
+        mkn = await send_response(client, message.chat.id, "Please wait...")
         await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
-        await message.reply_text("**Thumbnail saved successfully ✅**")
-
+        await mkn.edit("**Thumbnail saved successfully ✅️**")
+        asyncio.create_task(auto_delete_message(mkn, delay=30))
     except Exception as e:
-        await message.reply_text(f"❌ Error saving thumbnail: {e}")
-
+        logger.error(f"Error setting thumbnail: {e}")
+        await send_response(
+            client,
+            message.chat.id,
+            f"{EMOJI['error']} Failed to save thumbnail",
+            delete_after=15
+        )
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
     """Handle /leaderboard command"""
