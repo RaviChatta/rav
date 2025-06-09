@@ -91,93 +91,21 @@ async def command_handler(client: Client, message: Message):
                             await message.reply("❌ The user who invited you does not exist.")
                 
                 # Then handle campaign
-                elif args[0].startswith("adds_"):
-                    try:
-                        code = args[0].replace("adds_", "").strip()
-                        if not code:
-                            await message.reply("❌ Missing campaign code")
-                            return
-                
-                        # Get campaign with proper datetime comparison
-                        campaign = await hyoshcoder.campaigns.find_one({
-                            "code": code,
-                            "active": True,
-                            "expires_at": {"$gt": datetime.now(pytz.UTC)}
-                        })
-                
-                        if not campaign:
-                            await message.reply("❌ Invalid or expired campaign link")
-                            return
-                
-                        # Check view limits
-                        if campaign["used_views"] >= campaign["max_views"]:
-                            await message.reply("⚠️ This campaign has reached its view limit")
-                            return
-                
-                        # Process redemption
-                        async with await hyoshcoder.start_session() as session:
-                            async with session.start_transaction():
-                                # Verify campaign again within transaction
-                                fresh_campaign = await hyoshcoder.campaigns.find_one(
-                                    {"_id": campaign["_id"]},
-                                    session=session
-                                )
-                                
-                                if fresh_campaign["used_views"] >= fresh_campaign["max_views"]:
-                                    await session.abort_transaction()
-                                    await message.reply("⚠️ Campaign limit was just reached")
-                                    return
-                
-                                # Update campaign views
-                                await hyoshcoder.campaigns.update_one(
-                                    {"_id": campaign["_id"]},
-                                    {"$inc": {"used_views": 1}},
-                                    session=session
-                                )
-                
-                                # Calculate points with premium multiplier
-                                user = await hyoshcoder.users.find_one(
-                                    {"_id": message.from_user.id},
-                                    {"premium.ad_multiplier": 1},
-                                    session=session
-                                )
-                                multiplier = user.get("premium", {}).get("ad_multiplier", 1.0)
-                                points = int(campaign["points_per_view"] * multiplier)
-                
-                                # Add points to user
-                                await hyoshcoder.add_points(
-                                    user_id=message.from_user.id,
-                                    points=points,
-                                    session=session,
-                                    reason=f"Campaign: {campaign.get('name', 'Unknown')}"
-                                )
-                
-                                # Record transaction
-                                await hyoshcoder.transactions.insert_one({
-                                    "user_id": message.from_user.id,
-                                    "type": "campaign_reward",
-                                    "amount": points,
-                                    "timestamp": datetime.now(pytz.UTC),
-                                    "campaign_id": campaign["_id"]
-                                }, session=session)
-                
-                        # Success message
-                        success_msg = (
-                            f"🎉 You earned {points} points!\n\n"
-                            f"Campaign: {campaign.get('name', 'Unknown')}\n"
-                            f"Views remaining: {campaign['max_views'] - campaign['used_views'] - 1}"
-                        )
-                        
-                        try:
-                            await message.reply(success_msg)
-                        except PeerIdInvalid:
-                            logger.warning(f"Couldn't message user {message.from_user.id}")
-                            # You might want to refund the points here if messaging fails
-                
-                    except Exception as e:
-                        logger.error(f"Campaign redemption error: {str(e)}", exc_info=True)
-                        await message.reply("⚠️ An error occurred. Please try again later.")
+               if args and args[0].startswith("adds_"):
+                    unique_code = args[0].replace("adds_", "")
+                    user = await hyoshcoder.get_user_by_code(unique_code)
+                    reward = await hyoshcoder.get_expend_points(user["_id"])
 
+                    if not user:
+                        await message.reply("❌ The link is invalid or already used.")
+                        return
+
+                    await hyoshcoder.add_points(user["_id"], reward)
+                    await hyoshcoder.set_expend_points(user["_id"], 0, None)
+                    cap = f"🎉 You earned {reward} points!"
+                    await client.send_message(
+                        chat_id=user["_id"],
+                        text=cap      
                 # Handle points link redemption
                 elif args[0].startswith("points_"):
                     code = args[0].replace("points_", "")
@@ -302,7 +230,51 @@ async def command_handler(client: Client, message: Message):
                 )
             else:
                 await message.reply_text("No dump channel is currently set.")
-
+        elif cmd == "free_points":
+            me = await client.get_me()
+            me_username = me.username
+            unique_code = str(uuid.uuid4())[:8]
+            telegram_link = f"https://t.me/{me_username}?start=adds_{unique_code}"
+            invite_link = f"https://t.me/{me_username}?start=refer_{user_id}"
+            shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, telegram_link)
+            point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+            share_msg = (
+                "I just discovered this amazing bot! 🚀\n"
+                f"Join me using this link: {invite_link}\n"
+                "Automatically rename files with this bot!\n"
+                "FEATURES:\n"
+                "- Auto-rename files\n"
+                "- Add custom metadata\n"
+                "- Choose your filename\n"
+                "- Choose your album name\n"
+                "- Choose your artist name\n"
+                "- Choose your genre\n"
+                "- Choose your movie year\n"
+                "- Add custom thumbnails\n"
+                "- Link a channel to send your videos\n"
+                "And much more!\n"
+                "You can earn points by signing up and using the bot!"
+            )
+            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(share_msg)}"
+            points = random.choice(point_map)
+            await hyoshcoder.set_expend_points(user_id, points, unique_code)
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
+                [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
+                [InlineKeyboardButton("🔙 Back", callback_data="help")]
+            ])
+            caption = (
+                "**Free Points**\n\n"
+                "You chose to support our bot. You can do this in several ways:\n\n"
+                "1. **Donate**: Support us financially by sending a donation to [Hyoshcoder](https://t.me/hyoshcoder).\n"
+                "2. **Share the Bot**: Invite your friends to use our bot by sharing the link below.\n"
+                "3. **Watch an Ad**: Earn points by watching a short ad.\n\n"
+                "**How it works?**\n"
+                "- Every time you share the bot and a friend signs up, you earn points.\n"
+                "- Points can range between 5 and 20 per action.\n\n"
+                "Thanks for your support! 🙏 [Support](https://t.me/hyoshcoder)"
+            )
+        
         elif cmd == "help":
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             src_info = await hyoshcoder.get_src_info(user_id)
