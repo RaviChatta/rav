@@ -8,8 +8,8 @@ from datetime import datetime
 from config import settings
 
 # Database setup
-db_client = MongoClient(settings.DB_URL)
-db = db_client[settings.DB_NAME]
+db_client = MongoClient(settings.DATA_URI )
+db = db_client[settings.DATA_NAME]
 users_collection = db["users_sequence"]
 sequence_collection = db["active_sequences"]  # Simplified collection name
 
