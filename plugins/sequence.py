@@ -181,19 +181,7 @@ async def show_sequence(client, message):
         f"**Current Sequence Files ({len(files)}):**\n\n{file_list}"
     )
 
-@Client.on_message(filters.command("leaderboard"))
-async def leaderboard(client, message):
-    top_users = list(users_collection.find().sort("files_sequenced", -1).limit(5))
-    
-    if not top_users:
-        await message.reply_text("No data available in the leaderboard yet!")
-        return
-        
-    leaderboard_text = "**🏆 Top Users - File Sequencing 🏆**\n\n"
-
-    for index, user in enumerate(top_users, start=1):
-        username = user.get('username', 'Unknown User')
-        files_count = user.get('files_sequenced', 0)
-        leaderboard_text += f"**{index}. {username}** - {files_count} files\n"
-
-    await message.reply_text(leaderboard_text)
+async def get_files_sequenced_leaderboard(limit=10):
+    # You can keep this synchronous since pymongo's find is sync,
+    # but you can wrap it async if you want using thread executors if needed.
+    return list(users_collection.find().sort("files_sequenced", -1).limit(limit))
