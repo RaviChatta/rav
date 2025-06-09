@@ -828,92 +828,152 @@ class Database:
             logger.error(f"Error deactivating premium for {user_id}: {e}")
             return False
 
-    async def create_points_link(self, admin_id: int, points: int, 
-                               max_claims: int = 1, 
-                               expires_in_hours: int = 24,
-                               note: str = None) -> Tuple[Optional[str], Optional[str]]:
-        """Create a shareable points link with expiration and claim limits."""
+    async def create_points_link(self, user_id: int, points: int, expires_hours: int = 24) -> dict:
+        """Create a shareable points link with expiration"""
         try:
-            code = secrets.token_urlsafe(12)
-            expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_in_hours)
+            link_id = str(uuid.uuid4())
+            expires_at = datetime.datetime.now(pytz.UTC) + datetime.timedelta(hours=expires_hours)
             
             link_data = {
-                "code": code,
+                "_id": link_id,
+                "user_id": user_id,
                 "points": points,
-                "max_claims": max_claims,
-                "claims_remaining": max_claims,
-                "created_by": admin_id,
-                "created_at": datetime.datetime.now(),
-                "expires_at": expires_at.isoformat(),
-                "is_active": True,
-                "note": note,
-                "claimed_by": []
+                "created_at": datetime.datetime.now(pytz.UTC),
+                "expires_at": expires_at,
+                "claimed": False,
+                "claimed_by": None
             }
             
             await self.point_links.insert_one(link_data)
-            
-            base_url = "https://t.me/Forwardmsgremoverbot?start=points_"  # Change to your bot's URL
-            full_url = f"{base_url}{code}"
-            
-            return code, full_url
-        except Exception as e:
-            logger.error(f"Error creating points link: {e}")
-            return None, None
-
-    async def claim_points_link(self, user_id: int, code: str) -> Dict:
-        """Claim points from a shareable link."""
-        try:
-            link = await self.point_links.find_one({
-                "code": code,
-                "is_active": True,
-                "expires_at": {"$gt": datetime.datetime.now()}
-            })
-            
-            if not link:
-                return {"success": False, "reason": "Invalid or expired link"}
-                
-            if user_id in link["claimed_by"]:
-                return {"success": False, "reason": "Already claimed"}
-                
-            if link["claims_remaining"] <= 0:
-                return {"success": False, "reason": "No claims remaining"}
-                
-            await self.add_points(
-                user_id,
-                link["points"],
-                source="point_link",
-                description=f"Claimed from link {code}"
-            )
-            
-            await self.point_links.update_one(
-                {"code": code},
-                {
-                    "$inc": {"claims_remaining": -1},
-                    "$push": {"claimed_by": user_id}
-                }
-            )
-            
-            await self.transactions.insert_one({
-                "user_id": user_id,
-                "type": "point_link_claim",
-                "amount": link["points"],
-                "timestamp": datetime.datetime.now(),
-                "details": {
-                    "link_code": code,
-                    "created_by": link["created_by"],
-                    "remaining_claims": link["claims_remaining"] - 1
-                }
-            })
-            
             return {
                 "success": True,
-                "points": link["points"],
-                "remaining_claims": link["claims_remaining"] - 1
+                "link_id": link_id,
+                "points": points,
+                "expires_at": expires_at
             }
         except Exception as e:
-            logger.error(f"Error claiming points link {code} by {user_id}: {e}")
-            return {"success": False, "reason": "Internal error"}
+            logger.error(f"Error creating points link: {e}")
+            return {"success": False, "error": str(e)}
+async def claim_points_link(self, link_id: str, claimer_id: int) -> dict:
+    """Claim points from a shareable link"""
+    try:
+        # Start a transaction for atomic operations
+        async with await self._client.start_session() as session:
+            async with session.start_transaction():
+                # Get the link data with session
+                link_data = await self.point_links.find_one(
+                    {"_id": link_id},
+                    session=session
+                )
+                
+                if not link_data:
+                    return {"success": False, "message": "Invalid points link"}
+                
+                if link_data["claimed"]:
+                    return {"success": False, "message": "Link already claimed"}
+                
+                if datetime.datetime.now(pytz.UTC) > link_data["expires_at"]:
+                    return {"success": False, "message": "Link expired"}
+                
+                if link_data["user_id"] == claimer_id:
+                    return {"success": False, "message": "Cannot claim your own link"}
+                
+                # Add points to claimer
+                await self.add_points(
+                    claimer_id,
+                    link_data["points"],
+                    source="ad_reward",
+                    description=f"Claimed from ad link {link_id}"
+                )
+                
+                # Add bonus to creator (optional)
+                creator_bonus = link_data["points"] // 2  # 50% bonus
+                if creator_bonus > 0:
+                    await self.add_points(
+                        link_data["user_id"],
+                        creator_bonus,
+                        source="referral_ad",
+                        description=f"Bonus for ad claim by {claimer_id}"
+                    )
+                
+                # Mark link as claimed
+                await self.point_links.update_one(
+                    {"_id": link_id},
+                    {
+                        "$set": {
+                            "claimed": True,
+                            "claimed_by": claimer_id,
+                            "claimed_at": datetime.datetime.now(pytz.UTC)
+                        }
+                    },
+                    session=session
+                )
+                
+                return {
+                    "success": True,
+                    "points": link_data["points"],
+                    "message": f"🎉 You earned {link_data['points']} points!"
+                }
+                
+    except Exception as e:
+        logger.error(f"Error claiming points link: {e}")
+        return {"success": False, "message": "Database error"}
 
+async def get_points_link_stats(self, user_id: int) -> dict:
+    """Get statistics about user's points links"""
+    try:
+        now = datetime.datetime.now(pytz.UTC)
+        
+        # Active links
+        active_links = await self.point_links.count_documents({
+            "user_id": user_id,
+            "claimed": False,
+            "expires_at": {"$gt": now}
+        })
+        
+        # Expired links
+        expired_links = await self.point_links.count_documents({
+            "user_id": user_id,
+            "expires_at": {"$lte": now}
+        })
+        
+        # Claimed links
+        claimed_links = await self.point_links.count_documents({
+            "user_id": user_id,
+            "claimed": True
+        })
+        
+        # Total points distributed
+        result = await self.point_links.aggregate([
+            {"$match": {"user_id": user_id}},
+            {"$group": {
+                "_id": None,
+                "total_points": {"$sum": "$points"},
+                "claimed_points": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$claimed", True]},
+                            "$points",
+                            0
+                        ]
+                    }
+                }
+            }}
+        ]).to_list(length=1)
+        
+        stats = {
+            "active_links": active_links,
+            "expired_links": expired_links,
+            "claimed_links": claimed_links,
+            "total_points": result[0]["total_points"] if result else 0,
+            "claimed_points": result[0]["claimed_points"] if result else 0
+        }
+        
+        return {"success": True, "stats": stats}
+        
+    except Exception as e:
+        logger.error(f"Error getting points link stats: {e}")
+        return {"success": False, "error": str(e)}
     async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
         """
         Track points expenditure and create claimable reward
