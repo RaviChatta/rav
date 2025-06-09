@@ -45,6 +45,7 @@ EMOJI = {
 
 # Global state tracker
 metadata_states = defaultdict(dict)
+caption_states = defaultdict(dict)
 
 METADATA_ON = [
     [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
@@ -74,9 +75,10 @@ Join me using this link: {invite_link}
 """
 
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
-async def process_metadata_text(client, message: Message):
+async def process_text_states(client, message: Message):
     user_id = message.from_user.id
     
+    # Handle metadata state
     if user_id in metadata_states and not message.text.startswith('/'):
         try:
             if message.text.lower() == "/cancel":
@@ -98,17 +100,56 @@ async def process_metadata_text(client, message: Message):
         except Exception as e:
             await message.reply(f"❌ Error: {str(e)}")
             metadata_states.pop(user_id, None)
+    
+    # Handle caption state
+    elif user_id in caption_states and not message.text.startswith('/'):
+        try:
+            if message.text.lower() == "/cancel":
+                await message.reply("🚫 Caption update cancelled", 
+                                reply_markup=InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton("Back to Caption", callback_data="caption")]]
+                                ))
+            else:
+                await hyoshcoder.set_caption(user_id, message.text)
+                current_caption = await hyoshcoder.get_caption(user_id)
+                
+                btn = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
+                    [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
+                    [InlineKeyboardButton("Close", callback_data="close"),
+                     InlineKeyboardButton("Back", callback_data="help")]
+                ])
+                
+                await message.reply(
+                    f"✅ <b>Caption Updated Successfully!</b>\n\n"
+                    f"📝 <b>Current Caption:</b>\n{current_caption}",
+                    reply_markup=btn
+                )
+                
+            caption_states.pop(user_id, None)
+            
+        except Exception as e:
+            await message.reply(f"❌ Error: {str(e)}")
+            caption_states.pop(user_id, None)
     else:
         message.continue_propagation()
 
-async def cleanup_metadata_states():
+async def cleanup_states():
     while True:
         await asyncio.sleep(300)
         current_time = time.time()
-        expired = [uid for uid, state in metadata_states.items() 
-                  if current_time - state.get('timestamp', 0) > 300]
-        for uid in expired:
+        
+        # Clean metadata states
+        expired_meta = [uid for uid, state in metadata_states.items() 
+                       if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_meta:
             metadata_states.pop(uid, None)
+            
+        # Clean caption states
+        expired_caption = [uid for uid, state in caption_states.items()
+                          if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_caption:
+            caption_states.pop(uid, None)
 
 def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     periods = {
@@ -147,10 +188,6 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    # Ensure database is connected
-    if not hyoshcoder._is_connected:
-        await initialize_database()
-    
     data = query.data
     user_id = query.from_user.id
     
@@ -233,12 +270,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         elif data == "leaderboard":
             try:
-                # Get the user's preferred leaderboard settings
                 period = await hyoshcoder.get_leaderboard_period(user_id)
                 lb_type = await hyoshcoder.get_leaderboard_type(user_id)
-                
-                # Get leaderboard data
-                leaders = await hyoshcoder.get_leaderboard(period, lb_type)
+                leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
                 
                 if not leaders:
                     response = {
@@ -249,7 +283,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         'photo': img
                     }
                 else:
-                    # Format the leaderboard text
                     period_name = {
                         "daily": "Daily",
                         "weekly": "Weekly",
@@ -282,16 +315,26 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     ]),
                     'photo': img
                 }
+
         elif data == "freepoints":
             me = await client.get_me()
             unique_code = str(uuid.uuid4())[:8]
             invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
             points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
-            shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, points_link)
-            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
+            
+            if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
+                try:
+                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, points_link)
+                except Exception as e:
+                    logger.error(f"Shortlink error: {e}")
+                    shortlink = points_link
+            else:
+                shortlink = points_link
             
             points = random.randint(5, 20)
             await hyoshcoder.set_expend_points(user_id, points, unique_code)
+            
+            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
             
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
@@ -356,6 +399,51 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': img
             }
 
+        elif data == "caption":
+            current_caption = await hyoshcoder.get_caption(user_id) or "Not set"
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
+                [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': f"📝 <b>Current Caption:</b>\n{current_caption}\n\n"
+                          "You can set a custom caption that will be added to all your renamed files.",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "set_caption":
+            caption_states[user_id] = {
+                "waiting": True,
+                "timestamp": time.time(),
+                "original_msg": query.message.id
+            }
+            prompt = await query.message.edit_text(
+                "📝 <b>Send new caption text</b>\n\n"
+                "Example: <code>📕Name ➠ : {filename}\n🔗 Size ➠ : {filesize}\n⏰ Duration ➠ : {duration}</code>\n\n"
+                f"Current: {await hyoshcoder.get_caption(user_id) or 'None'}\n\n"
+                "Reply with text or /cancel",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="caption")]]
+                )
+            )
+            caption_states[user_id]["prompt_id"] = prompt.id
+            return
+
+        elif data == "remove_caption":
+            await hyoshcoder.set_caption(user_id, None)
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Close", callback_data="close"), 
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': "✅ Caption removed successfully!",
+                'reply_markup': btn,
+                'photo': img
+            }
+
         elif data == "setmedia":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Video", callback_data='setmedia_video'),
@@ -393,11 +481,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             ])
             response = {
                 'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
-                          "You can set a channel where renamed files will be automatically forwarded.\n\n"
-                          "To set a dump channel:\n"
-                          "1. Add me to your channel as admin\n"
-                          "2. Use /set_dump command followed by channel ID\n"
-                          "(e.g., <code>/set_dump -100123456789</code>)",
+                          "You can set a channel where renamed files will be automatically forwarded.",
                 'reply_markup': btn,
                 'photo': img
             }
@@ -424,17 +508,20 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await cb_handler(client, query)
             return
 
-        elif data == "caption":
-            current_caption = await hyoshcoder.get_caption(user_id) or "Not set"
+        elif data == "premiumx":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
-                [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
-                [InlineKeyboardButton("Close", callback_data="close"),
-                 InlineKeyboardButton("Back", callback_data="help")]
+                [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
+                [InlineKeyboardButton("Premium Features", callback_data="premium_features")],
+                [InlineKeyboardButton("Back", callback_data="help")]
             ])
             response = {
-                'caption': f"📝 <b>Current Caption:</b>\n{current_caption}\n\n"
-                          "You can set a custom caption that will be added to all your renamed files.",
+                'caption': "🌟 <b>Premium Membership</b>\n\n"
+                          "Get access to exclusive features:\n"
+                          "• 2x Points Multiplier\n"
+                          "• Priority Processing\n"
+                          "• No Ads\n"
+                          "• Extended File Size Limits\n\n"
+                          "Click below to learn more!",
                 'reply_markup': btn,
                 'photo': img
             }
@@ -473,7 +560,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
 
         # Send response
- # Send response
         if response:
             try:
                 if 'photo' in response:
@@ -493,12 +579,20 @@ async def cb_handler(client: Client, query: CallbackQuery):
                             caption=response['caption'],
                             reply_markup=response['reply_markup']
                         )
+                elif 'animation' in response:
+                    await query.message.edit_media(
+                        media=InputMediaAnimation(
+                            media=response['animation'],
+                            caption=response['caption']
+                        ),
+                        reply_markup=response['reply_markup']
+                    )
                 else:
                     await query.message.edit_text(
                         text=response.get('caption', response.get('text', '')),
                         reply_markup=response['reply_markup'],
-                        disable_web_page_preview=response.get('disable_web_page_preview', False),
-                        parse_mode=response.get('parse_mode', enums.ParseMode.HTML)
+                        disable_web_page_preview=True,
+                        parse_mode=enums.ParseMode.HTML
                     )
             except FloodWait as e:
                 await asyncio.sleep(e.value)
