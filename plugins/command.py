@@ -24,6 +24,7 @@ from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from os import makedirs, path as ospath
+from sequence import get_files_sequenced_leaderboard
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -373,7 +374,6 @@ async def addthumbs(client, message: Message):
     except Exception as e:
         await message.reply_text(f"❌ Error saving thumbnail: {e}")
 
-
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
     """Handle /leaderboard command"""
@@ -405,7 +405,18 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         period = await hyoshcoder.get_leaderboard_period(user_id)
         lb_type = await hyoshcoder.get_leaderboard_type(user_id)
         
-        leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
+        # Get the appropriate leaderboard data
+        if lb_type == "files":
+            leaders = await get_files_sequenced_leaderboard(limit=20)
+            # Convert to the format expected by the UI
+            leaders = [{
+                '_id': str(user['_id']),
+                'username': user.get('username', f"User {user['_id']}"),
+                'value': user['files_sequenced'],
+                'rank': idx + 1
+            } for idx, user in enumerate(leaders)]
+        else:
+            leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
         
         if not leaders:
             text = "📊 No leaderboard data available yet!\n\n"
@@ -413,13 +424,13 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
                 text += "Earn points by using the bot's features!"
             elif lb_type == "renames":
                 text += "Rename files to appear on this leaderboard!"
-            elif lb_type == "referrals":
-                text += "Refer friends to appear here!"
+            elif lb_type == "files":
+                text += "Sequence files to appear here!"
         else:
             emoji = {
                 "points": "⭐", 
                 "renames": "📁", 
-                "referrals": "👥"
+                "files": "🧬"
             }.get(lb_type, "🏆")
             
             text = f"🏆 **{period.upper()} {lb_type.upper()} LEADERBOARD**\n\n"
@@ -461,8 +472,8 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
                     callback_data="lb_type_renames"
                 ),
                 InlineKeyboardButton(
-                    "REFERRALS" if lb_type != "referrals" else f"• REFERRALS •",
-                    callback_data="lb_type_referrals"
+                    "FILES" if lb_type != "files" else f"• FILES •",
+                    callback_data="lb_type_files"
                 )
             ],
             [InlineKeyboardButton("🔄 Refresh", callback_data="lb_refresh_")]
@@ -491,7 +502,7 @@ async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
             return
             
         await hyoshcoder.set_leaderboard_period(user_id, period)
-        await show_leaderboard_ui(client, callback.message)
+        await show_leaderboard_ui(client, callback)
         await callback.answer(f"Showing {period} leaderboard")
     except Exception as e:
         await callback.answer("Failed to update period", show_alert=True)
@@ -502,14 +513,14 @@ async def leaderboard_type_callback(client: Client, callback: CallbackQuery):
     """Handle leaderboard type changes"""
     try:
         user_id = callback.from_user.id
-        lb_type = callback.data.split('_')[-1]  # points, renames, referrals
+        lb_type = callback.data.split('_')[-1]  # points, renames, files
         
-        if lb_type not in ["points", "renames", "referrals"]:
+        if lb_type not in ["points", "renames", "files"]:
             await callback.answer("Invalid type", show_alert=True)
             return
             
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
-        await show_leaderboard_ui(client, callback.message)
+        await show_leaderboard_ui(client, callback)
         await callback.answer(f"Showing {lb_type} leaderboard")
     except Exception as e:
         await callback.answer("Failed to update type", show_alert=True)
