@@ -24,6 +24,10 @@ from helpers.utils import get_random_photo, get_random_animation, get_shortlink
 from database.data import hyoshcoder
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from os import makedirs, path as ospath
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 from sequence import get_files_sequenced_leaderboard
 
 logger = logging.getLogger(__name__)
