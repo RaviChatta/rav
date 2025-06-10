@@ -97,25 +97,32 @@ async def command_handler(client: Client, message: Message):
             # Handle ad link
             if args and args[0].startswith("adds_"):
                 unique_code = args[0].replace("adds_", "")
-                reward = await rewards_collection.find_one({
-                    "code": unique_code,
-                    "claimed": False,
-                    "expires_at": {"$gt": datetime.datetime.utcnow()}
-                })
             
-                if reward:
-                    await hyoshcoder.add_points(reward['user_id'], reward['points'], "ad_view")
+                # First check if code is valid
+                user = await hyoshcoder.get_user_by_code(unique_code)
+                if not user:
+                    return await message.reply("❌ The link is invalid or already used.")
             
-                    await rewards_collection.update_one(
-                        {"_id": reward["_id"]},
-                        {"$set": {"claimed": True, "claimed_by": user_id}}
-                    )
+                # Now get the reward points
+                reward = await hyoshcoder.get_expend_points(user["_id"])
             
-                    await client.send_message(
-                        reward['user_id'],
-                        f"🎉 Someone used your ad link! You earned {reward['points']} points!"
-                    )
-                    await message.reply("🎉 Thanks for supporting us! The link owner has been rewarded.")
+                if not reward or reward == 0:
+                    return await message.reply("❌ Points already claimed or link expired.")
+            
+                # Add points and reset the expend data
+                await hyoshcoder.add_points(user["_id"], reward, reason="ad_view")
+                await hyoshcoder.set_expend_points(user["_id"], 0, None)
+            
+                # Notify user who owns the ad link
+                cap = f"🎉 Someone used your ad link! You earned {reward} points!"
+                try:
+                    await client.send_message(chat_id=user["_id"], text=cap)
+                except Exception as e:
+                    logger.warning(f"Failed to notify user: {e}")
+            
+                # Reply to the person who clicked the link
+                await message.reply("🎉 Thanks for supporting us! The link owner has been rewarded.")
+
 
 
             # Send sticker
