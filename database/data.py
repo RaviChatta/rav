@@ -362,17 +362,36 @@ class Database:
             },
             upsert=True
         )
-    
-    async def get_files_sequenced_leaderboard(self, limit: int = 10) -> List[Dict]:
+
+    async def get_sequence_leaderboard(self, limit: int = 10) -> List[Dict]:
         """Get leaderboard of users with most sequenced files"""
-        leaderboard = []
-        async for user in self.users_sequence.find().sort("files_sequenced", -1).limit(limit):
-            leaderboard.append({
-                "_id": user["_id"],
-                "username": user.get("username", f"User {user['_id']}"),
-                "files_sequenced": user.get("files_sequenced", 0)
-            })
-        return leaderboard
+        try:
+            leaderboard = []
+            async for user in self.users_sequence.find().sort("files_sequenced", -1).limit(limit):
+                leaderboard.append({
+                    "user_id": user["_id"],
+                    "username": user.get("username", f"User {user['_id']}"),
+                    "files_sequenced": user.get("files_sequenced", 0),
+                    "last_active": user.get("last_active", datetime.datetime.now())
+                })
+            return leaderboard
+        except Exception as e:
+            logger.error(f"Error getting sequence leaderboard: {e}")
+            return []
+
+    async def update_sequence_leaderboard(self):
+        """Update the sequence leaderboard cache"""
+        try:
+            leaders = await self.get_sequence_leaderboard(100)
+            await self.leaderboards.update_one(
+                {"type": "files", "period": "alltime"},
+                {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error updating sequence leaderboard: {e}")
+            return False
 
 
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
