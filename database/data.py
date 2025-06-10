@@ -808,39 +808,56 @@ class Database:
   
 
     async def update_leaderboards(self):
-        """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
+        """Update all leaderboard periods with optimized queries"""
         try:
-            # Update daily leaderboard
-            await self._update_leaderboard_period("daily")
-
-            # Update weekly leaderboard (only on Sundays)
-            if datetime.datetime.now().weekday() == 6:  # Sunday
-                await self._update_leaderboard_period("weekly")
-
-            # Update monthly leaderboard (on 1st of month)
-            if datetime.datetime.now().day == 1:
-                await self._update_leaderboard_period("monthly")
-
-            # Always update all-time leaderboard
-            await self._update_leaderboard_period("alltime")
-
+            now = datetime.datetime.utcnow()
+            is_sunday = now.weekday() == 6
+            is_first_of_month = now.day == 1
+            
+            # Use a single bulk write operation for efficiency
+            operations = []
+            
+            # Always update daily and alltime
+            operations.extend([
+                UpdateOne(
+                    {"period": "daily", "type": "points"},
+                    {"$set": {"data": await self._get_leaderboard_data("daily"), "updated_at": now}},
+                    upsert=True
+                ),
+                UpdateOne(
+                    {"period": "alltime", "type": "points"},
+                    {"$set": {"data": await self._get_leaderboard_data("alltime"), "updated_at": now}},
+                    upsert=True
+                )
+            ])
+            
+            # Conditional updates
+            if is_sunday:
+                operations.append(
+                    UpdateOne(
+                        {"period": "weekly", "type": "points"},
+                        {"$set": {"data": await self._get_leaderboard_data("weekly"), "updated_at": now}},
+                        upsert=True
+                    )
+                )
+            
+            if is_first_of_month:
+                operations.append(
+                    UpdateOne(
+                        {"period": "monthly", "type": "points"},
+                        {"$set": {"data": await self._get_leaderboard_data("monthly"), "updated_at": now}},
+                        upsert=True
+                    )
+                )
+            
+            if operations:
+                await self.leaderboards.bulk_write(operations, ordered=False)
+            
             logger.info("Leaderboards updated successfully")
             return True
         except Exception as e:
-            logger.error(f"Failed to update leaderboards: {e}")
+            logger.error(f"Failed to update leaderboards: {e}", exc_info=True)
             return False
-
-    async def _update_leaderboard_period(self, period: str):
-        """Update a specific leaderboard period"""
-        try:
-            leaders = await self._get_leaderboard_data(period)
-            await self.leaderboards.update_one(
-                {"period": period},
-                {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
-                upsert=True
-            )
-        except Exception as e:
-            logger.error(f"Error updating {period} leaderboard: {e}")
 
     async def _get_leaderboard_data(self, period: str) -> List[Dict]:
         """Get leaderboard data for a specific period"""
@@ -978,49 +995,62 @@ class Database:
             logger.error(f"Error getting {period} {lb_type} leaderboard: {e}")
             return []
 
-    async def update_leaderboard_cache(self):
-        """Update all cached leaderboard data"""
-        try:
-            periods = ["daily", "weekly", "monthly", "alltime"]
-            types = ["points", "renames", "referrals"]
-
-            for period in periods:
-                for lb_type in types:
-                    data = await self.get_leaderboard(period, lb_type, limit=100)
-                    await self.leaderboards.update_one(
-                        {"period": period, "type": lb_type},
-                        {"$set": {"data": data, "updated_at": datetime.datetime.utcnow()}},
-                        upsert=True
-                    )
-
-            logger.info("Successfully updated all leaderboard caches")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating leaderboard caches: {e}")
-            return False
-
     async def get_cached_leaderboard(self, period: str, lb_type: str) -> List[Dict]:
-        """Get cached leaderboard data if recent, otherwise generate fresh"""
+        """Get cached leaderboard with optimized cache strategy"""
         try:
-            # Check if cache exists and is recent (within 1 hour)
+            cache_key = f"leaderboard:{period}:{lb_type}"
+            
+            # Try Redis cache first if available
+            if hasattr(self, 'redis'):
+                cached = await self.redis.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            
+            # Fall back to MongoDB cache
             cache = await self.leaderboards.find_one(
-                {"period": period, "type": lb_type}
+                {"period": period, "type": lb_type},
+                projection={"data": 1, "updated_at": 1}
             )
-
-            if cache and (datetime.datetime.utcnow() - cache["updated_at"]).total_seconds() < 3600:
+            
+            # Cache validity (15 minutes for daily, 1 hour for others)
+            cache_valid_seconds = 900 if period == "daily" else 3600
+            is_cache_valid = (
+                cache and 
+                (datetime.datetime.utcnow() - cache["updated_at"]).total_seconds() < cache_valid_seconds
+            )
+            
+            if is_cache_valid:
+                # Update Redis cache if available
+                if hasattr(self, 'redis'):
+                    await self.redis.setex(
+                        cache_key,
+                        cache_valid_seconds,
+                        json.dumps(cache["data"])
+                    )
                 return cache["data"]
-
-            # If cache is stale or missing, generate fresh data
+            
+            # Generate fresh data
             fresh_data = await self.get_leaderboard(period, lb_type)
-            await self.leaderboards.update_one(
+            
+            # Update both caches
+            update_op = UpdateOne(
                 {"period": period, "type": lb_type},
                 {"$set": {"data": fresh_data, "updated_at": datetime.datetime.utcnow()}},
                 upsert=True
             )
+            await self.leaderboards.bulk_write([update_op], ordered=False)
+            
+            if hasattr(self, 'redis'):
+                await self.redis.setex(
+                    cache_key,
+                    cache_valid_seconds,
+                    json.dumps(fresh_data)
+                )
+            
             return fresh_data
-
+            
         except Exception as e:
-            logger.error(f"Error getting cached leaderboard: {e}")
+            logger.error(f"Error in get_cached_leaderboard: {e}")
             return await self.get_leaderboard(period, lb_type)
 
     async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
