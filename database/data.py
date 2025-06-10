@@ -927,7 +927,43 @@ class Database:
         except Exception as e:
             logger.error(f"Error claiming points link {code} by {user_id}: {e}")
             return {"success": False, "reason": "Internal error"}
-
+    # In your database/data.py - Add these methods if they don't exist
+    async def create_points_offer(self, user_id: int, points: int) -> dict:
+        """Create a new points offer and return the code"""
+        unique_code = str(uuid.uuid4())[:8]
+        expiry = datetime.now() + timedelta(hours=24)  # 24 hour expiry
+        await self.db.point_offers.insert_one({
+            "code": unique_code,
+            "user_id": user_id,
+            "points": points,
+            "created_at": datetime.now(),
+            "expires_at": expiry,
+            "claimed": False
+        })
+        return {"code": unique_code, "points": points}
+    
+    async def claim_points_offer(self, code: str, claimer_id: int) -> dict:
+        """Claim a points offer"""
+        offer = await self.db.point_offers.find_one({"code": code})
+        if not offer:
+            return {"success": False, "error": "Invalid code"}
+        
+        if offer["claimed"]:
+            return {"success": False, "error": "Already claimed"}
+        
+        if datetime.now() > offer["expires_at"]:
+            return {"success": False, "error": "Offer expired"}
+        
+        # Update offer as claimed
+        await self.db.point_offers.update_one(
+            {"code": code},
+            {"$set": {"claimed": True, "claimed_by": claimer_id, "claimed_at": datetime.now()}}
+        )
+        
+        # Add points to claimer
+        await self.add_points(claimer_id, offer["points"])
+        
+        return {"success": True, "points": offer["points"]}
     async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
         """
         Track points expenditure and create claimable reward
