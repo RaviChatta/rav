@@ -95,35 +95,29 @@ async def command_handler(client: Client, message: Message):
                         await client.send_message(referrer_id, cap)
             
             # Handle ad link
-            elif args and args[0].startswith("adds_"):
+            if args and args[0].startswith("adds_"):
                 unique_code = args[0].replace("adds_", "")
-                
-                # Find the reward associated with this code
-                reward = await self.rewards.find_one({
+                reward = await rewards_collection.find_one({
                     "code": unique_code,
                     "claimed": False,
-                    "expires_at": {"$gt": datetime.datetime.now()}
+                    "expires_at": {"$gt": datetime.datetime.utcnow()}
                 })
-                
+            
                 if reward:
-                    # Add points to user who created the link
-                    await self.add_points(reward['user_id'], reward['points'], "ad_view")
-                    
-                    # Mark as claimed
-                    await self.rewards.update_one(
+                    await hyoshcoder.add_points(reward['user_id'], reward['points'], "ad_view")
+            
+                    await rewards_collection.update_one(
                         {"_id": reward["_id"]},
                         {"$set": {"claimed": True, "claimed_by": user_id}}
                     )
-                    
-                    # Notify both users
+            
                     await client.send_message(
                         reward['user_id'],
                         f"🎉 Someone used your ad link! You earned {reward['points']} points!"
                     )
-                    
-                    await message.reply(
-                        f"🎉 Thanks for supporting us! The link owner has been rewarded."
-                    )
+                    await message.reply("🎉 Thanks for supporting us! The link owner has been rewarded.")
+
+
             # Send sticker
             m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
             await asyncio.sleep(3)
@@ -372,52 +366,30 @@ async def addthumbs(client, message):
 # In command.py
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
-    """Handle /leaderboard command"""
     try:
-        # Get the leaderboard type from command if specified
-        lb_type = "renames"  # default
+        lb_type = "renames"
         if len(message.command) > 1:
             arg = message.command[1].lower()
             if arg in ["points", "renames", "files"]:
                 lb_type = arg
-        
-        await show_leaderboard_ui(client, message, lb_type)
+
+        sent = await show_leaderboard_ui(client, message, lb_type)
+        await asyncio.sleep(60)
+        await sent.delete()
+        await message.delete()
     except Exception as e:
         logger.error(f"Leaderboard command error: {e}")
         await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
 
-@Client.on_callback_query(filters.regex(r'^lb_(period|type|refresh)_'))
-async def leaderboard_callback(client: Client, callback: CallbackQuery):
-    """Handle leaderboard button presses"""
-    user_id = callback.from_user.id
-    data = callback.data
-    
-    if data.startswith("lb_period_"):
-        period = data.split("_")[2]
-        await hyoshcoder.set_leaderboard_period(user_id, period)
-    elif data.startswith("lb_type_"):
-        lb_type = data.split("_")[2]
-        await hyoshcoder.set_leaderboard_type(user_id, lb_type)
-    elif data == "lb_refresh_":
-        await callback.answer("Refreshing leaderboard...")
-    
-    await show_leaderboard_ui(client, callback)
-
-# Update the leaderboard section in command.py
-
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery], lb_type: str = None):
-    """Display the leaderboard with interactive buttons"""
     try:
         msg = message if isinstance(message, Message) else message.message
         user_id = message.from_user.id
-        
         period = await hyoshcoder.get_leaderboard_period(user_id)
         lb_type = lb_type or await hyoshcoder.get_leaderboard_type(user_id)
-        
-        # Get the appropriate leaderboard data
+
         if lb_type == "files":
-            leaders = await hyoshcoder.get_sequence_leaderboard(20)
-            # Convert to consistent format
+            leaders = await hyoshcoder.get_sequence_leaderboard(10)
             leaders = [{
                 '_id': str(user['user_id']),
                 'username': user['username'],
@@ -425,75 +397,45 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
                 'rank': idx + 1
             } for idx, user in enumerate(leaders)]
         else:
-            leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
-        
+            leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=10)
+
+        emoji = {"points": "⭐", "renames": "📁", "files": "🧬"}.get(lb_type, "🏆")
+        title = f"🏆 **{period.capitalize()} {lb_type.capitalize()} Leaderboard**\n\n"
+
         if not leaders:
-            text = "📊 No leaderboard data available yet!\n\n"
-            if lb_type == "points":
-                text += "Earn points by using the bot's features!"
-            elif lb_type == "renames":
-                text += "Rename files to appear on this leaderboard!"
-            elif lb_type == "files":
-                text += "Sequence files to appear here!"
+            body = "No data yet. Start using the bot to enter the leaderboard!"
         else:
-            emoji = {
-                "points": "⭐", 
-                "renames": "📁", 
-                "files": "🧬"
-            }.get(lb_type, "🏆")
-            
-            text = f"🏆 **{period.upper()} {lb_type.upper()} LEADERBOARD**\n\n"
-            
+            body = ""
             for user in leaders:
-                username = user.get('username', f"User {user['_id']}")
+                uname = user.get('username', f"User {user['_id']}")
                 value = user['value']
-                text += f"{user['rank']}. {username} - {value} {emoji}"
+                line = f"**{user['rank']}.** {uname} — `{value}` {emoji}"
                 if user.get('is_premium'):
-                    text += " 💎"
-                text += "\n"
-        
-        buttons = InlineKeyboardMarkup([
+                    line += " 💎"
+                body += line + "\n"
+
+        keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(
-                    "DAILY" if period != "daily" else f"• DAILY •",
-                    callback_data="lb_period_daily"
-                ),
-                InlineKeyboardButton(
-                    "WEEKLY" if period != "weekly" else f"• WEEKLY •",
-                    callback_data="lb_period_weekly"
-                ),
-                InlineKeyboardButton(
-                    "MONTHLY" if period != "monthly" else f"• MONTHLY •",
-                    callback_data="lb_period_monthly"
-                ),
-                InlineKeyboardButton(
-                    "ALLTIME" if period != "alltime" else f"• ALLTIME •",
-                    callback_data="lb_period_alltime"
-                )
+                InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data="lb_period_daily"),
+                InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data="lb_period_weekly")
             ],
             [
-                InlineKeyboardButton(
-                    "POINTS" if lb_type != "points" else f"• POINTS •",
-                    callback_data="lb_type_points"
-                ),
-                InlineKeyboardButton(
-                    "RENAMES" if lb_type != "renames" else f"• RENAMES •",
-                    callback_data="lb_type_renames"
-                ),
-                InlineKeyboardButton(
-                    "FILES" if lb_type != "files" else f"• FILES •",
-                    callback_data="lb_type_files"
-                )
+                InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data="lb_period_monthly"),
+                InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data="lb_period_alltime")
             ],
-            [InlineKeyboardButton("🔄 Refresh", callback_data="lb_refresh_")]
+            [
+                InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data="lb_type_points"),
+                InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data="lb_type_renames"),
+                InlineKeyboardButton("FILES" if lb_type != "files" else "• FILES •", callback_data="lb_type_files")
+            ]
         ])
-        
+
         if isinstance(message, CallbackQuery):
-            await msg.edit_text(text, reply_markup=buttons)
-            await message.answer("Leaderboard updated!")
+            await msg.edit_text(title + body, reply_markup=keyboard)
+            return msg
         else:
-            await msg.reply(text, reply_markup=buttons)
-            
+            return await msg.reply(title + body, reply_markup=keyboard)
+
     except Exception as e:
         logger.error(f"Error showing leaderboard UI: {e}")
         if isinstance(message, CallbackQuery):
@@ -501,15 +443,12 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
 
 @Client.on_callback_query(filters.regex(r'^lb_period_'))
 async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
-    """Handle leaderboard period changes"""
     try:
         user_id = callback.from_user.id
-        period = callback.data.split('_')[-1]  # daily, weekly, monthly, alltime
-        
+        period = callback.data.split('_')[-1]
         if period not in ["daily", "weekly", "monthly", "alltime"]:
             await callback.answer("Invalid period", show_alert=True)
             return
-            
         await hyoshcoder.set_leaderboard_period(user_id, period)
         await show_leaderboard_ui(client, callback)
         await callback.answer(f"Showing {period} leaderboard")
@@ -519,15 +458,12 @@ async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
 
 @Client.on_callback_query(filters.regex(r'^lb_type_'))
 async def leaderboard_type_callback(client: Client, callback: CallbackQuery):
-    """Handle leaderboard type changes"""
     try:
         user_id = callback.from_user.id
-        lb_type = callback.data.split('_')[-1]  # points, renames, files
-        
+        lb_type = callback.data.split('_')[-1]
         if lb_type not in ["points", "renames", "files"]:
             await callback.answer("Invalid type", show_alert=True)
             return
-            
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
         await show_leaderboard_ui(client, callback)
         await callback.answer(f"Showing {lb_type} leaderboard")
