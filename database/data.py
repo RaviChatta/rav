@@ -842,126 +842,71 @@ class Database:
             logger.error(f"Error deactivating premium for {user_id}: {e}")
             return False
 
-    async def create_points_link(self, admin_id: int, points: int, 
-                               max_claims: int = 1, 
-                               expires_in_hours: int = 24,
-                               note: str = None) -> Tuple[Optional[str], Optional[str]]:
-        """Create a shareable points link with expiration and claim limits."""
-        try:
-            code = secrets.token_urlsafe(12)
-            expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_in_hours)
-
-            link_data = {
-                "code": code,
-                "points": points,
-                "max_claims": max_claims,
-                "claims_remaining": max_claims,
-                "created_by": admin_id,
-                "created_at": datetime.datetime.now(),
-                "expires_at": expires_at.isoformat(),
-                "is_active": True,
-                "note": note,
-                "claimed_by": []
-            }
-
-            await self.point_links.insert_one(link_data)
-
-            base_url = "https://t.me/Forwardmsgremoverbot?start=points_"  # Change to your bot's URL
-            full_url = f"{base_url}{code}"
-
-            return code, full_url
-        except Exception as e:
-            logger.error(f"Error creating points link: {e}")
-            return None, None
-
-    async def claim_points_link(self, user_id: int, code: str) -> Dict:
-        """Claim points from a shareable link."""
-        try:
-            link = await self.point_links.find_one({
-                "code": code,
-                "is_active": True,
-                "expires_at": {"$gt": datetime.datetime.now()}
-            })
-
-            if not link:
-                return {"success": False, "reason": "Invalid or expired link"}
-
-            if user_id in link["claimed_by"]:
-                return {"success": False, "reason": "Already claimed"}
-
-            if link["claims_remaining"] <= 0:
-                return {"success": False, "reason": "No claims remaining"}
-
-            await self.add_points(
-                user_id,
-                link["points"],
-                source="point_link",
-                description=f"Claimed from link {code}"
-            )
-
-            await self.point_links.update_one(
-                {"code": code},
-                {
-                    "$inc": {"claims_remaining": -1},
-                    "$push": {"claimed_by": user_id}
-                }
-            )
-
-            await self.transactions.insert_one({
-                "user_id": user_id,
-                "type": "point_link_claim",
-                "amount": link["points"],
-                "timestamp": datetime.datetime.now(),
-                "details": {
-                    "link_code": code,
-                    "created_by": link["created_by"],
-                    "remaining_claims": link["claims_remaining"] - 1
-                }
-            })
-
-            return {
-                "success": True,
-                "points": link["points"],
-                "remaining_claims": link["claims_remaining"] - 1
-            }
-        except Exception as e:
-            logger.error(f"Error claiming points link {code} by {user_id}: {e}")
-            return {"success": False, "reason": "Internal error"}
-    # In your database/data.py - Add these methods if they don't exist
+    
+    # In database/data.py - Update the points methods
     async def create_points_offer(self, user_id: int, points: int) -> dict:
-        """Create a new points offer and return the code"""
-        unique_code = str(uuid.uuid4())[:8]
-        expiry = datetime.now() + timedelta(hours=24)  # 24 hour expiry
+        """Create a new points offer with case-insensitive code"""
+        unique_code = str(uuid.uuid4())[:8].lower()  # Force lowercase
+        expiry = datetime.now() + timedelta(days=1)  # 24 hour expiry
+        
+        # Ensure code is unique
+        while await self.db.point_offers.find_one({"code": unique_code}):
+            unique_code = str(uuid.uuid4())[:8].lower()
+        
         await self.db.point_offers.insert_one({
             "code": unique_code,
             "user_id": user_id,
             "points": points,
             "created_at": datetime.now(),
             "expires_at": expiry,
-            "claimed": False
+            "claimed": False,
+            "active": True
         })
         return {"code": unique_code, "points": points}
     
     async def claim_points_offer(self, code: str, claimer_id: int) -> dict:
-        """Claim a points offer"""
-        offer = await self.db.point_offers.find_one({"code": code})
+        """Claim a points offer with better validation"""
+        if not code or len(code) != 8:
+            return {"success": False, "error": "Invalid code format"}
+        
+        # Case-insensitive search
+        offer = await self.db.point_offers.find_one({
+            "code": code.lower(),
+            "active": True
+        })
+        
         if not offer:
             return {"success": False, "error": "Invalid code"}
         
         if offer["claimed"]:
-            return {"success": False, "error": "Already claimed"}
+            return {"success": False, "error": "Code already used"}
         
         if datetime.now() > offer["expires_at"]:
+            await self.db.point_offers.update_one(
+                {"_id": offer["_id"]},
+                {"$set": {"active": False}}
+            )
             return {"success": False, "error": "Offer expired"}
         
-        # Update offer as claimed
+        # Verify owner isn't claiming their own code
+        if claimer_id == offer["user_id"]:
+            return {"success": False, "error": "Cannot claim your own offer"}
+        
+        # Update and award points
         await self.db.point_offers.update_one(
-            {"code": code},
-            {"$set": {"claimed": True, "claimed_by": claimer_id, "claimed_at": datetime.now()}}
+            {"_id": offer["_id"]},
+            {"$set": {
+                "claimed": True,
+                "claimed_by": claimer_id,
+                "claimed_at": datetime.now()
+            }}
         )
         
-        # Add points to claimer
         await self.add_points(claimer_id, offer["points"])
+        
+        # Award bonus to creator if within 24 hours
+        if datetime.now() < offer["created_at"] + timedelta(hours=24):
+            await self.add_points(offer["user_id"], offer["points"] // 2)
         
         return {"success": True, "points": offer["points"]}
     async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
