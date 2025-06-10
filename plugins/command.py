@@ -277,11 +277,12 @@ async def command_handler(client: Client, message: Message):
                 shortlink = claim_link
         
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Offer", url=f"https://t.me/share/url?url={quote(claim_link)}&text=Claim {points} free points!"),
+                [InlineKeyboardButton("🔗 Share Offer", url=f"https://t.me/share/url?url={quote(claim_link)}&text=Claim {points} free points!")],
                 [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
                 [InlineKeyboardButton("📊 My Offers", callback_data="my_offers")],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
+
             
             caption = (
                 f"🎁 **Free {points} Points!**\n\n"
