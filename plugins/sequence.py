@@ -3,7 +3,7 @@ import asyncio
 import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from database.data import hyoshcoder as db  # Use your existing database instance
+from database.data import hyoshcoder
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
