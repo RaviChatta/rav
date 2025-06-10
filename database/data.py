@@ -943,45 +943,41 @@ class Database:
   
 
     async def update_leaderboards(self):
-        """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
+        """Update all leaderboard periods with sequence data"""
         try:
-            # Update daily leaderboard
+            # Update regular leaderboards
             await self._update_leaderboard_period("daily")
-
-            # Update weekly leaderboard (only on Sundays)
-            if datetime.datetime.now().weekday() == 6:  # Sunday
-                await self._update_leaderboard_period("weekly")
-
-            # Update monthly leaderboard (on 1st of month)
-            if datetime.datetime.now().day == 1:
-                await self._update_leaderboard_period("monthly")
-
-            # Always update all-time leaderboard
+            await self._update_leaderboard_period("weekly")
+            await self._update_leaderboard_period("monthly")
             await self._update_leaderboard_period("alltime")
-
-            logger.info("Leaderboards updated successfully")
+            
+            # Update sequence leaderboard
+            await self.update_sequence_leaderboard()
+            
+            logger.info("All leaderboards updated successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to update leaderboards: {e}")
             return False
-
+    
     async def _update_leaderboard_period(self, period: str):
         """Update a specific leaderboard period"""
         try:
             leaders = await self._get_leaderboard_data(period)
             await self.leaderboards.update_one(
-                {"period": period},
+                {"period": period, "type": "points"},
                 {"$set": {"data": leaders, "updated_at": datetime.datetime.now()}},
                 upsert=True
             )
         except Exception as e:
             logger.error(f"Error updating {period} leaderboard: {e}")
-
+    
     async def _get_leaderboard_data(self, period: str) -> List[Dict]:
         """Get leaderboard data for a specific period"""
         try:
             if period == "alltime":
                 pipeline = [
+                    {"$match": {"ban_status.is_banned": False}},
                     {"$sort": {"points.balance": -1}},
                     {"$limit": 100},
                     {"$project": {
@@ -994,9 +990,12 @@ class Database:
             else:
                 days = 1 if period == "daily" else 7 if period == "weekly" else 30
                 start_date = datetime.datetime.now() - datetime.timedelta(days=days)
-
+    
                 pipeline = [
-                    {"$match": {"activity.last_active": {"$gte": start_date}}},
+                    {"$match": {
+                        "activity.last_active": {"$gte": start_date},
+                        "ban_status.is_banned": False
+                    }},
                     {"$sort": {"points.balance": -1}},
                     {"$limit": 100},
                     {"$project": {
@@ -1006,7 +1005,7 @@ class Database:
                         "is_premium": "$premium.is_premium"
                     }}
                 ]
-
+    
             return await self.users.aggregate(pipeline).to_list(length=100)
         except Exception as e:
             logger.error(f"Error getting {period} leaderboard data: {e}")
