@@ -403,6 +403,8 @@ async def leaderboard_callback(client: Client, callback: CallbackQuery):
     
     await show_leaderboard_ui(client, callback)
 
+# Update the leaderboard section in command.py
+
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery], lb_type: str = None):
     """Display the leaderboard with interactive buttons"""
     try:
@@ -414,18 +416,14 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         
         # Get the appropriate leaderboard data
         if lb_type == "files":
-            try:
-                leaders = await get_files_sequenced_leaderboard(limit=20)
-                # Convert to consistent format
-                leaders = [{
-                    '_id': str(user['_id']),
-                    'username': user.get('username', f"User {user['_id']}"),
-                    'value': user.get('files_sequenced', 0),
-                    'rank': idx + 1
-                } for idx, user in enumerate(leaders)]
-            except Exception as e:
-                logger.error(f"Error getting files leaderboard: {e}")
-                leaders = []
+            leaders = await hyoshcoder.get_sequence_leaderboard(20)
+            # Convert to consistent format
+            leaders = [{
+                '_id': str(user['user_id']),
+                'username': user['username'],
+                'value': user['files_sequenced'],
+                'rank': idx + 1
+            } for idx, user in enumerate(leaders)]
         else:
             leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
         
