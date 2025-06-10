@@ -58,59 +58,74 @@ async def command_handler(client: Client, message: Message):
         if cmd == 'start':
             user = message.from_user
             await hyoshcoder.add_user(user_id)
-            # Handle referral link
-            if args and args[0].startswith("refer_"):
-                referrer_id = int(args[0].replace("refer_", ""))
-                reward = 10
-                
-                # Check if user already has a referrer
-                if await hyoshcoder.is_refferer(user_id):
-                    pass  # User already has a referrer
-                elif referrer_id != user_id:  # Prevent self-referral
-                    referrer = await hyoshcoder.read_user(referrer_id)
-                    if referrer:
-                        await hyoshcoder.set_referrer(user_id, referrer_id)
-                        await hyoshcoder.add_points(referrer_id, reward)
-                        
-                        # Notify referrer
-                        cap = f"🎉 {user.mention} joined using your referral! You earned {reward} points!"
-                        await client.send_message(referrer_id, cap)
             
-            # Handle ad link
-            elif args and args[0].startswith("adds_"):
-                unique_code = args[0].replace("adds_", "")
-                
-                # Find the reward associated with this code
-                reward = await self.rewards.find_one({
-                    "code": unique_code,
-                    "claimed": False,
-                    "expires_at": {"$gt": datetime.datetime.now()}
-                })
-                
-                if reward:
-                    # Add points to user who created the link
-                    await self.add_points(reward['user_id'], reward['points'], "ad_view")
-                    
-                    # Mark as claimed
-                    await self.rewards.update_one(
-                        {"_id": reward["_id"]},
-                        {"$set": {"claimed": True, "claimed_by": user_id}}
-                    )
-                    
-                    # Notify both users
-                    await client.send_message(
-                        reward['user_id'],
-                        f"🎉 Someone used your ad link! You earned {reward['points']} points!"
-                    )
-                    
-                    await message.reply(
-                        f"🎉 Thanks for supporting us! The link owner has been rewarded."
-                    )
             # Send sticker
             m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
             await asyncio.sleep(3)
             await m.delete()
-
+        
+            # Handle referral and ad links
+            if args and len(args) > 0:
+                if args[0].startswith("refer_"):
+                    try:
+                        referrer_id = int(args[0].replace("refer_", ""))
+                        reward = 10
+                        
+                        # Check if user already has a referrer
+                        if not await hyoshcoder.is_refferer(user_id):
+                            if referrer_id != user_id:  # Prevent self-referral
+                                referrer = await hyoshcoder.read_user(referrer_id)
+                                if referrer:
+                                    await hyoshcoder.set_referrer(user_id, referrer_id)
+                                    await hyoshcoder.add_points(referrer_id, reward, "referral")
+                                    
+                                    # Notify referrer
+                                    cap = f"🎉 {user.mention} joined using your referral! You earned {reward} points!"
+                                    await client.send_message(referrer_id, cap)
+                    except Exception as e:
+                        logger.error(f"Referral error: {e}")
+        
+                elif args[0].startswith("adds_"):
+                    try:
+                        unique_code = args[0].replace("adds_", "")
+                        
+                        # Find unclaimed reward
+                        reward = await hyoshcoder.rewards.find_one({
+                            "code": unique_code,
+                            "claimed": False,
+                            "expires_at": {"$gt": datetime.datetime.now()}
+                        })
+                        
+                        if reward:
+                            # Add points to creator
+                            await hyoshcoder.add_points(
+                                reward['user_id'], 
+                                reward['points'], 
+                                "ad_view",
+                                f"Claimed by {user_id}"
+                            )
+                            
+                            # Mark as claimed
+                            await hyoshcoder.rewards.update_one(
+                                {"_id": reward["_id"]},
+                                {"$set": {"claimed": True, "claimed_by": user_id}}
+                            )
+                            
+                            # Notify both users
+                            try:
+                                await client.send_message(
+                                    reward['user_id'],
+                                    f"🎉 Your ad link was used! +{reward['points']} points!"
+                                )
+                                await message.reply(
+                                    "✅ Thanks for supporting us! The link owner has been rewarded."
+                                )
+                            except Exception as e:
+                                logger.error(f"Notification error: {e}")
+                    except Exception as e:
+                        logger.error(f"Ad claim error: {e}")
+        
+            # Send welcome message
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
                 [InlineKeyboardButton("My Stats", callback_data='mystats'),
@@ -120,29 +135,15 @@ async def command_handler(client: Client, message: Message):
                 [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
                  InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
             ])
-
-
-            # Send welcome message
+            
             caption = Txt.START_TXT.format(user.mention)
-
+            
             if anim:
-                await message.reply_animation(
-                    animation=anim,
-                    caption=caption,
-                    reply_markup=buttons
-                )
+                await message.reply_animation(animation=anim, caption=caption, reply_markup=buttons)
             elif img:
-                await message.reply_photo(
-                    photo=img,
-                    caption=caption,
-                    reply_markup=buttons
-                )
+                await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
             else:
-                await message.reply_text(
-                    text=caption,
-                    reply_markup=buttons
-                )
-
+                await message.reply_text(text=caption, reply_markup=buttons)
         elif cmd == "autorename":
             if len(args) == 0:
                 await message.reply_text(
