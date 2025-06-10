@@ -283,9 +283,7 @@ class Database:
             logger.error(f"Error creating campaign: {e}")
             raise
 
-    async def get_campaign_by_code(self, code: str) -> Optional[Dict]:
-        """Get campaign by its redemption code"""
-        return await self.campaigns.find_one({"code": code, "active": True})
+
 
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
         """Find user by their unique referral/ad code if it's not already used."""
@@ -298,12 +296,6 @@ class Database:
         })
         return user
 
-    async def mark_ad_code_used(self, code: str) -> None:
-        """Mark an ad code as used"""
-        await self.users.update_one(
-            {"ad_code": code},
-            {"$set": {"ad_code_used": True}}
-        )
 
     async def update_user_activity(self, user_id: int) -> bool:
         """Update user's last active timestamp."""
