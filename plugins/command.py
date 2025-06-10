@@ -247,71 +247,58 @@ async def command_handler(client: Client, message: Message):
                 await message.reply_text("No dump channel is currently set.")
                 
       # In command.py - Replace the freepoints section with this:
+       # In command.py - Update the freepoints section
         elif cmd == "freepoints":
+            # Check if user has pending offers
+            active_offers = await hyoshcoder.get_active_offers(user_id)
+            if active_offers >= 3:  # Limit to 3 active offers
+                await message.reply("⚠️ You have too many active offers. Please wait before creating more.")
+                return
+        
             me = await client.get_me()
-            me_username = me.username
-            
-            # Create points offer
-            point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-            points = random.choice(point_map)
+            points = random.randint(5, 20)
             offer = await hyoshcoder.create_points_offer(user_id, points)
             
+            if not offer or "code" not in offer:
+                await message.reply("❌ Failed to create points offer. Please try again.")
+                return
+        
             # Generate links
-            telegram_link = f"https://t.me/{me_username}?start=adds_{offer['code']}"
-            invite_link = f"https://t.me/{me_username}?start=refer_{user_id}"
+            claim_link = f"https://t.me/{me.username}?start=adds_{offer['code']}"
+            invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
             
             try:
                 if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
-                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, telegram_link)
+                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, claim_link)
                 else:
-                    shortlink = telegram_link
+                    shortlink = claim_link
             except Exception as e:
                 logger.error(f"Shortlink error: {e}")
-                shortlink = telegram_link
-            
-            share_msg = (
-                "🚀 Discover this amazing file renaming bot!\n\n"
-                f"Join using my link: {invite_link}\n\n"
-                "Features:\n"
-                "- Auto-rename files\n"
-                "- Custom metadata\n"
-                "- Batch processing\n"
-                "- And much more!"
-            )
-            
-            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(share_msg)}"
-            
+                shortlink = claim_link
+        
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
+                [InlineKeyboardButton("🔗 Share Offer", url=f"https://t.me/share/url?url={quote(claim_link)}&text=Claim {points} free points!"),
                 [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
+                [InlineKeyboardButton("📊 My Offers", callback_data="my_offers")],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
             
             caption = (
-                "🎁 **Free Points System**\n\n"
-                f"Earn {points} points by:\n"
-                "1. Sharing the bot with friends\n"
-                "2. Watching a short ad\n\n"
-                "💎 Premium users earn 2x points!"
+                f"🎁 **Free {points} Points!**\n\n"
+                f"🔹 Offer Code: `{offer['code']}`\n"
+                f"🔹 Valid for: 24 hours\n\n"
+                "Earn more by:\n"
+                "1. Sharing your unique link\n"
+                "2. Watching short ads\n"
+                "3. Referring friends\n\n"
+                "💎 Premium members earn 2x points!"
             )
             
-            if anim:
-                await message.reply_animation(
-                    animation=anim,
-                    caption=caption,
-                    reply_markup=btn
-                )
-            elif img:
-                await message.reply_photo(
-                    photo=img,
-                    caption=caption,
-                    reply_markup=btn
-                )
-            else:
-                await message.reply_text(
-                    text=caption,
-                    reply_markup=btn
-                )
+            await message.reply_photo(
+                photo=await get_random_photo(),
+                caption=caption,
+                reply_markup=btn
+            )
         
         elif cmd == "help":
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
