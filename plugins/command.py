@@ -28,7 +28,11 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-
+EMOJI = {
+    'error': '❌',
+    'success': '✅',
+    'warning': '⚠️'
+}
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -347,6 +351,20 @@ async def addthumbs(client, message):
             f"{EMOJI['error']} Failed to save thumbnail",
             delete_after=15
         )
+async def send_response(client, chat_id, text, delete_after=None):
+    """Helper function to send responses"""
+    msg = await client.send_message(chat_id, text)
+    if delete_after:
+        asyncio.create_task(auto_delete_message(msg, delete_after))
+    return msg
+
+async def auto_delete_message(message, delay):
+    """Auto delete message after delay"""
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except Exception:
+        pass
 # In command.py
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
