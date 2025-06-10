@@ -97,32 +97,44 @@ async def command_handler(client: Client, message: Message):
             # Handle ad link
             if args and args[0].startswith("adds_"):
                 unique_code = args[0].replace("adds_", "")
-            
-                # First check if code is valid
                 user = await hyoshcoder.get_user_by_code(unique_code)
+            
+                # If user with that code not found
                 if not user:
                     return await message.reply("❌ The link is invalid or already used.")
             
-                # Now get the reward points
-                reward = await hyoshcoder.get_expend_points(user["_id"])
+                # Check if code was already used or expired
+                expires_at = user.get("expires_at", datetime.datetime.utcnow())
+                if user.get("code_used") or datetime.datetime.utcnow() > expires_at:
+                    return await message.reply("❌ Link expired or already claimed.")
             
-                if not reward or reward == 0:
-                    return await message.reply("❌ Points already claimed or link expired.")
+                reward = user.get("expend_points", 0)
+                if reward <= 0:
+                    return await message.reply("❌ No points available for this code.")
             
-                # Add points and reset the expend data
-                await hyoshcoder.add_points(user["_id"], reward, reason="ad_view")
-                await hyoshcoder.set_expend_points(user["_id"], 0, None)
+                # Reward points
+                await hyoshcoder.add_points(user["_id"], reward)
             
-                # Notify user who owns the ad link
-                cap = f"🎉 Someone used your ad link! You earned {reward} points!"
-                try:
-                    await client.send_message(chat_id=user["_id"], text=cap)
-                except Exception as e:
-                    logger.warning(f"Failed to notify user: {e}")
+                # Mark code as used and reset reward data
+                await hyoshcoder.users.update_one(
+                    {"_id": user["_id"]},
+                    {"$set": {
+                        "code_used": True,
+                        "expend_points": 0,
+                        "unique_code": None,
+                        "expires_at": None
+                    }}
+                )
             
-                # Reply to the person who clicked the link
+                # Notify link owner
+                await client.send_message(
+                    user["_id"],
+                    f"🎉 Someone used your ad link! You earned {reward} points!"
+                )
+            
+                # Notify the clicker
                 await message.reply("🎉 Thanks for supporting us! The link owner has been rewarded.")
-
+  
 
 
             # Send sticker
