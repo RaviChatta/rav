@@ -9,6 +9,7 @@ from pyrogram.types import Message
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import idle
 from config import settings
+from database import users as main_users_collection  # You must import your main `users` collection
 
 # Initialize the client
 app = Client(
@@ -56,14 +57,21 @@ async def get_user_sequence_count(user_id: int) -> int:
     user = await users_collection.find_one({"user_id": user_id})
     return user.get("files_sequenced", 0) if user else 0
 
+
 async def increment_user_sequence_count(user_id: int, username: str, count: int = 1) -> None:
-    """Increment user's sequenced files count"""
-    await users_collection.update_one(
-        {"user_id": user_id},
-        {"$inc": {"files_sequenced": count}, 
-         "$set": {"username": username}},
+    """Increment user's sequenced files count in main leaderboard"""
+    await main_users_collection.update_one(
+        {"_id": user_id},
+        {
+            "$inc": {"files_sequenced": count},
+            "$set": {
+                "username": username,
+                "activity.last_active": datetime.utcnow()
+            }
+        },
         upsert=True
     )
+
 
 async def get_files_sequenced_leaderboard(limit: int = 10) -> List[Dict]:
     """Get the files sequenced leaderboard"""
