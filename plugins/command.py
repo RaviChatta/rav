@@ -238,12 +238,18 @@ async def command_handler(client: Client, message: Message):
             else:
                 await message.reply_text("No dump channel is currently set.")
                 
-       # In command.py - Update the freepoints section
+      # In command.py - Replace the freepoints section with this:
         elif cmd == "freepoints":
             me = await client.get_me()
             me_username = me.username
-            unique_code = str(uuid.uuid4())[:8]
-            telegram_link = f"https://t.me/{me_username}?start=adds_{unique_code}"
+            
+            # Create points offer
+            point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+            points = random.choice(point_map)
+            offer = await hyoshcoder.create_points_offer(user_id, points)
+            
+            # Generate links
+            telegram_link = f"https://t.me/{me_username}?start=adds_{offer['code']}"
             invite_link = f"https://t.me/{me_username}?start=refer_{user_id}"
             
             try:
@@ -254,29 +260,15 @@ async def command_handler(client: Client, message: Message):
             except Exception as e:
                 logger.error(f"Shortlink error: {e}")
                 shortlink = telegram_link
-        
-            point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-            points = random.choice(point_map)
-            
-            # Save the points offer
-            await hyoshcoder.set_expend_points(user_id, points, unique_code)
             
             share_msg = (
-                "I just discovered this amazing bot! 🚀\n"
-                f"Join me using this link: {invite_link}\n"
-                "Automatically rename files with this bot!\n"
-                "FEATURES:\n"
+                "🚀 Discover this amazing file renaming bot!\n\n"
+                f"Join using my link: {invite_link}\n\n"
+                "Features:\n"
                 "- Auto-rename files\n"
-                "- Add custom metadata\n"
-                "- Choose your filename\n"
-                "- Choose your album name\n"
-                "- Choose your artist name\n"
-                "- Choose your genre\n"
-                "- Choose your movie year\n"
-                "- Add custom thumbnails\n"
-                "- Link a channel to send your videos\n"
-                "And much more!\n"
-                "You can earn points by signing up and using the bot!"
+                "- Custom metadata\n"
+                "- Batch processing\n"
+                "- And much more!"
             )
             
             share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(share_msg)}"
@@ -288,11 +280,11 @@ async def command_handler(client: Client, message: Message):
             ])
             
             caption = (
-                "**Free Points**\n\n"
-                "You can earn points by:\n"
-                f"1. Sharing the bot - Earn 10 points per referral\n"
-                f"2. Watching ads - Earn {points} points now!\n\n"
-                "Premium users get 2x points!"
+                "🎁 **Free Points System**\n\n"
+                f"Earn {points} points by:\n"
+                "1. Sharing the bot with friends\n"
+                "2. Watching a short ad\n\n"
+                "💎 Premium users earn 2x points!"
             )
             
             if anim:
