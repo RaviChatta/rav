@@ -1,9 +1,9 @@
-# sequence.py (updated)
 import asyncio
 import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from database.data import hyoshcoder
+from datetime import datetime
+from database.data import hyoshcoder  # Fixed database reference
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -13,11 +13,11 @@ async def start_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
     
-    if await db.is_in_sequence_mode(user_id):
+    if await hyoshcoder.is_in_sequence_mode(user_id):
         await message.reply("⚠️ You already have an active sequence. Use /endsequence first.")
         return
         
-    if await db.start_sequence(user_id, username):
+    if await hyoshcoder.start_sequence(user_id, username):
         logger.info(f"User {user_id} started sequence")
         await message.reply(
             "📦 Sequence mode activated!\n\n"
@@ -34,7 +34,7 @@ async def start_sequence(client: Client, message: Message):
 async def handle_sequence_file(client: Client, message: Message):
     user_id = message.from_user.id
     
-    if not await db.is_in_sequence_mode(user_id):
+    if not await hyoshcoder.is_in_sequence_mode(user_id):
         return
     
     # Get filename based on media type
@@ -52,10 +52,10 @@ async def handle_sequence_file(client: Client, message: Message):
         "filename": filename,
         "msg_id": message.id,
         "chat_id": message.chat.id,
-        "added_at": datetime.datetime.now()
+        "added_at": datetime.now()
     }
     
-    if await db.add_file_to_sequence(user_id, file_data):
+    if await hyoshcoder.add_file_to_sequence(user_id, file_data):
         await message.reply(f"➕ Added to sequence: {filename}")
     else:
         await message.reply("❌ Failed to add file to sequence")
@@ -65,7 +65,7 @@ async def end_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
     
-    files = await db.get_sequence_files(user_id)
+    files = await hyoshcoder.get_sequence_files(user_id)
     if not files:
         await message.reply("❌ No files in sequence!")
         return
@@ -84,15 +84,21 @@ async def end_sequence(client: Client, message: Message):
             )
             success += 1
             await asyncio.sleep(1)  # Rate limiting
+            
+            # Add points for successful sequence
+            if success % 5 == 0:  # Reward every 5 files
+                points = 5
+                await hyoshcoder.add_points(user_id, points, "sequence", f"Sequenced {success} files")
+                
         except Exception as e:
             errors.append(f"{file['filename']}: {str(e)}")
     
     # Update stats
     if success > 0:
-        await db.increment_sequence_count(user_id, username, success)
+        await hyoshcoder.increment_sequence_count(user_id, username, success)
     
     # Clean up
-    await db.end_sequence(user_id)
+    await hyoshcoder.end_sequence(user_id)
     
     # Send result
     result = f"✅ Successfully sent {success}/{len(files)} files!"
@@ -107,7 +113,7 @@ async def end_sequence(client: Client, message: Message):
 async def show_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     
-    files = await db.get_sequence_files(user_id)
+    files = await hyoshcoder.get_sequence_files(user_id)
     if not files:
         await message.reply("No files in sequence!")
         return
@@ -122,7 +128,7 @@ async def show_sequence(client: Client, message: Message):
 async def cancel_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     
-    if await db.end_sequence(user_id):
+    if await hyoshcoder.end_sequence(user_id):
         await message.reply("🗑 Sequence cancelled and cleared!")
     else:
         await message.reply("No active sequence to cancel.")
@@ -130,7 +136,7 @@ async def cancel_sequence(client: Client, message: Message):
 @Client.on_message(filters.private & filters.command("sequenceleaderboard"))
 async def sequence_leaderboard(client: Client, message: Message):
     """Show leaderboard of users with most sequenced files"""
-    leaderboard = await db.get_sequence_leaderboard(10)
+    leaderboard = await hyoshcoder.get_sequence_leaderboard(10)
     
     if not leaderboard:
         await message.reply("No sequence data available yet!")
