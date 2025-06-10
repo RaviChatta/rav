@@ -7,8 +7,16 @@ from typing import List, Dict
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from motor.motor_asyncio import AsyncIOMotorClient
+from pyrogram import idle
 from config import settings
 
+# Initialize the client
+app = Client(
+    "sequence_bot",
+    api_id=settings.API_ID,
+    api_hash=settings.API_HASH,
+    bot_token=settings.BOT_TOKEN
+)
 # Initialize logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
