@@ -58,7 +58,54 @@ async def command_handler(client: Client, message: Message):
         if cmd == 'start':
             user = message.from_user
             await hyoshcoder.add_user(user_id)
+            # Handle referral link
+            if args and args[0].startswith("refer_"):
+                referrer_id = int(args[0].replace("refer_", ""))
+                reward = 10
+                
+                # Check if user already has a referrer
+                if await hyoshcoder.is_refferer(user_id):
+                    pass  # User already has a referrer
+                elif referrer_id != user_id:  # Prevent self-referral
+                    referrer = await hyoshcoder.read_user(referrer_id)
+                    if referrer:
+                        await hyoshcoder.set_referrer(user_id, referrer_id)
+                        await hyoshcoder.add_points(referrer_id, reward)
+                        
+                        # Notify referrer
+                        cap = f"🎉 {user.mention} joined using your referral! You earned {reward} points!"
+                        await client.send_message(referrer_id, cap)
             
+            # Handle ad link
+            elif args and args[0].startswith("adds_"):
+                unique_code = args[0].replace("adds_", "")
+                
+                # Find the reward associated with this code
+                reward = await self.rewards.find_one({
+                    "code": unique_code,
+                    "claimed": False,
+                    "expires_at": {"$gt": datetime.datetime.now()}
+                })
+                
+                if reward:
+                    # Add points to user who created the link
+                    await self.add_points(reward['user_id'], reward['points'], "ad_view")
+                    
+                    # Mark as claimed
+                    await self.rewards.update_one(
+                        {"_id": reward["_id"]},
+                        {"$set": {"claimed": True, "claimed_by": user_id}}
+                    )
+                    
+                    # Notify both users
+                    await client.send_message(
+                        reward['user_id'],
+                        f"🎉 Someone used your ad link! You earned {reward['points']} points!"
+                    )
+                    
+                    await message.reply(
+                        f"🎉 Thanks for supporting us! The link owner has been rewarded."
+                    )
             # Send sticker
             m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
             await asyncio.sleep(3)
@@ -73,67 +120,8 @@ async def command_handler(client: Client, message: Message):
                 [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
                  InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
             ])
-            
-            # Handle referral and campaign links
-            if args:
-                # Handle referral first
-                # In the start command section - Update the refer_ handling:
-                if args[0].startswith("refer_"):
-                    referrer_id = int(args[0].replace("refer_", ""))
-                    reward = 10
-                    
-                    # Prevent self-referral
-                    if referrer_id == user_id:
-                        return
-                        
-                    # Check if already referred by someone
-                    existing_ref = await hyoshcoder.get_referrer(user_id)
-                    if existing_ref:
-                        return
-                        
-                    # Check referrer exists
-                    referrer = await hyoshcoder.read_user(referrer_id)
-                    if not referrer:
-                        return
-                        
-                    # Process referral
-                    await hyoshcoder.set_referrer(user_id, referrer_id)
-                    await hyoshcoder.add_points(referrer_id, reward)
-                    
-                    # Notify referrer
-                    await client.send_message(
-                        chat_id=referrer_id,
-                        text=f"🎉 {message.from_user.mention} joined using your referral! "
-                             f"You earned {reward} points!"
-                    )
-            
-                # Then handle campaign
-                # In the start command section - Update the adds_ handling:
-                elif args[0].startswith("adds_"):
-                    unique_code = args[0].replace("adds_", "")
-                    result = await hyoshcoder.claim_points_offer(unique_code, user_id)
-                    
-                    if not result["success"]:
-                        await message.reply(f"❌ {result['error']}")
-                        return
-                    
-                    await message.reply(
-                        f"🎉 You earned {result['points']} points!\n"
-                        "Thanks for supporting the bot!"
-                    )
-            
-                # Handle points link redemption
-                elif args[0].startswith("points_"):
-                    code = args[0].replace("points_", "")
-                    result = await hyoshcoder.claim_expend_points(user_id, code)
-            
-                    if result["success"]:
-                        await message.reply_text(
-                            f"🎉 You claimed {result['points']} points!\nThanks for supporting the bot!"
-                        )
-                    else:
-                        await message.reply_text(f"❌ Could not claim points: {result['error']}")
-            
+
+
             # Send welcome message
             caption = Txt.START_TXT.format(user.mention)
 
@@ -249,58 +237,61 @@ async def command_handler(client: Client, message: Message):
       # In command.py - Replace the freepoints section with this:
        # In command.py - Update the freepoints section
         elif cmd == "freepoints":
-            # Check if user has pending offers
-            active_offers = await hyoshcoder.get_active_offers(user_id)
-            if active_offers >= 3:  # Limit to 3 active offers
-                await message.reply("⚠️ You have too many active offers. Please wait before creating more.")
-                return
-        
             me = await client.get_me()
+            me_username = me.username
+            
+            # Generate unique code for the user
+            unique_code = str(uuid.uuid4())[:8]
+            
+            # Create two types of links
+            referral_link = f"https://t.me/{me_username}?start=refer_{user_id}"
+            ad_link = f"https://t.me/{me_username}?start=adds_{unique_code}"
+            
+            # Shorten both links
+            short_referral = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, referral_link)
+            short_ad_link = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, ad_link)
+            
+            # Random points between 5-20
             points = random.randint(5, 20)
-            offer = await hyoshcoder.create_points_offer(user_id, points)
             
-            if not offer or "code" not in offer:
-                await message.reply("❌ Failed to create points offer. Please try again.")
-                return
-        
-            # Generate links
-            claim_link = f"https://t.me/{me.username}?start=adds_{offer['code']}"
-            invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
+            # Store the expend points with the unique code
+            await hyoshcoder.set_expend_points(user_id, points, unique_code)
             
-            try:
-                if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
-                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, claim_link)
-                else:
-                    shortlink = claim_link
-            except Exception as e:
-                logger.error(f"Shortlink error: {e}")
-                shortlink = claim_link
-        
-            btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Offer", url=f"https://t.me/share/url?url={quote(claim_link)}&text=Claim {points} free points!")],
-                [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
-                [InlineKeyboardButton("📊 My Offers", callback_data="my_offers")],
+            # Create share message
+            share_msg = (
+                "I just discovered this amazing bot! 🚀\n"
+                "Automatically rename files with this bot!\n"
+                f"Join me using this link: {short_referral}\n\n"
+                "FEATURES:\n"
+                "- Auto-rename files\n"
+                "- Add custom metadata\n"
+                "- Custom thumbnails\n"
+                "- Premium features available\n"
+            )
+            
+            share_msg_encoded = f"https://t.me/share/url?url={quote(short_referral)}&text={quote(share_msg)}"
+            
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
+                [InlineKeyboardButton("💰 Watch Ad", url=short_ad_link)],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
-
             
             caption = (
-                f"🎁 **Free {points} Points!**\n\n"
-                f"🔹 Offer Code: `{offer['code']}`\n"
-                f"🔹 Valid for: 24 hours\n\n"
-                "Earn more by:\n"
-                "1. Sharing your unique link\n"
-                "2. Watching short ads\n"
-                "3. Referring friends\n\n"
-                "💎 Premium members earn 2x points!"
+                "**Free Points**\n\n"
+                "Earn points by:\n"
+                "1. **Sharing** our bot with friends\n"
+                "2. **Watching** short ads\n\n"
+                f"🔗 Your referral link: `{short_referral}`\n"
+                f"📌 Your ad link: `{short_ad_link}`\n\n"
+                f"🎁 You'll earn {points} points for each successful action!\n\n"
+                "Your points will be added automatically when someone uses your links."
             )
             
-            await message.reply_photo(
-                photo=await get_random_photo(),
-                caption=caption,
-                reply_markup=btn
-            )
-        
+            if img:
+                await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
+            else:
+                await message.reply_text(text=caption, reply_markup=buttons)
         elif cmd == "help":
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             src_info = await hyoshcoder.get_src_info(user_id)
