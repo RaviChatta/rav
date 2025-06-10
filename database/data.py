@@ -258,32 +258,6 @@ class Database:
             logger.error(f"Error getting user {id}: {e}")
             return None
 
-    async def create_campaign(self, owner_id: int, name: str, points_per_view: int, total_views: int) -> str:
-        """Create a new ad campaign with proper datetime handling"""
-        try:
-            campaign_id = str(uuid.uuid4())
-            code = str(uuid.uuid4())[:8]
-            
-            campaign = {
-                "_id": campaign_id,
-                "owner_id": owner_id,
-                "name": name,
-                "points_per_view": points_per_view,
-                "total_views": total_views,
-                "used_views": 0,
-                "created_at": datetime.datetime.now(pytz.UTC),
-                "expires_at": datetime.datetime.now(pytz.UTC) + timedelta(days=7),
-                "code": code,
-                "active": True
-            }
-            
-            await self.campaigns.insert_one(campaign)
-            return code
-        except Exception as e:
-            logger.error(f"Error creating campaign: {e}")
-            raise
-
-
 
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
         """Find user by their unique referral/ad code if it's not already used."""
