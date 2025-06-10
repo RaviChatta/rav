@@ -880,38 +880,41 @@ class Database:
         except Exception as e:
             logger.error(f"Error deactivating premium for {user_id}: {e}")
             return False
+    async def get_expend_points(self, user_id: int) -> int:
+        """Retrieve how many expendable points the user has"""
+        user = await self.users.find_one({"_id": user_id})
+        if user and "expend_points" in user:
+            return user["expend_points"]
+        return 0
 
     
   
-    async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
-        """Track points expenditure and create claimable reward"""
-        try:
-            if not code:
-                code = str(uuid.uuid4())[:8]
-                
-            # Store the reward in the database
-            result = await self.rewards.insert_one({
-                "user_id": user_id,
-                "points": points,
-                "code": code,
-                "created_at": datetime.datetime.now(),
-                "expires_at": datetime.datetime.now() + datetime.timedelta(hours=24),
-                "claimed": False,
-                "claimed_by": None
-            })
-            
-            return {
-                "success": True,
-                "code": code,
-                "points": points
-            }
-        except Exception as e:
-            logger.error(f"Error setting expend points: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-  
+    async def set_expend_points(self, user_id: int, points: int, code: Optional[str] = None) -> Dict:
+    try:
+        if not code:
+            code = str(uuid.uuid4())[:8]
+
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$set": {
+                "unique_code": code,
+                "expend_points": points,
+                "code_used": False,
+                "expires_at": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            }}
+        )
+        return {
+            "success": True,
+            "code": code,
+            "points": points
+        }
+    except Exception as e:
+        logger.error(f"Error setting expend points: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
     # --- Update all leaderboards ---
     async def update_leaderboards(self):
