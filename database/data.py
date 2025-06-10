@@ -30,11 +30,9 @@ class Database:
         self.premium_codes = None
         self.transactions = None
         self.rewards = None
-        self.point_links = None
         self.leaderboards = None
         self.file_stats = None
         self.config = None
-        self.campaigns = None
 
     async def connect(self, max_pool_size: int = 100, min_pool_size: int = 10, max_idle_time_ms: int = 30000):
         """Establish database connection with enhanced settings and error handling."""
@@ -61,11 +59,9 @@ class Database:
             self.premium_codes = self.db.premium_codes
             self.transactions = self.db.transactions
             self.rewards = self.db.rewards
-            self.point_links = self.db.point_links
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
             self.config = self.db.config
-            self.campaigns = self.db.campaigns
             self._is_connected = True
 
             # Create indexes
@@ -104,27 +100,6 @@ class Database:
             ("users", [("premium.is_premium", 1)]),
             ("users", [("activity.last_ad_view", -1)]),  # New for ad rate limiting
 
-            # Point links (enhanced for campaigns)
-            ("point_links", [("code", 1)], {
-                "unique": True,
-                "partialFilterExpression": {"used": False}
-            }),
-            ("point_links", [("expires_at", 1)]),
-            ("point_links", [("user_id", 1), ("expires_at", 1)]),
-            ("point_links", [("campaign_id", 1)]),  # New for campaign tracking
-
-            # New campaigns collection indexes
-            ("campaigns", [("code", 1)], {"unique": True}),
-            ("campaigns", [("owner_id", 1)]),
-            ("campaigns", [("expires_at", 1)]),
-            ("campaigns", [("active", 1), ("expires_at", 1)]),
-            ("campaigns", [("used_views", 1), ("total_views", 1)]),
-
-            # Transactions (enhanced for ad tracking)
-            ("transactions", [("user_id", 1), ("timestamp", -1)]),
-            ("transactions", [("type", 1), ("timestamp", -1)]),
-            ("transactions", [("campaign_id", 1)]),  # New for ad analytics
-            ("transactions", [("reference_id", 1)], {"unique": True, "sparse": True}),
 
             # Leaderboards (unchanged)
             ("leaderboards", [("period", 1), ("type", 1), ("updated_at", -1)]),
@@ -241,14 +216,6 @@ class Database:
                 "last_login": None,
                 "login_history": [],
                 "ad_ratelimit": None  # New field for rate limiting ads
-            },
-
-            # Ad campaign management (new section)
-            "campaigns": {
-                "created": 0,
-                "active": [],
-                "total_spent": 0,
-                "total_views": 0
             },
 
             # System flags
@@ -843,72 +810,7 @@ class Database:
             return False
 
     
-    # In database/data.py - Update the points methods
-    async def create_points_offer(self, user_id: int, points: int) -> dict:
-        """Create a new points offer with case-insensitive code"""
-        unique_code = str(uuid.uuid4())[:8].lower()  # Force lowercase
-        expiry = datetime.now() + timedelta(days=1)  # 24 hour expiry
-        
-        # Ensure code is unique
-        while await self.db.point_offers.find_one({"code": unique_code}):
-            unique_code = str(uuid.uuid4())[:8].lower()
-        
-        await self.db.point_offers.insert_one({
-            "code": unique_code,
-            "user_id": user_id,
-            "points": points,
-            "created_at": datetime.now(),
-            "expires_at": expiry,
-            "claimed": False,
-            "active": True
-        })
-        return {"code": unique_code, "points": points}
-    
-    async def claim_points_offer(self, code: str, claimer_id: int) -> dict:
-        """Claim a points offer with better validation"""
-        if not code or len(code) != 8:
-            return {"success": False, "error": "Invalid code format"}
-        
-        # Case-insensitive search
-        offer = await self.db.point_offers.find_one({
-            "code": code.lower(),
-            "active": True
-        })
-        
-        if not offer:
-            return {"success": False, "error": "Invalid code"}
-        
-        if offer["claimed"]:
-            return {"success": False, "error": "Code already used"}
-        
-        if datetime.now() > offer["expires_at"]:
-            await self.db.point_offers.update_one(
-                {"_id": offer["_id"]},
-                {"$set": {"active": False}}
-            )
-            return {"success": False, "error": "Offer expired"}
-        
-        # Verify owner isn't claiming their own code
-        if claimer_id == offer["user_id"]:
-            return {"success": False, "error": "Cannot claim your own offer"}
-        
-        # Update and award points
-        await self.db.point_offers.update_one(
-            {"_id": offer["_id"]},
-            {"$set": {
-                "claimed": True,
-                "claimed_by": claimer_id,
-                "claimed_at": datetime.now()
-            }}
-        )
-        
-        await self.add_points(claimer_id, offer["points"])
-        
-        # Award bonus to creator if within 24 hours
-        if datetime.now() < offer["created_at"] + timedelta(hours=24):
-            await self.add_points(offer["user_id"], offer["points"] // 2)
-        
-        return {"success": True, "points": offer["points"]}
+  
     async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
         """
         Track points expenditure and create claimable reward
@@ -955,158 +857,7 @@ class Database:
             logger.error(f"Error setting expend points: {e}")
             return {'success': False, 'error': str(e)}
 
-    async def claim_expend_points(self, claimer_id: int, code: str) -> Dict:
-        """
-        Claim points from an expenditure record
-        
-        Args:
-            claimer_id: User ID claiming the points
-            code: Unique claim code
-        
-        Returns:
-            Dict: {
-                'success': bool,
-                'points': int (if successful),
-                'error': str (if failed)
-            }
-        """
-        try:
-            # Find the expenditure record
-            record = await self.transactions.find_one({
-                "code": code,
-                "status": "pending",
-                "expires_at": {"$gt": datetime.datetime.now()}
-            })
-
-            if not record:
-                return {'success': False, 'error': 'Invalid or expired code'}
-
-            # Check if already claimed by this user
-            if claimer_id in record.get('claimed_by', []):
-                return {'success': False, 'error': 'Already claimed'}
-
-            # Add points to claimer
-            await self.add_points(
-                claimer_id,
-                record['amount'],
-                source="ad_reward",
-                description=f"Claimed from code {code}"
-            )
-
-            # Add bonus to creator
-            creator_bonus = record['amount'] // 2
-            if creator_bonus > 0:
-                await self.add_points(
-                    record['user_id'],
-                    creator_bonus,
-                    source="referral_ad",
-                    description=f"Bonus for ad claim by {claimer_id}"
-                )
-
-            # Update the record
-            await self.transactions.update_one(
-                {"_id": record['_id']},
-                {
-                    "$push": {"claimed_by": claimer_id},
-                    "$set": {"status": "claimed"}
-                }
-            )
-
-            return {'success': True, 'points': record['amount']}
-
-        except Exception as e:
-            logger.error(f"Error claiming expend points: {e}")
-            return {'success': False, 'error': str(e)}
-
-    async def create_ad_campaign(self, user_id: int, name: str, points: int, max_views: int) -> str:
-        """Create a new ad campaign for a user"""
-        try:
-            campaign_id = str(uuid.uuid4())
-            code = str(uuid.uuid4())[:8]
-
-            campaign = {
-                "_id": campaign_id,
-                "owner_id": user_id,
-                "name": name,
-                "points_per_view": points,
-                "max_views": max_views,
-                "views": 0,
-                "created_at": datetime.datetime.now(),
-                "expires_at": datetime.datetime.now() + timedelta(days=7),
-                "code": code,
-                "active": True
-            }
-
-            # Deduct points from user
-            await self.users.update_one(
-                {"_id": user_id},
-                {"$inc": {
-                    "points.balance": -points * max_views,
-                    "points.total_spent": points * max_views,
-                    "campaigns.created": 1
-                }}
-            )
-
-            # Store campaign
-            await self.campaigns.insert_one(campaign)
-            return code
-        except Exception as e:
-            logger.error(f"Error creating ad campaign: {e}")
-            raise
-
-    async def process_ad_view(self, code: str, viewer_id: int) -> Union[int, bool]:
-        """Process when a user views an ad"""
-        async with await self._client.start_session() as session:
-            async with session.start_transaction():
-                # Get campaign
-                campaign = await self.campaigns.find_one(
-                    {"code": code, "active": True},
-                    session=session
-                )
-
-                if not campaign or campaign['views'] >= campaign['max_views']:
-                    await session.abort_transaction()
-                    return False
-
-                # Calculate points with premium multiplier
-                user = await self.users.find_one(
-                    {"_id": viewer_id},
-                    {"premium.ad_multiplier": 1},
-                    session=session
-                )
-                multiplier = user.get('premium', {}).get('ad_multiplier', 1.0)
-                points = int(campaign['points_per_view'] * multiplier)
-
-                # Update user stats
-                await self.users.update_one(
-                    {"_id": viewer_id},
-                    {"$inc": {
-                        "points.balance": points,
-                        "points.total_earned": points,
-                        "points.sources.ads": points,
-                        "activity.ad_views": 1,
-                        "activity.ad_earnings": points
-                    }},
-                    session=session
-                )
-
-                # Update campaign
-                await self.campaigns.update_one(
-                    {"_id": campaign['_id']},
-                    {"$inc": {"views": 1}},
-                    session=session
-                )
-
-                # Record transaction
-                await self.transactions.insert_one({
-                    "user_id": viewer_id,
-                    "type": "ad_view",
-                    "amount": points,
-                    "campaign_id": campaign['_id'],
-                    "timestamp": datetime.datetime.now()
-                }, session=session)
-
-                return points
+  
 
     async def update_leaderboards(self):
         """Update all leaderboard periods (daily/weekly/monthly/alltime)"""
