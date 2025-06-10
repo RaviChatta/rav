@@ -28,7 +28,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-from sequence import get_files_sequenced_leaderboard
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
