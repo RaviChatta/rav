@@ -237,14 +237,30 @@ async def command_handler(client: Client, message: Message):
                 )
             else:
                 await message.reply_text("No dump channel is currently set.")
-        elif cmd == "free_points":
+                
+       # In command.py - Update the freepoints section
+        elif cmd == "freepoints":
             me = await client.get_me()
             me_username = me.username
             unique_code = str(uuid.uuid4())[:8]
             telegram_link = f"https://t.me/{me_username}?start=adds_{unique_code}"
             invite_link = f"https://t.me/{me_username}?start=refer_{user_id}"
-            shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, telegram_link)
+            
+            try:
+                if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
+                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, telegram_link)
+                else:
+                    shortlink = telegram_link
+            except Exception as e:
+                logger.error(f"Shortlink error: {e}")
+                shortlink = telegram_link
+        
             point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+            points = random.choice(point_map)
+            
+            # Save the points offer
+            await hyoshcoder.set_expend_points(user_id, points, unique_code)
+            
             share_msg = (
                 "I just discovered this amazing bot! 🚀\n"
                 f"Join me using this link: {invite_link}\n"
@@ -262,25 +278,40 @@ async def command_handler(client: Client, message: Message):
                 "And much more!\n"
                 "You can earn points by signing up and using the bot!"
             )
+            
             share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(share_msg)}"
-            points = random.choice(point_map)
-            await hyoshcoder.set_expend_points(user_id, points, unique_code)
+            
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
                 [InlineKeyboardButton("💰 Watch Ad", url=shortlink)],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
+            
             caption = (
                 "**Free Points**\n\n"
-                "You chose to support our bot. You can do this in several ways:\n\n"
-                "1. **Donate**: Support us financially by sending a donation to [Hyoshcoder](https://t.me/hyoshcoder).\n"
-                "2. **Share the Bot**: Invite your friends to use our bot by sharing the link below.\n"
-                "3. **Watch an Ad**: Earn points by watching a short ad.\n\n"
-                "**How it works?**\n"
-                "- Every time you share the bot and a friend signs up, you earn points.\n"
-                "- Points can range between 5 and 20 per action.\n\n"
-                "Thanks for your support! 🙏 [Support](https://t.me/hyoshcoder)"
+                "You can earn points by:\n"
+                f"1. Sharing the bot - Earn 10 points per referral\n"
+                f"2. Watching ads - Earn {points} points now!\n\n"
+                "Premium users get 2x points!"
             )
+            
+            if anim:
+                await message.reply_animation(
+                    animation=anim,
+                    caption=caption,
+                    reply_markup=btn
+                )
+            elif img:
+                await message.reply_photo(
+                    photo=img,
+                    caption=caption,
+                    reply_markup=btn
+                )
+            else:
+                await message.reply_text(
+                    text=caption,
+                    reply_markup=btn
+                )
         
         elif cmd == "help":
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
@@ -337,10 +368,22 @@ async def addthumbs(client, message):
             f"{EMOJI['error']} Failed to save thumbnail",
             delete_after=15
         )
+# In command.py
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
     """Handle /leaderboard command"""
-    await show_leaderboard_ui(client, message)
+    try:
+        # Get the leaderboard type from command if specified
+        lb_type = "renames"  # default
+        if len(message.command) > 1:
+            arg = message.command[1].lower()
+            if arg in ["points", "renames", "files"]:
+                lb_type = arg
+        
+        await show_leaderboard_ui(client, message, lb_type)
+    except Exception as e:
+        logger.error(f"Leaderboard command error: {e}")
+        await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
 
 @Client.on_callback_query(filters.regex(r'^lb_(period|type|refresh)_'))
 async def leaderboard_callback(client: Client, callback: CallbackQuery):
@@ -359,22 +402,22 @@ async def leaderboard_callback(client: Client, callback: CallbackQuery):
     
     await show_leaderboard_ui(client, callback)
 
-async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery]):
+async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery], lb_type: str = None):
     """Display the leaderboard with interactive buttons"""
     try:
         msg = message if isinstance(message, Message) else message.message
         user_id = message.from_user.id
         
         period = await hyoshcoder.get_leaderboard_period(user_id)
-        lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+        lb_type = lb_type or await hyoshcoder.get_leaderboard_type(user_id)
         
         # Get the appropriate leaderboard data
         if lb_type == "files":
             leaders = await get_files_sequenced_leaderboard(limit=20)
-            # Convert to the format expected by the UI
+            # Convert to consistent format
             leaders = [{
                 '_id': str(user['_id']),
-                'username': user.get('username', f"User {user['_id']}"),
+                'username': user['username'],
                 'value': user['files_sequenced'],
                 'rank': idx + 1
             } for idx, user in enumerate(leaders)]
