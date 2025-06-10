@@ -13,10 +13,12 @@ async def start_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
     
+    # Check if already in sequence mode
     if await hyoshcoder.is_in_sequence_mode(user_id):
         await message.reply("⚠️ You already have an active sequence. Use /endsequence first.")
         return
         
+    # Initialize sequence
     if await hyoshcoder.start_sequence(user_id, username):
         logger.info(f"User {user_id} started sequence")
         await message.reply(
@@ -34,10 +36,11 @@ async def start_sequence(client: Client, message: Message):
 async def handle_sequence_file(client: Client, message: Message):
     user_id = message.from_user.id
     
+    # Check if in sequence mode
     if not await hyoshcoder.is_in_sequence_mode(user_id):
         return
     
-    # Get filename based on media type
+    # Get filename
     if message.document:
         filename = message.document.file_name
     elif message.video:
@@ -65,6 +68,7 @@ async def end_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
     
+    # Get all files in sequence
     files = await hyoshcoder.get_sequence_files(user_id)
     if not files:
         await message.reply("❌ No files in sequence!")
@@ -75,7 +79,8 @@ async def end_sequence(client: Client, message: Message):
     success = 0
     errors = []
     
-    for file in files:
+    # Send files in order
+    for file in sorted(files, key=lambda x: x['filename']):  # Sort by filename
         try:
             await client.copy_message(
                 chat_id=message.chat.id,
@@ -83,24 +88,23 @@ async def end_sequence(client: Client, message: Message):
                 message_id=file["msg_id"]
             )
             success += 1
-            await asyncio.sleep(1)  # Rate limiting
+            await asyncio.sleep(1)  # Rate limit
             
-            # Add points for successful sequence
-            if success % 5 == 0:  # Reward every 5 files
-                points = 5
-                await hyoshcoder.add_points(user_id, points, "sequence", f"Sequenced {success} files")
+            # Reward points every 5 files
+            if success % 5 == 0:
+                await hyoshcoder.add_points(user_id, 5, "sequence")
                 
         except Exception as e:
             errors.append(f"{file['filename']}: {str(e)}")
     
-    # Update stats
+    # Update stats if successful
     if success > 0:
         await hyoshcoder.increment_sequence_count(user_id, username, success)
     
-    # Clean up
+    # Clean up sequence
     await hyoshcoder.end_sequence(user_id)
     
-    # Send result
+    # Show results
     result = f"✅ Successfully sent {success}/{len(files)} files!"
     if errors:
         result += "\n\nErrors:\n" + "\n".join(errors[:3])
