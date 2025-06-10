@@ -1,7 +1,7 @@
 import os
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from pyrogram.errors import UserNotParticipant
+from pyrogram.errors import UserNotParticipant, PeerIdInvalid, ChatAdminRequired
 from config import settings
 
 FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS
@@ -10,44 +10,33 @@ IMAGE_URL = "https://i.ibb.co/gFQFknCN/d8a33273f73c.jpg"
 async def not_subscribed(_, __, message):
     for channel in FORCE_SUB_CHANNELS:
         try:
-            user = await message._client.get_chat_member(channel, message.from_user.id)
-            if user.status in {"kicked", "left"}:
+            member = await message._client.get_chat_member(channel, message.from_user.id)
+            if member.status not in ("member", "administrator", "creator"):
                 return True
-        except UserNotParticipant:
+        except (UserNotParticipant, PeerIdInvalid, ChatAdminRequired):
             return True
     return False
 
 @Client.on_message(filters.private & filters.create(not_subscribed))
-async def forces_sub(client, message):
+async def force_subscribe(client, message):
     not_joined_channels = []
     for channel in FORCE_SUB_CHANNELS:
         try:
-            user = await client.get_chat_member(channel, message.from_user.id)
-            if user.status in {"kicked", "left"}:
+            member = await client.get_chat_member(channel, message.from_user.id)
+            if member.status not in ("member", "administrator", "creator"):
                 not_joined_channels.append(channel)
-        except UserNotParticipant:
+        except (UserNotParticipant, PeerIdInvalid, ChatAdminRequired):
             not_joined_channels.append(channel)
 
     buttons = [
-        [
-            InlineKeyboardButton(
-                text=f"• ᴊᴏɪɴ {channel.capitalize()} •", url=f"https://t.me/{channel}"
-            )
-        ]
+        [InlineKeyboardButton(f"• ᴊᴏɪɴ {channel.upper()} •", url=f"https://t.me/{channel}")]
         for channel in not_joined_channels
     ]
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                text="• ᴊᴏɪɴᴇᴅ •", callback_data="check_subscription"
-            )
-        ]
-    )
+    buttons.append([InlineKeyboardButton("• ᴊᴏɪɴᴇᴅ •", callback_data="check_subscription")])
 
-    text = "**ʙᴀᴋᴋᴀ!!, ʏᴏᴜ'ʀᴇ ɴᴏᴛ ᴊᴏɪɴᴇᴅ ᴛᴏ ᴀʟʟ ʀᴇǫᴜɪʀᴇᴅ ᴄʜᴀɴɴᴇʟs, ᴊᴏɪɴ ᴛʜᴇ ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟs ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ**"
     await message.reply_photo(
         photo=IMAGE_URL,
-        caption=text,
+        caption="**ʙᴀᴋᴋᴀ!!, ʏᴏᴜ'ʀᴇ ɴᴏᴛ ᴊᴏɪɴᴇᴅ ᴛᴏ ᴀʟʟ ʀᴇǫᴜɪʀᴇᴅ ᴄʜᴀɴɴᴇʟs, ᴊᴏɪɴ ᴛʜᴇᴍ ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ.**",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -58,42 +47,34 @@ async def check_subscription(client, callback_query: CallbackQuery):
 
     for channel in FORCE_SUB_CHANNELS:
         try:
-            user = await client.get_chat_member(channel, user_id)
-            if user.status in {"kicked", "left"}:
+            member = await client.get_chat_member(channel, user_id)
+            if member.status not in ("member", "administrator", "creator"):
                 not_joined_channels.append(channel)
-        except UserNotParticipant:
+        except (UserNotParticipant, PeerIdInvalid, ChatAdminRequired):
             not_joined_channels.append(channel)
 
     if not not_joined_channels:
         new_text = "**ʏᴏᴜ ʜᴀᴠᴇ ᴊᴏɪɴᴇᴅ ᴀʟʟ ᴛʜᴇ ʀᴇǫᴜɪʀᴇᴅ ᴄʜᴀɴɴᴇʟs. ɢᴏᴏᴅ ʙᴏʏ! 🔥 /start ɴᴏᴡ**"
-        if callback_query.message.caption != new_text:
+        try:
             await callback_query.message.edit_caption(
                 caption=new_text,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("• ɴᴏᴡ ᴄʟɪᴄᴋ ʜᴇʀᴇ •", callback_data='help')]
                 ])
             )
+        except Exception:
+            pass
     else:
         buttons = [
-            [
-                InlineKeyboardButton(
-                    text=f"• ᴊᴏɪɴ {channel.capitalize()} •",
-                    url=f"https://t.me/{channel}",
-                )
-            ]
+            [InlineKeyboardButton(f"• ᴊᴏɪɴ {channel.upper()} •", url=f"https://t.me/{channel}")]
             for channel in not_joined_channels
         ]
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text="• ᴊᴏɪɴᴇᴅ •", callback_data="check_subscription"
-                )
-            ]
-        )
+        buttons.append([InlineKeyboardButton("• ᴊᴏɪɴᴇᴅ •", callback_data="check_subscription")])
 
-        text = "**ʏᴏᴜ ʜᴀᴠᴇ ᴊᴏɪɴᴇᴅ ᴀʟʟ ᴛʜᴇ ʀᴇǫᴜɪʀᴇᴅ ᴄʜᴀɴɴᴇʟs. ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ᴛʜᴇ ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟs ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ**"
-        if callback_query.message.caption != text:
+        try:
             await callback_query.message.edit_caption(
-                caption=text,
+                caption="**ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ᴀʟʟ ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟs ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ.**",
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
+        except Exception:
+            pass
