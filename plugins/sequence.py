@@ -7,12 +7,18 @@ from pymongo import MongoClient
 from datetime import datetime
 from config import settings
 from typing import List, Dict, Optional
+from motor.motor_asyncio import AsyncIOMotorClient
+import logging
+logger = logging.getLogger(__name__)
 
-# Database setup
-db_client = MongoClient(settings.DATA_URI)
-db = db_client[settings.DATA_NAME]
+# Then add logging at key points like:
+logger.info(f"User {user_id} started sequence")
+logger.error(f"Error sending file: {e}")
+# Database setup with motor for async MongoDB
+mongo_client = AsyncIOMotorClient(settings.DATA_URI)
+db = mongo_client[settings.DATA_NAME]
 users_collection = db["users_sequence"]
-sequence_collection = db["active_sequences"]  # Simplified collection name
+sequence_collection = db["active_sequences"]
 
 # Patterns for extracting episode numbers
 patterns = [
@@ -34,9 +40,9 @@ def extract_episode_number(filename: str) -> int:
             return int(match.groups()[-1])
     return float('inf')  # Default for files without episode numbers
 
-def is_in_sequence_mode(user_id: int) -> bool:
+async def is_in_sequence_mode(user_id: int) -> bool:
     """Check if user is in sequence mode"""
-    return sequence_collection.find_one({"user_id": user_id}) is not None
+    return await sequence_collection.find_one({"user_id": user_id}) is not None
 
 async def get_user_sequence_count(user_id: int) -> int:
     """Get user's total sequenced files count"""
@@ -52,179 +58,149 @@ async def increment_user_sequence_count(user_id: int, username: str, count: int 
         upsert=True
     )
 
+# In sequence.py
 async def get_files_sequenced_leaderboard(limit: int = 10) -> List[Dict]:
     """Get the files sequenced leaderboard"""
     cursor = users_collection.find().sort("files_sequenced", -1).limit(limit)
-    return [
-        {
-            "_id": str(user["_id"]),
-            "user_id": user["user_id"],
+    leaderboard = []
+    
+    async for user in cursor:
+        leaderboard.append({
+            "_id": user["user_id"],  # Use user_id directly instead of MongoDB _id
             "username": user.get("username", f"User {user['user_id']}"),
             "files_sequenced": user.get("files_sequenced", 0)
-        }
-        async for user in cursor
-    ]
-
+        })
+    
+    return leaderboard
 @Client.on_message(filters.private & filters.command("startsequence"))
 async def start_sequence(client: Client, message: Message):
     user_id = message.from_user.id
+    username = message.from_user.first_name
     
-    # Check if already in sequence mode
-    if is_in_sequence_mode(user_id):
-        await message.reply_text("⚠️ Sequence mode is already active. Send your files or use /endsequence.")
+    if await is_in_sequence_mode(user_id):
+        await message.reply("⚠️ You already have an active sequence. Use /endsequence first.")
         return
         
-    # Create new sequence entry
-    sequence_collection.insert_one({
+    await sequence_collection.insert_one({
         "user_id": user_id,
+        "username": username,
         "files": [],
         "started_at": datetime.now(),
-        "username": message.from_user.first_name
+        "updated_at": datetime.now()
     })
     
-    await message.reply_text(
-        "✅ Sequence mode started! Send your files now.\n\n"
-        "ℹ️ You can use:\n"
+    await message.reply(
+        "📦 Sequence mode activated!\n\n"
+        "Now send me the files you want to sequence.\n\n"
+        "Commands:\n"
         "/showsequence - View current files\n"
-        "/cancelsequence - Cancel the sequence\n"
-        "/endsequence - Send all files in order"
+        "/endsequence - Send all files in order\n"
+        "/cancelsequence - Cancel the sequence"
     )
+
 
 @Client.on_message(filters.private & filters.command("endsequence"))
 async def end_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
     
-    # Get sequence data
-    sequence_data = sequence_collection.find_one({"user_id": user_id})
-    
-    if not sequence_data or not sequence_data.get("files"):
-        await message.reply_text("❌ No files in sequence!")
+    sequence = await sequence_collection.find_one({"user_id": user_id})
+    if not sequence or not sequence.get("files"):
+        await message.reply("❌ No files in sequence!")
         return
     
-    # Get files and sort them
-    files = sequence_data.get("files", [])
+    files = sequence["files"]
     sorted_files = sorted(files, key=lambda x: extract_episode_number(x["filename"]))
-    total = len(sorted_files)
     
-    # Send progress message
-    progress = await message.reply_text(f"⏳ Processing and sorting {total} files...")
+    progress = await message.reply(f"⏳ Sending {len(sorted_files)} files in order...")
     
-    sent_count = 0
+    success = 0
     errors = []
     
-    # Send files in sequence
-    for i, file in enumerate(sorted_files, 1):
+    for file in sorted_files:
         try:
             await client.copy_message(
-                chat_id=message.chat.id, 
-                from_chat_id=file["chat_id"], 
+                chat_id=message.chat.id,
+                from_chat_id=file["chat_id"],
                 message_id=file["msg_id"]
             )
-            sent_count += 1
-            
-            # Update progress every 5 files
-            if i % 5 == 0:
-                await progress.edit_text(f"📤 Sent {i}/{total} files...")
-            
-            await asyncio.sleep(0.5)  # Add delay to prevent flooding
+            success += 1
+            await asyncio.sleep(1)  # Rate limiting
         except Exception as e:
             errors.append(f"{file['filename']}: {str(e)}")
-            continue
     
-    # Update user stats
-    if sent_count > 0:
-        await increment_user_sequence_count(user_id, username, sent_count)
+    # Update stats
+    if success > 0:
+        await increment_user_sequence_count(user_id, username, success)
     
-    # Remove sequence data
-    sequence_collection.delete_one({"user_id": user_id})
+    # Clean up
+    await sequence_collection.delete_one({"user_id": user_id})
     
-    # Prepare result message
-    result_msg = f"✅ Successfully sent {sent_count}/{total} files in sequence!"
+    # Send result
+    result = f"✅ Successfully sent {success}/{len(sorted_files)} files!"
     if errors:
-        error_list = "\n".join(errors[:3])  # Show first 3 errors
+        result += "\n\nErrors:\n" + "\n".join(errors[:3])
         if len(errors) > 3:
-            error_list += f"\n...and {len(errors) - 3} more errors"
-        result_msg += f"\n\n❌ Errors:\n{error_list}"
+            result += f"\n...and {len(errors)-3} more"
     
-    await progress.edit_text(result_msg)
+    await progress.edit_text(result)
 
-@Client.on_message(filters.private & (filters.document | filters.video | filters.audio), group=0)
-async def sequence_file_handler(client: Client, message: Message):
+@Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def handle_sequence_file(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # Check if user is in sequence mode
-    if not is_in_sequence_mode(user_id):
+    if not await is_in_sequence_mode(user_id):
         return
     
-    # Get file name based on media type
+    # Get filename based on media type
     if message.document:
-        file_name = message.document.file_name
+        filename = message.document.file_name
     elif message.video:
-        file_name = message.video.file_name or "video"
+        filename = message.video.file_name or "video.mp4"
     elif message.audio:
-        file_name = message.audio.file_name or "audio"
+        filename = message.audio.file_name or "audio.mp3"
     else:
-        file_name = "Unknown"
+        filename = "file"
     
-    # Store file information
-    file_info = {
-        "filename": file_name,
-        "msg_id": message.id,
-        "chat_id": message.chat.id,
-        "added_at": datetime.now()
-    }
-    
-    # Add to sequence collection
-    sequence_collection.update_one(
+    # Add to sequence
+    await sequence_collection.update_one(
         {"user_id": user_id},
-        {"$push": {"files": file_info}},
-        upsert=True
+        {"$push": {"files": {
+            "filename": filename,
+            "msg_id": message.id,
+            "chat_id": message.chat.id,
+            "added_at": datetime.now()
+        }},
+         "$set": {"updated_at": datetime.now()}}
     )
     
-    # Set flag to indicate this is for sequence
-    message.stop_propagation()
-    
-    await message.reply_text(f"📂 Added to sequence: {file_name}")
+    await message.reply(f"➕ Added to sequence: {filename}")
 
 @Client.on_message(filters.private & filters.command("cancelsequence"))
 async def cancel_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # Remove sequence data
-    result = sequence_collection.delete_one({"user_id": user_id})
-    
+    result = await sequence_collection.delete_one({"user_id": user_id})
     if result.deleted_count > 0:
-        await message.reply_text("❌ Sequence mode cancelled. All queued files have been cleared.")
+        await message.reply("🗑 Sequence cancelled and cleared!")
     else:
-        await message.reply_text("❓ No active sequence found to cancel.")
-
+        await message.reply("No active sequence to cancel.")
 @Client.on_message(filters.private & filters.command("showsequence"))
 async def show_sequence(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # Get sequence data
-    sequence_data = sequence_collection.find_one({"user_id": user_id})
-    
-    if not sequence_data or not sequence_data.get("files"):
-        await message.reply_text("No files in current sequence.")
+    sequence = await sequence_collection.find_one({"user_id": user_id})
+    if not sequence or not sequence.get("files"):
+        await message.reply("No files in sequence!")
         return
     
-    files = sequence_data.get("files", [])
-    sorted_files = sorted(files, key=lambda x: extract_episode_number(x["filename"]))
+    files = sorted(sequence["files"], key=lambda x: extract_episode_number(x["filename"]))
     
-    file_list = "\n".join([
-        f"{i}. {file['filename']}" 
-        for i, file in enumerate(sorted_files, 1)
-    ])
-    
+    file_list = "\n".join(f"{i}. {f['filename']}" for i, f in enumerate(files, 1))
     if len(file_list) > 4000:
-        file_list = file_list[:3900] + "\n\n... (list truncated)"
+        file_list = file_list[:3900] + "\n... (truncated)"
     
-    await message.reply_text(
-        f"**Current Sequence Files ({len(files)}):**\n\n{file_list}"
-    )
-
+    await message.reply(f"📋 Current sequence ({len(files)} files):\n\n{file_list}")
 @Client.on_message(filters.private & filters.command("sequencestats"))
 async def sequence_stats(client: Client, message: Message):
     user_id = message.from_user.id
