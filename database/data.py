@@ -336,12 +336,12 @@ class Database:
             upsert=True
         )
     
-    async def get_sequence_leaderboard(self, limit: int = 10) -> List[Dict]:
-        """Get the files sequenced leaderboard"""
+    async def get_files_sequenced_leaderboard(self, limit: int = 10) -> List[Dict]:
+        """Get leaderboard of users with most sequenced files"""
         leaderboard = []
         async for user in self.users_sequence.find().sort("files_sequenced", -1).limit(limit):
             leaderboard.append({
-                "user_id": user["_id"],
+                "_id": user["_id"],
                 "username": user.get("username", f"User {user['_id']}"),
                 "files_sequenced": user.get("files_sequenced", 0)
             })
