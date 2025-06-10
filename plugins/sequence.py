@@ -1,67 +1,100 @@
-import asyncio
+
 import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from datetime import datetime
 from database.data import hyoshcoder
+import asyncio
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 @Client.on_message(filters.private & filters.command("startsequence"))
 async def start_sequence(client: Client, message: Message):
-    user_id = message.from_user.id
-    username = message.from_user.first_name
-    
-    # Check if already in sequence mode
-    if await hyoshcoder.is_in_sequence_mode(user_id):
-        await message.reply("⚠️ You already have an active sequence. Use /endsequence first.")
-        return
+    try:
+        user_id = message.from_user.id
+        username = message.from_user.first_name
         
-    # Initialize sequence
-    if await hyoshcoder.start_sequence(user_id, username):
-        logger.info(f"User {user_id} started sequence")
-        await message.reply(
-            "📦 Sequence mode activated!\n\n"
-            "Now send me the files you want to sequence.\n\n"
-            "Commands:\n"
-            "/showsequence - View current files\n"
-            "/endsequence - Send all files in order\n"
-            "/cancelsequence - Cancel the sequence"
-        )
-    else:
-        await message.reply("❌ Failed to start sequence. Please try again.")
+        # Debug: Check if user exists
+        if not await hyoshcoder.is_user_exist(user_id):
+            await hyoshcoder.add_user(user_id)
+            logger.info(f"Created new user {user_id} for sequence")
+
+        # Check for existing sequence
+        existing = await hyoshcoder.sequences.find_one({"user_id": user_id})
+        if existing:
+            await message.reply("⚠️ You already have an active sequence. Use /endsequence first.")
+            return
+
+        # Create new sequence
+        sequence_data = {
+            "user_id": user_id,
+            "username": username,
+            "files": [],
+            "started_at": datetime.now(),
+            "updated_at": datetime.now()
+        }
+        
+        result = await hyoshcoder.sequences.insert_one(sequence_data)
+        if result.inserted_id:
+            logger.info(f"Started sequence for {user_id}")
+            await message.reply(
+                "📦 Sequence mode activated!\n\n"
+                "Now send me files to add to your sequence.\n\n"
+                "Commands:\n"
+                "/showsequence - View current files\n"
+                "/endsequence - Send all files\n"
+                "/cancelsequence - Cancel sequence"
+            )
+        else:
+            await message.reply("❌ Failed to start sequence. Please try again.")
+            
+    except Exception as e:
+        logger.error(f"Error in start_sequence: {e}", exc_info=True)
+        await message.reply("⚠️ An error occurred. Please try again.")
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def handle_sequence_file(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    # Check if in sequence mode
-    if not await hyoshcoder.is_in_sequence_mode(user_id):
-        return
-    
-    # Get filename
-    if message.document:
-        filename = message.document.file_name
-    elif message.video:
-        filename = message.video.file_name or "video.mp4"
-    elif message.audio:
-        filename = message.audio.file_name or "audio.mp3"
-    else:
-        filename = "file"
-    
-    # Add to sequence
-    file_data = {
-        "filename": filename,
-        "msg_id": message.id,
-        "chat_id": message.chat.id,
-        "added_at": datetime.now()
-    }
-    
-    if await hyoshcoder.add_file_to_sequence(user_id, file_data):
-        await message.reply(f"➕ Added to sequence: {filename}")
-    else:
-        await message.reply("❌ Failed to add file to sequence")
+    try:
+        user_id = message.from_user.id
+        
+        # Check if user has active sequence
+        sequence = await hyoshcoder.sequences.find_one({"user_id": user_id})
+        if not sequence:
+            return
+
+        # Get filename
+        if message.document:
+            filename = message.document.file_name
+        elif message.video:
+            filename = message.video.file_name or "video.mp4"
+        elif message.audio:
+            filename = message.audio.file_name or "audio.mp3"
+        else:
+            filename = "file"
+
+        file_data = {
+            "filename": filename,
+            "msg_id": message.id,
+            "chat_id": message.chat.id,
+            "added_at": datetime.now()
+        }
+
+        # Add to sequence
+        result = await hyoshcoder.sequences.update_one(
+            {"user_id": user_id},
+            {
+                "$push": {"files": file_data},
+                "$set": {"updated_at": datetime.now()}
+            }
+        )
+
+        if result.modified_count > 0:
+            await message.reply(f"➕ Added to sequence: {filename}")
+        else:
+            await message.reply("❌ Failed to add file to sequence")
+
+    except Exception as e:
+        logger.error(f"Error adding file to sequence: {e}", exc_info=True)
 
 @Client.on_message(filters.private & filters.command("endsequence"))
 async def end_sequence(client: Client, message: Message):
