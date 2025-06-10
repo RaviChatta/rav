@@ -316,25 +316,48 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     'photo': img
                 }
 
+        # In callback.py - Update the freepoints section
         elif data == "freepoints":
             me = await client.get_me()
+            me_username = me.username
             unique_code = str(uuid.uuid4())[:8]
-            invite_link = f"https://t.me/{me.username}?start=refer_{user_id}"
-            points_link = f"https://t.me/{me.username}?start=adds_{unique_code}"
+            telegram_link = f"https://t.me/{me_username}?start=adds_{unique_code}"
+            invite_link = f"https://t.me/{me_username}?start=refer_{user_id}"
             
-            if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
-                try:
-                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, points_link)
-                except Exception as e:
-                    logger.error(f"Shortlink error: {e}")
-                    shortlink = points_link
-            else:
-                shortlink = points_link
+            try:
+                if settings.SHORTED_LINK and settings.SHORTED_LINK_API:
+                    shortlink = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, telegram_link)
+                else:
+                    shortlink = telegram_link
+            except Exception as e:
+                logger.error(f"Shortlink error: {e}")
+                shortlink = telegram_link
+        
+            point_map = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+            points = random.choice(point_map)
             
-            points = random.randint(5, 20)
+            # Save the points offer
             await hyoshcoder.set_expend_points(user_id, points, unique_code)
             
-            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(SHARE_MESSAGE.format(invite_link=invite_link))}"
+            share_msg = (
+                "I just discovered this amazing bot! 🚀\n"
+                f"Join me using this link: {invite_link}\n"
+                "Automatically rename files with this bot!\n"
+                "FEATURES:\n"
+                "- Auto-rename files\n"
+                "- Add custom metadata\n"
+                "- Choose your filename\n"
+                "- Choose your album name\n"
+                "- Choose your artist name\n"
+                "- Choose your genre\n"
+                "- Choose your movie year\n"
+                "- Add custom thumbnails\n"
+                "- Link a channel to send your videos\n"
+                "And much more!\n"
+                "You can earn points by signing up and using the bot!"
+            )
+            
+            share_msg_encoded = f"https://t.me/share/url?url={quote(invite_link)}&text={quote(share_msg)}"
             
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
@@ -343,20 +366,46 @@ async def cb_handler(client: Client, query: CallbackQuery):
             ])
             
             caption = (
-                "**✨ Free Points System**\n\n"
-                "Earn points by helping grow our community:\n\n"
-                f"🔹 **Share Bot**: Get 10 points per referral\n"
-                f"🔹 **Watch Ads**: Earn 5-20 points per ad\n"
-                f"⭐ **Premium Bonus**: 2x points multiplier\n\n"
-                f"🎁 You can earn up to {points} points right now!"
+                "**Free Points**\n\n"
+                "You can earn points by:\n"
+                f"1. Sharing the bot - Earn 10 points per referral\n"
+                f"2. Watching ads - Earn {points} points now!\n\n"
+                "Premium users get 2x points!"
             )
             
-            response = {
-                'caption': caption,
-                'reply_markup': btn,
-                'photo': img
-            }
-
+            # Edit the existing message instead of sending new one
+            try:
+                if query.message.animation:
+                    await query.message.edit_media(
+                        media=InputMediaAnimation(
+                            media=await get_random_animation(),
+                            caption=caption
+                        ),
+                        reply_markup=btn
+                    )
+                elif query.message.photo:
+                    await query.message.edit_media(
+                        media=InputMediaPhoto(
+                            media=await get_random_photo(),
+                            caption=caption
+                        ),
+                        reply_markup=btn
+                    )
+                else:
+                    await query.message.edit_text(
+                        text=caption,
+                        reply_markup=btn,
+                        disable_web_page_preview=True
+                    )
+            except Exception as e:
+                logger.error(f"Error editing freepoints message: {e}")
+                # Fallback to sending new message if edit fails
+                await client.send_message(
+                    chat_id=query.message.chat.id,
+                    text=caption,
+                    reply_markup=btn,
+                    disable_web_page_preview=True
+                )
         elif data in ["meta", "metadata_0", "metadata_1"]:
             if data.startswith("metadata_"):
                 await hyoshcoder.set_metadata(user_id, data.endswith("_1"))
