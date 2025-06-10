@@ -77,41 +77,49 @@ async def command_handler(client: Client, message: Message):
             # Handle referral and campaign links
             if args:
                 # Handle referral first
+                # In the start command section - Update the refer_ handling:
                 if args[0].startswith("refer_"):
                     referrer_id = int(args[0].replace("refer_", ""))
                     reward = 10
-                    ref = await hyoshcoder.is_refferer(user_id)
-                    if ref:
+                    
+                    # Prevent self-referral
+                    if referrer_id == user_id:
                         return
-                    if referrer_id != user_id:
-                        referrer = await hyoshcoder.read_user(referrer_id)
-            
-                        if referrer:
-                            await hyoshcoder.set_referrer(user_id, referrer_id)
-                            await hyoshcoder.add_points(referrer_id, reward)
-                            cap = f"🎉 {message.from_user.mention} joined the bot through your referral! You received {reward} points."
-                            await client.send_message(
-                                chat_id=referrer_id,
-                                text=cap
-                            )
+                        
+                    # Check if already referred by someone
+                    existing_ref = await hyoshcoder.get_referrer(user_id)
+                    if existing_ref:
+                        return
+                        
+                    # Check referrer exists
+                    referrer = await hyoshcoder.read_user(referrer_id)
+                    if not referrer:
+                        return
+                        
+                    # Process referral
+                    await hyoshcoder.set_referrer(user_id, referrer_id)
+                    await hyoshcoder.add_points(referrer_id, reward)
+                    
+                    # Notify referrer
+                    await client.send_message(
+                        chat_id=referrer_id,
+                        text=f"🎉 {message.from_user.mention} joined using your referral! "
+                             f"You earned {reward} points!"
+                    )
             
                 # Then handle campaign
+                # In the start command section - Update the adds_ handling:
                 elif args[0].startswith("adds_"):
                     unique_code = args[0].replace("adds_", "")
-                    user = await hyoshcoder.get_user_by_code(unique_code)
-            
-                    if not user:
-                        await message.reply("❌ The link is invalid or already used.")
+                    result = await hyoshcoder.claim_points_offer(unique_code, user_id)
+                    
+                    if not result["success"]:
+                        await message.reply(f"❌ {result['error']}")
                         return
-            
-                    reward = await hyoshcoder.get_expend_points(user["_id"])
-                    await hyoshcoder.add_points(user["_id"], reward)
-                    await hyoshcoder.set_expend_points(user["_id"], 0, None)
-            
-                    cap = f"🎉 You earned {reward} points!"
-                    await client.send_message(
-                        chat_id=user["_id"],
-                        text=cap
+                    
+                    await message.reply(
+                        f"🎉 You earned {result['points']} points!\n"
+                        "Thanks for supporting the bot!"
                     )
             
                 # Handle points link redemption
