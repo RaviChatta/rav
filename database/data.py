@@ -890,30 +890,30 @@ class Database:
     
   
     async def set_expend_points(self, user_id: int, points: int, code: Optional[str] = None) -> Dict:
-    try:
-        if not code:
-            code = str(uuid.uuid4())[:8]
-
-        await self.users.update_one(
-            {"_id": user_id},
-            {"$set": {
-                "unique_code": code,
-                "expend_points": points,
-                "code_used": False,
-                "expires_at": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-            }}
-        )
-        return {
-            "success": True,
-            "code": code,
-            "points": points
-        }
-    except Exception as e:
-        logger.error(f"Error setting expend points: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        try:
+            if not code:
+                code = str(uuid.uuid4())[:8]
+    
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": {
+                    "unique_code": code,
+                    "expend_points": points,
+                    "code_used": False,
+                    "expires_at": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                }}
+            )
+            return {
+                "success": True,
+                "code": code,
+                "points": points
+            }
+        except Exception as e:
+            logger.error(f"Error setting expend points: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
 
     # --- Update all leaderboards ---
