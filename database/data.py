@@ -804,51 +804,33 @@ class Database:
     
   
     async def set_expend_points(self, user_id: int, points: int, code: str = None) -> Dict:
-        """
-        Track points expenditure and create claimable reward
-        
-        Args:
-            user_id: User ID creating the reward link
-            points: Points amount to reward
-            code: Unique code for claiming (auto-generated if None)
-        
-        Returns:
-            Dict: {
-                'success': bool,
-                'code': str (if successful),
-                'error': str (if failed)
-            }
-        """
+        """Track points expenditure and create claimable reward"""
         try:
-            # Validate user exists
-            if not await self.is_user_exist(user_id):
-                return {'success': False, 'error': 'User does not exist'}
-
-            # Generate code if not provided
             if not code:
-                code = secrets.token_urlsafe(8)
-
-            # Record the expenditure
-            result = await self.transactions.insert_one({
+                code = str(uuid.uuid4())[:8]
+                
+            # Store the reward in the database
+            result = await self.rewards.insert_one({
                 "user_id": user_id,
-                "type": "points_expenditure",
-                "amount": points,
+                "points": points,
                 "code": code,
-                "status": "pending",
                 "created_at": datetime.datetime.now(),
-                "claimed_by": [],
-                "expires_at": datetime.datetime.now() + datetime.timedelta(hours=24)
+                "expires_at": datetime.datetime.now() + datetime.timedelta(hours=24),
+                "claimed": False,
+                "claimed_by": None
             })
-
-            if not result.inserted_id:
-                return {'success': False, 'error': 'Failed to record transaction'}
-
-            return {'success': True, 'code': code}
-
+            
+            return {
+                "success": True,
+                "code": code,
+                "points": points
+            }
         except Exception as e:
             logger.error(f"Error setting expend points: {e}")
-            return {'success': False, 'error': str(e)}
-
+            return {
+                "success": False,
+                "error": str(e)
+            }
   
 
     async def update_leaderboards(self):
