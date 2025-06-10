@@ -111,6 +111,9 @@ class Database:
             ("file_stats", [("user_id", 1)]),
             ("file_stats", [("date", 1)]),
             ("file_stats", [("timestamp", -1)]),
+            # Add to _create_indexes method in data.py
+            ("active_sequences", [("user_id", 1)]),
+            ("users_sequence", [("files_sequenced", -1)]),
 
             # Config (unchanged)
             ("config", [("key", 1)], {"unique": True})
