@@ -261,7 +261,31 @@ class Database:
             logger.error(f"Error getting user {id}: {e}")
             return None
 
-
+    async def verify_shortlink_click(self, user_id: int, link_type: str) -> bool:
+        """Verify shortlink click and reward user"""
+        try:
+            points = 5  # Points to reward per click
+            
+            # Add points to user
+            await self.add_points(
+                user_id, 
+                points, 
+                source="shortlink", 
+                description=f"{link_type} link click"
+            )
+            
+            # Track in database
+            await self.rewards.insert_one({
+                "user_id": user_id,
+                "type": link_type,
+                "points": points,
+                "timestamp": datetime.datetime.now()
+            })
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error verifying shortlink: {e}")
+            return False
     # Add these patterns as a class variable
     EPISODE_PATTERNS = [
         re.compile(r'\b(?:EP|E)\s*-\s*(\d{1,3})\b', re.IGNORECASE),
