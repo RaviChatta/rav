@@ -275,6 +275,9 @@ async def command_handler(client: Client, message: Message):
             # Store the expend points with the unique code
             await hyoshcoder.set_expend_points(user_id, points, unique_code)
             
+            # Verify and reward for link clicks
+            await hyoshcoder.verify_shortlink_click(user_id, "referral")
+            
             # Create share message
             share_msg = (
                 "I just discovered this amazing bot! 🚀\n"
