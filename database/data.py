@@ -57,6 +57,8 @@ class Database:
             self.db = self._client[self._database_name]
             self.users = self.db.users
             self.premium_codes = self.db.premium_codes
+            self.sequences = self.db["active_sequences"]
+            self.users_sequence = self.db["users_sequence"]
             self.transactions = self.db.transactions
             self.rewards = self.db.rewards
             self.leaderboards = self.db.leaderboards
@@ -258,31 +260,91 @@ class Database:
             logger.error(f"Error getting user {id}: {e}")
             return None
 
-    async def create_campaign(self, owner_id: int, name: str, points_per_view: int, total_views: int) -> str:
-        """Create a new ad campaign with proper datetime handling"""
-        try:
-            campaign_id = str(uuid.uuid4())
-            code = str(uuid.uuid4())[:8]
-            
-            campaign = {
-                "_id": campaign_id,
-                "owner_id": owner_id,
-                "name": name,
-                "points_per_view": points_per_view,
-                "total_views": total_views,
-                "used_views": 0,
-                "created_at": datetime.datetime.now(pytz.UTC),
-                "expires_at": datetime.datetime.now(pytz.UTC) + timedelta(days=7),
-                "code": code,
-                "active": True
-            }
-            
-            await self.campaigns.insert_one(campaign)
-            return code
-        except Exception as e:
-            logger.error(f"Error creating campaign: {e}")
-            raise
 
+    # Add these patterns as a class variable
+    EPISODE_PATTERNS = [
+        re.compile(r'\b(?:EP|E)\s*-\s*(\d{1,3})\b', re.IGNORECASE),
+        re.compile(r'\b(?:EP|E)\s*(\d{1,3})\b', re.IGNORECASE),
+        re.compile(r'S(\d+)(?:E|EP)(\d+)', re.IGNORECASE),
+        re.compile(r'S(\d+)\s*(?:E|EP|-\s*EP)\s*(\d+)', re.IGNORECASE),
+        re.compile(r'(?:[([<{]?\s*(?:E|EP)\s*(\d+)\s*[)\]>}]?)', re.IGNORECASE),
+        re.compile(r'(?:EP|E)?\s*[-]?\s*(\d{1,3})', re.IGNORECASE),
+        re.compile(r'S(\d+)[^\d]*(\d+)', re.IGNORECASE),
+        re.compile(r'(\d+)')
+    ]
+    
+    # Add these methods to your Database class
+    def _extract_episode_number(self, filename: str) -> int:
+        """Extract episode number from filename for sorting"""
+        for pattern in self.EPISODE_PATTERNS:
+            match = pattern.search(filename)
+            if match:
+                return int(match.groups()[-1])
+        return float('inf')
+    
+    async def is_in_sequence_mode(self, user_id: int) -> bool:
+        """Check if user is in sequence mode"""
+        return await self.sequences.find_one({"user_id": user_id}) is not None
+    
+    async def start_sequence(self, user_id: int, username: str) -> bool:
+        """Start a new sequence for user"""
+        if await self.is_in_sequence_mode(user_id):
+            return False
+            
+        await self.sequences.insert_one({
+            "user_id": user_id,
+            "username": username,
+            "files": [],
+            "started_at": datetime.datetime.now(),
+            "updated_at": datetime.datetime.now()
+        })
+        return True
+    
+    async def add_file_to_sequence(self, user_id: int, file_data: Dict) -> bool:
+        """Add a file to user's sequence"""
+        result = await self.sequences.update_one(
+            {"user_id": user_id},
+            {"$push": {"files": file_data},
+             "$set": {"updated_at": datetime.datetime.now()}}
+        )
+        return result.modified_count > 0
+    
+    async def get_sequence_files(self, user_id: int) -> Optional[List[Dict]]:
+        """Get all files in user's sequence"""
+        sequence = await self.sequences.find_one({"user_id": user_id})
+        if sequence:
+            return sorted(sequence.get("files", []), key=lambda x: self._extract_episode_number(x["filename"]))
+        return None
+    
+    async def end_sequence(self, user_id: int) -> bool:
+        """Delete user's sequence"""
+        result = await self.sequences.delete_one({"user_id": user_id})
+        return result.deleted_count > 0
+    
+    async def increment_sequence_count(self, user_id: int, username: str, count: int = 1) -> None:
+        """Increment user's sequenced files count in leaderboard"""
+        await self.users_sequence.update_one(
+            {"_id": user_id},
+            {
+                "$inc": {"files_sequenced": count},
+                "$set": {
+                    "username": username,
+                    "last_active": datetime.datetime.now()
+                }
+            },
+            upsert=True
+        )
+    
+    async def get_sequence_leaderboard(self, limit: int = 10) -> List[Dict]:
+        """Get the files sequenced leaderboard"""
+        leaderboard = []
+        async for user in self.users_sequence.find().sort("files_sequenced", -1).limit(limit):
+            leaderboard.append({
+                "user_id": user["_id"],
+                "username": user.get("username", f"User {user['_id']}"),
+                "files_sequenced": user.get("files_sequenced", 0)
+            })
+        return leaderboard
 
 
     async def get_user_by_code(self, unique_code: str) -> Optional[Dict]:
