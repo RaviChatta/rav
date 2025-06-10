@@ -3,7 +3,7 @@ import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from datetime import datetime
-from database.data import hyoshcoder  # Fixed database reference
+from database.data import hyoshcoder
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -136,15 +136,19 @@ async def cancel_sequence(client: Client, message: Message):
 @Client.on_message(filters.private & filters.command("sequenceleaderboard"))
 async def sequence_leaderboard(client: Client, message: Message):
     """Show leaderboard of users with most sequenced files"""
-    leaderboard = await hyoshcoder.get_sequence_leaderboard(10)
-    
-    if not leaderboard:
-        await message.reply("No sequence data available yet!")
-        return
-    
-    text = "🏆 **Sequence Leaderboard** 🏆\n\n"
-    for i, user in enumerate(leaderboard, 1):
-        text += f"{i}. {user['username']} - {user['files_sequenced']} files\n"
-    
-    text += "\nUse /startsequence to start your own sequence!"
-    await message.reply(text)
+    try:
+        leaderboard = await hyoshcoder.get_sequence_leaderboard(10)
+        
+        if not leaderboard:
+            await message.reply("No sequence data available yet!")
+            return
+        
+        text = "🏆 **Sequence Leaderboard** �n\n"
+        for i, user in enumerate(leaderboard, 1):
+            text += f"{i}. {user['username']} - {user['files_sequenced']} files\n"
+        
+        text += "\nUse /startsequence to start your own sequence!"
+        await message.reply(text)
+    except Exception as e:
+        logger.error(f"Error showing sequence leaderboard: {e}")
+        await message.reply("⚠️ Failed to load sequence leaderboard. Please try again.")
