@@ -26,6 +26,7 @@ from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from os import makedirs, path as ospath
 import sys
 import os
+from config import settings
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 EMOJI = {
@@ -57,14 +58,14 @@ async def generate_point_link(client: Client, message: Message):
     user_id = message.from_user.id
     db = hyoshcoder
     
-    point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=Config.TOKEN_ID_LENGTH))
-    deep_link = f"https://t.me/{@Forwardmsgremoverbot}?start={point_id}"
+    point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
+    deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
     short_url = await get_shortlink(deep_link)
 
     if not short_url:
         return await message.reply("**Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ᴘᴏɪɴᴛ ʟɪɴᴋ. Tʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.**")
 
-    await db.create_point_link(user_id, point_id, Config.SHORTENER_TOKEN_GEN)
+    await db.create_point_link(user_id, point_id, settings.SHORTENER_TOKEN_GEN)
 
     await message.reply(
         f"**Gᴇᴛ 100 Pᴏɪɴᴛs**\n\n"
