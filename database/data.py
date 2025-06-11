@@ -64,7 +64,7 @@ class Database:
             self.rewards = self.db.rewards
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
-            self.referrals = db.referrals
+            self.referrals = self.db.referrals
             self.config = self.db.config
             self._is_connected = True
 
