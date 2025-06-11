@@ -965,27 +965,27 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to update leaderboards: {e}")
             return False
-
+    
     # --- General leaderboard updater for points ---
     async def update_leaderboard_period(self, period: str):
         try:
-            leaders = await self.get_leaderboard_data(period)
+            leaders = await self.get_leaderboard(period)
             await self.leaderboards.update_one(
                 {"period": period, "type": "points"},
-                {"$set": {"data": leaders, "updated_at": datetime.datetime.utcnow()}},
+                {"$set": {"data": leaders, "updated_at": datetime.utcnow()}},
                 upsert=True
             )
         except Exception as e:
             logger.error(f"Error updating {period} points leaderboard: {e}")
-
+    
     # --- Get points leaderboard data per period ---
-    async def get_leaderboard(self, period: str) -> List[Dict]:
+    async def get_leaderboard(self, period: str, limit: int = 10) -> List[Dict]:
         try:
             if period == "alltime":
                 pipeline = [
                     {"$match": {"ban_status.is_banned": False}},
                     {"$sort": {"points.balance": -1}},
-                    {"$limit": 10},
+                    {"$limit": limit},
                     {"$project": {
                         "_id": 1,
                         "username": 1,
@@ -995,14 +995,14 @@ class Database:
                 ]
             else:
                 days = 1 if period == "daily" else 7 if period == "weekly" else 30
-                start_date = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+                start_date = datetime.utcnow() - timedelta(days=days)
                 pipeline = [
                     {"$match": {
                         "activity.last_active": {"$gte": start_date},
                         "ban_status.is_banned": False
                     }},
                     {"$sort": {"points.balance": -1}},
-                    {"$limit": 10},
+                    {"$limit": limit},
                     {"$project": {
                         "_id": 1,
                         "username": 1,
@@ -1010,7 +1010,7 @@ class Database:
                         "is_premium": "$premium.is_premium"
                     }}
                 ]
-            return await self.users.aggregate(pipeline).to_list(length=10)
+            return await self.users.aggregate(pipeline).to_list(length=limit)
         except Exception as e:
             logger.error(f"Error getting {period} points leaderboard: {e}")
             return []
@@ -1021,9 +1021,9 @@ class Database:
             query = {}
             if period != "alltime":
                 days = 1 if period == "daily" else 7 if period == "weekly" else 30
-                start_date = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+                start_date = datetime.utcnow() - timedelta(days=days)
                 query["last_active"] = {"$gte": start_date}
-
+    
             cursor = self.users_sequence.find(query).sort("files_sequenced", -1).limit(limit)
             leaderboard = []
             async for user in cursor:
@@ -1031,20 +1031,20 @@ class Database:
                     "user_id": user["_id"],
                     "username": user.get("username", f"User {user['_id']}"),
                     "files_sequenced": user.get("files_sequenced", 0),
-                    "last_active": user.get("last_active", datetime.datetime.utcnow())
+                    "last_active": user.get("last_active", datetime.utcnow())
                 })
             return leaderboard
         except Exception as e:
             logger.error(f"Error getting {period} sequence leaderboard: {e}")
             return []
-
+    
     # --- Update sequence leaderboard ---
     async def update_sequence_leaderboard(self, period: str = "alltime"):
         try:
             leaders = await self.get_sequence_leaderboard(period, limit=10)
             await self.leaderboards.update_one(
                 {"type": "files", "period": period},
-                {"$set": {"data": leaders, "updated_at": datetime.datetime.utcnow()}},
+                {"$set": {"data": leaders, "updated_at": datetime.utcnow()}},
                 upsert=True
             )
             return True
