@@ -489,6 +489,8 @@ async def leaderboard_command(client: Client, message: Message):
         logger.error(f"Leaderboard command error: {e}")
         await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
 
+
+# Leaderboard UI Renderer
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery], lb_type: str = None):
     try:
         msg = message if isinstance(message, Message) else message.message
@@ -496,17 +498,25 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         period = await hyoshcoder.get_leaderboard_period(user_id)
         lb_type = lb_type or await hyoshcoder.get_leaderboard_type(user_id)
 
+        leaders = []
         if lb_type == "files":
-            leaders = await hyoshcoder.get_sequence_leaderboard(period, limit=10)
+            raw = await hyoshcoder.get_sequence_leaderboard(period, limit=10)
             leaders = [{
                 '_id': str(user['user_id']),
-                'username': user['username'],
-                'value': user['files_sequenced'],
+                'username': user.get('username'),
+                'value': user.get('files_sequenced', 0),
                 'rank': idx + 1,
                 'is_premium': user.get('is_premium', False)
-            } for idx, user in enumerate(leaders)]
+            } for idx, user in enumerate(raw)]
         elif lb_type == "renames":
-            leaders = await hyoshcoder.get_renames_leaderboard(period, limit=10)
+            raw = await hyoshcoder.get_renames_leaderboard(period, limit=10)
+            leaders = [{
+                '_id': str(user['user_id']),
+                'username': user.get('username'),
+                'value': user.get('renames', 0),
+                'rank': idx + 1,
+                'is_premium': user.get('is_premium', False)
+            } for idx, user in enumerate(raw)]
         else:  # points
             raw = await hyoshcoder.get_leaderboard(period, limit=10)
             leaders = [{
@@ -517,16 +527,16 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
                 'is_premium': user.get('is_premium', False)
             } for idx, user in enumerate(raw)]
 
-
         emoji = {"points": "⭐", "renames": "📁", "files": "🧬"}.get(lb_type, "🏆")
-        title = f"🏆 **{period.capitalize()} {lb_type.capitalize()} Leaderboard**\n\n"
+        period_display = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "alltime": "All-Time"}.get(period, period.capitalize())
+        title = f"🏆 **{period_display} {lb_type.capitalize()} Leaderboard**\n\n"
 
         if not leaders:
             body = "No data yet. Start using the bot to enter the leaderboard!"
         else:
             body = ""
             for user in leaders:
-                uname = user.get('username', f"User {user['_id']}")
+                uname = f"@{user['username']}" if user.get('username') else f"User `{user['_id']}`"
                 value = user['value']
                 line = f"**{user['rank']}.** {uname} — `{value}` {emoji}"
                 if user.get('is_premium'):
@@ -558,8 +568,10 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
     except Exception as e:
         logger.error(f"Error showing leaderboard UI: {e}")
         if isinstance(message, CallbackQuery):
-            await message.answer("Failed to load leaderboard", show_alert=True)
+            await message.answer("⚠️ Failed to load leaderboard.", show_alert=True)
 
+
+# Period Callback
 @Client.on_callback_query(filters.regex(r'^lb_period_'))
 async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
     try:
@@ -570,11 +582,13 @@ async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
             return
         await hyoshcoder.set_leaderboard_period(user_id, period)
         await show_leaderboard_ui(client, callback)
-        await callback.answer(f"Showing {period} leaderboard")
+        await callback.answer(f"Showing {period.capitalize()} leaderboard")
     except Exception as e:
-        await callback.answer("Failed to update period", show_alert=True)
         logger.error(f"Period callback error: {e}")
+        await callback.answer("Failed to update period", show_alert=True)
 
+
+# Type Callback
 @Client.on_callback_query(filters.regex(r'^lb_type_'))
 async def leaderboard_type_callback(client: Client, callback: CallbackQuery):
     try:
@@ -585,7 +599,7 @@ async def leaderboard_type_callback(client: Client, callback: CallbackQuery):
             return
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
         await show_leaderboard_ui(client, callback)
-        await callback.answer(f"Showing {lb_type} leaderboard")
+        await callback.answer(f"Showing {lb_type.capitalize()} leaderboard")
     except Exception as e:
-        await callback.answer("Failed to update type", show_alert=True)
         logger.error(f"Type callback error: {e}")
+        await callback.answer("Failed to update type", show_alert=True)
