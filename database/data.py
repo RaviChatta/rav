@@ -938,7 +938,7 @@ class Database:
                     "unique_code": code,
                     "expend_points": points,
                     "code_used": False,
-                    "expires_at": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                    "expires_at": datetime.utcnow() + datetime.timedelta(hours=24)
                 }}
             )
             return {
@@ -1055,9 +1055,9 @@ class Database:
     # --- Get renames leaderboard ---
     async def get_renames_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
         try:
-            now = datetime.datetime.utcnow()
+            now = datetime.utcnow()
             days = 1 if period == "daily" else 7 if period == "weekly" else 30
-            start_date = now - datetime.timedelta(days=days)
+            start_date = now - timedelta(days=days)
             pipeline = [
                 {"$match": {"timestamp": {"$gte": start_date}}},
                 {"$group": {
@@ -1101,17 +1101,17 @@ class Database:
 
                 await self.leaderboards.update_one(
                     {"period": period, "type": "points"},
-                    {"$set": {"data": points, "updated_at": datetime.datetime.utcnow()}},
+                    {"$set": {"data": points, "updated_at": datetime.utcnow()}},
                     upsert=True
                 )
                 await self.leaderboards.update_one(
                     {"period": period, "type": "renames"},
-                    {"$set": {"data": renames, "updated_at": datetime.datetime.utcnow()}},
+                    {"$set": {"data": renames, "updated_at": datetime.utcnow()}},
                     upsert=True
                 )
                 await self.leaderboards.update_one(
                     {"period": period, "type": "files"},
-                    {"$set": {"data": sequences, "updated_at": datetime.datetime.utcnow()}},
+                    {"$set": {"data": sequences, "updated_at": datetime.utcnow()}},
                     upsert=True
                 )
             logger.info("Successfully updated all leaderboard caches")
@@ -1124,7 +1124,7 @@ class Database:
     async def get_cached_leaderboard(self, period: str, lb_type: str) -> List[Dict]:
         try:
             cache = await self.leaderboards.find_one({"period": period, "type": lb_type})
-            if cache and (datetime.datetime.utcnow() - cache["updated_at"]).total_seconds() < 3600:
+            if cache and (datetime.utcnow() - cache["updated_at"]).total_seconds() < 3600:
                 return cache["data"]
 
             # Generate fresh
@@ -1139,7 +1139,7 @@ class Database:
 
             await self.leaderboards.update_one(
                 {"period": period, "type": lb_type},
-                {"$set": {"data": data, "updated_at": datetime.datetime.utcnow()}},
+                {"$set": {"data": data, "updated_at": datetime.utcnow()}},
                 upsert=True
             )
             return data
@@ -1237,7 +1237,7 @@ class Database:
         """Generate a points activity report for admins."""
         try:
             end_date = datetime.datetime.now()
-            start_date = end_date - datetime.timedelta(days=days)
+            start_date = end_date - timedelta(days=days)
 
             report = await self.transactions.aggregate([
                 {
@@ -1303,7 +1303,7 @@ class Database:
             logger.error(f"Error generating points report: {e}")
             return {
                 "period": {
-                    "start": (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat(),
+                    "start": (datetime.datetime.now() - timedelta(days=days)).isoformat(),
                     "end": datetime.datetime.now().isoformat()
                 },
                 "total_points_distributed": 0,
