@@ -214,19 +214,36 @@ async def get_random_animation() -> Optional[str]:
 async def get_shortlink(url: str, api: str, link: str, max_retries: int = 3) -> str:
     """
     Creates a shortlink with retry mechanism and fallback
+    
+    Args:
+        url: Base URL of the shortener service
+        api: API key for the shortener service
+        link: Original URL to be shortened
+        max_retries: Number of retry attempts
+        
+    Returns:
+        str: Shortened URL or original URL if shortening fails
     """
+    if not all([url, api, link]):
+        logger.warning("Missing required parameters for shortlink")
+        return link
+    
     shortzy = Shortzy(api_key=api, base_site=url)
     
     for attempt in range(max_retries):
         try:
             shortlink = await shortzy.convert(link)
-            return shortlink
+            if shortlink and shortlink.startswith(('http://', 'https://')):
+                logger.info(f"Successfully shortened URL (attempt {attempt + 1})")
+                return shortlink
+            logger.warning(f"Invalid shortlink format received: {shortlink}")
         except Exception as e:
             logger.warning(f"Shortlink attempt {attempt + 1} failed: {str(e)}")
-            if attempt == max_retries - 1:
-                logger.error("Falling back to original URL")
-                return link  # Fallback to original URL
-            await asyncio.sleep(1)  # Wait before retrying
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1)  # Exponential backoff could be used here
+    
+    logger.error("All shortlink attempts failed, falling back to original URL")
+    return link
 async def safe_edit_message(target: Union[Message, CallbackQuery], text: str, **kwargs):
     """Safely edit a message with error handling"""
     try:
