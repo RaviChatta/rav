@@ -55,30 +55,49 @@ async def auto_delete_message(message, delay):
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
+import random
+import string
+
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
-    user_id = message.from_user.id
-    db = hyoshcoder
+    try:
+        user_id = message.from_user.id
+        db = hyoshcoder  # Make sure this is properly defined elsewhere
+
+        # 1. Generate unique ID
+        point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
+
+        # 2. Create deep link (with start parameter)
+        deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
+        logging.info(f"Generated deep link: {deep_link}")
+
+        # 3. Shorten the link
+        short_url = await get_shortlink(
+            settings.SHORTED_LINK,
+            settings.SHORTED_LINK_API,
+            deep_link
+        )
+
+        # 4. Fallback check
+        if not short_url or "?" not in short_url:
+            logging.warning("Shortened URL may have lost query params.")
+            short_url = deep_link  # Fallback to full deep link
+
+        # 5. Save point link in DB
+        await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
+        logging.info(f"Point link created for user {user_id} with ID {point_id}.")
+
+        # 6. Reply to user
+        await message.reply(
+            f"**🎁 Gᴇᴛ {settings.SHORTENER_POINT_REWARD} Pᴏɪɴᴛs**\n\n"
+            f"**🔗 Cʟɪᴄᴋ ʙᴇʟᴏᴡ ʟɪɴᴋ ᴀɴᴅ ᴄᴏᴍᴘʟᴇᴛᴇ ᴛᴀsᴋs:**\n{short_url}\n\n"
+            "**🕒 Lɪɴᴋ ᴠᴀʟɪᴅ ғᴏʀ 24 ʜᴏᴜʀs | 🧬 Oɴᴇ-ᴛɪᴍᴇ ᴜsᴇ ᴏɴʟʏ**",
+            disable_web_page_preview=True
+        )
     
-    point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
-    deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-    short_url = await get_shortlink(
-        settings.SHORTED_LINK,
-        settings.SHORTED_LINK_API,
-        deep_link
-    )
-
-    if not short_url:
-        return await message.reply("**Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ᴘᴏɪɴᴛ ʟɪɴᴋ. Tʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.**")
-
-    await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-
-    await message.reply(
-        f"**Gᴇᴛ 100 Pᴏɪɴᴛs**\n\n"
-        f"**Cʟɪᴄᴋ ʙᴇʟᴏᴡ ʟɪɴᴋ ᴀɴᴅ ᴄᴏᴍᴘʟᴇᴛᴇ ᴛᴀsᴋs:**\n{short_url}\n\n"
-        "**Lɪɴᴋ ᴠᴀʟɪᴅ ғᴏʀ 24 ʜᴏᴜʀs | Oɴᴇ-ᴛɪᴍᴇ ᴜsᴇ ᴏɴʟʏ**",
-        disable_web_page_preview=True
-    )
+    except Exception as e:
+        logging.error(f"Error in generate_point_link: {str(e)}")
+        await message.reply("❌ An error occurred while generating the point link. Please try again later.")
 async def handle_point_redemption(client: Client, message: Message, point_id: str):
     user_id = message.from_user.id
 
