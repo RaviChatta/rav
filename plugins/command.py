@@ -2,7 +2,6 @@ import string
 import random
 import asyncio
 import secrets
-import logging
 import uuid
 from urllib.parse import quote
 from pyrogram import Client, filters
@@ -32,6 +31,9 @@ import sys
 import os
 from config import settings
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+import logging
+
+logger = logging.getLogger(__name__)
 
 EMOJI = {
     'error': '❌',
