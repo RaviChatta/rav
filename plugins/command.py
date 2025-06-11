@@ -368,31 +368,11 @@ async def command_handler(client: Client, message: Message):
             me = await client.get_me()
             me_username = me.username
             
-            # Generate unique code for the user
-            unique_code = str(uuid.uuid4())[:8]
-            
-            # Create two types of links
-            referral_link = f"https://t.me/{me_username}?start=refer_{user_id}"
-            ad_link = f"https://t.me/{me_username}?start=adds_{unique_code}"
-            
-            # Shorten both links
-            short_referral = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, referral_link)
-            short_ad_link = await get_shortlink(settings.SHORTED_LINK, settings.SHORTED_LINK_API, ad_link)
-            
-            # Random points between 5-20
-            points = random.randint(5, 20)
-            
-            # Store the expend points with the unique code
-            await hyoshcoder.set_expend_points(user_id, points, unique_code)
-            
-            # Verify and reward for link clicks
-            await hyoshcoder.verify_shortlink_click(user_id, "referral")
-            
             # Create share message
             share_msg = (
                 "I just discovered this amazing bot! 🚀\n"
                 "Automatically rename files with this bot!\n"
-                f"Join me using this link: {short_referral}\n\n"
+                f"Join me using this link: {refer_link}\n\n"
                 "FEATURES:\n"
                 "- Auto-rename files\n"
                 "- Add custom metadata\n"
@@ -400,11 +380,10 @@ async def command_handler(client: Client, message: Message):
                 "- Premium features available\n"
             )
             
-            share_msg_encoded = f"https://t.me/share/url?url={quote(short_referral)}&text={quote(share_msg)}"
             
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Bot", url=share_msg_encoded)],
-                [InlineKeyboardButton("💰 Watch Ad", url=short_ad_link)],
+                [InlineKeyboardButton("🔗 Share Bot", url=refer_link)],
+                [InlineKeyboardButton("💰 Watch Ad", url=short_url )],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
             
@@ -413,9 +392,9 @@ async def command_handler(client: Client, message: Message):
                 "Earn points by:\n"
                 "1. **Sharing** our bot with friends\n"
                 "2. **Watching** short ads\n\n"
-                f"🔗 Your referral link: `{short_referral}`\n"
-                f"📌 Your ad link: `{short_ad_link}`\n\n"
-                f"🎁 You'll earn {points} points for each successful action!\n\n"
+                f"🔗 Your referral link: `{refer_link}`\n"
+                f"📌 Your ad link: `{short_url }`\n\n"
+                f"🎁 You'll earn 100 points for each successful action!\n\n"
                 "Your points will be added automatically when someone uses your links."
             )
             
