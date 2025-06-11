@@ -153,38 +153,39 @@ async def cleanup_states():
 
 def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     periods = {
-        "daily": f"{EMOJI['clock']} Daily",
-        "weekly": f"📆 Weekly", 
-        "monthly": f"🗓 Monthly",
-        "alltime": f"{EMOJI['leaderboard']} All-Time"
+        "daily": "⏰ Daily",
+        "weekly": "📆 Weekly", 
+        "monthly": "🗓 Monthly",
+        "alltime": "🏅 All-Time"
     }
-    
+
     types = {
-        "points": f"{EMOJI['points']} Points",
-        "renames": f"{EMOJI['rename']} Files",
-        "referrals": f"{EMOJI['referral']} Referrals"
+        "points": "⭐ Points",
+        "renames": "📁 Files",
+        "files": "🧬 Sequences"
     }
-    
+
     period_buttons = [
         InlineKeyboardButton(
             f"• {text} •" if period == selected_period else text,
             callback_data=f"lb_period_{period}"
         ) for period, text in periods.items()
     ]
-    
+
     type_buttons = [
         InlineKeyboardButton(
             f"• {text} •" if lb_type == selected_type else text,
             callback_data=f"lb_type_{lb_type}"
         ) for lb_type, text in types.items()
     ]
-    
+
     return InlineKeyboardMarkup([
         period_buttons[:2],
         period_buttons[2:],
         type_buttons,
         [InlineKeyboardButton("🔙 Back", callback_data="help")]
     ])
+
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -272,8 +273,27 @@ async def cb_handler(client: Client, query: CallbackQuery):
             try:
                 period = await hyoshcoder.get_leaderboard_period(user_id)
                 lb_type = await hyoshcoder.get_leaderboard_type(user_id)
-                leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=20)
-                
+        
+                if lb_type == "files":
+                    leaders_raw = await hyoshcoder.get_sequence_leaderboard(period, limit=20)
+                    leaders = [{
+                        'username': user.get('username', f"User {user['user_id']}"),
+                        'value': user.get('files_sequenced', 0),
+                        'is_premium': user.get('is_premium', False)
+                    } for user in leaders_raw]
+                    emoji = "🧬"
+                elif lb_type == "renames":
+                    leaders = await hyoshcoder.get_renames_leaderboard(period, limit=20)
+                    emoji = "📁"
+                else:  # Default to points
+                    leaders_raw = await hyoshcoder.get_leaderboard(period, limit=20)
+                    leaders = [{
+                        'username': user.get('username', f"User {user['_id']}"),
+                        'value': user.get('points', 0),
+                        'is_premium': user.get('is_premium', False)
+                    } for user in leaders_raw]
+                    emoji = "⭐"
+        
                 if not leaders:
                     response = {
                         'caption': "📭 No leaderboard data available yet",
@@ -288,24 +308,25 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         "weekly": "Weekly",
                         "monthly": "Monthly",
                         "alltime": "All-Time"
-                    }[period]
-                    
-                    type_name = {
-                        "points": f"{EMOJI['points']} Points",
-                        "renames": f"{EMOJI['rename']} Files Renamed",
-                        "referrals": f"{EMOJI['referral']} Referrals"
+                    }.get(period, period.capitalize())
+        
+                    type_title = {
+                        "points": f"{emoji} Points",
+                        "renames": f"{emoji} Files Renamed",
+                        "files": f"{emoji} Files Sequenced"
                     }[lb_type]
-                    
-                    text = f"🏆 {period_name} Leaderboard - {type_name}\n\n"
+        
+                    text = f"🏆 **{period_name} Leaderboard - {type_title}**\n\n"
                     for i, user in enumerate(leaders, 1):
-                        username = user.get('username', f"User {user['_id']}")
-                        text += f"{i}. {username} - {user['value']} {'⭐' if user.get('is_premium') else ''}\n"
-                    
+                        premium_tag = " 💎" if user.get("is_premium") else ""
+                        text += f"**{i}.** {user['username']} — `{user['value']}` {emoji}{premium_tag}\n"
+        
                     response = {
                         'caption': text,
                         'reply_markup': get_leaderboard_keyboard(period, lb_type),
                         'photo': img
                     }
+        
             except Exception as e:
                 logger.error(f"Error in leaderboard handler: {e}")
                 response = {
