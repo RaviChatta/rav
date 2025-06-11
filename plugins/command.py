@@ -110,7 +110,30 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
     except Exception as e:
         logging.error(f"Error during point redemption: {e}")
         await message.reply("**Aɴ ᴇʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.**")
+@Client.on_message(filters.command("refer") & filters.private)
+async def refer(client, message):
+    user_id = message.from_user.id
+    user = await hyoshcoder.col.find_one({"_id": user_id})
 
+    if not user or not user.get("referral_code"):
+        referral_code = secrets.token_hex(4)
+        await hyoshcoder.col.update_one(
+            {"_id": user_id},
+            {"$set": {"referral_code": referral_code}},
+            upsert=True
+        )
+    else:
+        referral_code = user["referral_code"]
+
+    referrals = user.get("referrals", []) if user else []
+    count = len(referrals)
+
+    refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
+    await message.reply_text(
+        f"**Your Referral Link:**\n{refer_link}\n\n"
+        f"**Total Referrals:** {count}\n"
+        f"**You get 100 tokens for every successful referral!**"
+    )
 @Client.on_message(filters.private & filters.command([
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
@@ -135,66 +158,52 @@ async def command_handler(client: Client, message: Message):
         if cmd == 'start':
             user = message.from_user
             await hyoshcoder.add_user(user_id)
-            # Handle referral link
-            if args and args[0].startswith("refer_"):
-                referrer_id = int(args[0].replace("refer_", ""))
-                reward = 10
-                
-                # Check if user already has a referrer
-                if await hyoshcoder.is_refferer(user_id):
-                    pass  # User already has a referrer
-                elif referrer_id != user_id:  # Prevent self-referral
-                    referrer = await hyoshcoder.read_user(referrer_id)
-                    if referrer:
-                        await hyoshcoder.set_referrer(user_id, referrer_id)
-                        await hyoshcoder.add_points(referrer_id, reward)
-                        
-                        # Notify referrer
-                        cap = f"🎉 {user.mention} joined using your referral! You earned {reward} points!"
-                        await client.send_message(referrer_id, cap)
-            
-            # Handle ad link
-            if args and args[0].startswith("adds_"):
-                unique_code = args[0].replace("adds_", "")
-                user = await hyoshcoder.get_user_by_code(unique_code)
-            
-                # If user with that code not found
-                if not user:
-                    return await message.reply("❌ The link is invalid or already used.")
-            
-                # Check if code was already used or expired
-                expires_at = user.get("expires_at", datetime.datetime.utcnow())
-                if user.get("code_used") or datetime.datetime.utcnow() > expires_at:
-                    return await message.reply("❌ Link expired or already claimed.")
-            
-                reward = user.get("expend_points", 0)
-                if reward <= 0:
-                    return await message.reply("❌ No points available for this code.")
-            
-                # Reward points
-                await hyoshcoder.add_points(user["_id"], reward)
-            
-                # Mark code as used and reset reward data
-                await hyoshcoder.users.update_one(
-                    {"_id": user["_id"]},
-                    {"$set": {
-                        "code_used": True,
-                        "expend_points": 0,
-                        "unique_code": None,
-                        "expires_at": None
-                    }}
-                )
-            
-                # Notify link owner
-                await client.send_message(
-                    user["_id"],
-                    f"🎉 Someone used your ad link! You earned {reward} points!"
-                )
-            
-                # Notify the clicker
-                await message.reply("🎉 Thanks for supporting us! The link owner has been rewarded.")
-  
-
+        
+            if args:
+                arg = args[0]
+        
+                # Handle referral link with numeric user ID (refer_12345)
+                if arg.startswith("refer_"):
+                    referrer_id = int(arg.replace("refer_", ""))
+                    reward = 10
+        
+                    if not await hyoshcoder.is_refferer(user_id) and referrer_id != user_id:
+                        referrer = await hyoshcoder.read_user(referrer_id)
+                        if referrer:
+                            await hyoshcoder.set_referrer(user_id, referrer_id)
+                            await hyoshcoder.add_points(referrer_id, reward)
+                            try:
+                                cap = f"🎉 {user.mention} joined using your referral! You earned {reward} points!"
+                                await client.send_message(referrer_id, cap)
+                            except Exception:
+                                pass
+        
+                # Handle token-based referral (ref_xxx)
+                elif arg.startswith("ref_"):
+                    referral_code = arg[4:]
+                    referrer = await hyoshcoder.col.find_one({"referral_code": referral_code})
+                    if referrer and referrer["_id"] != user_id:
+                        updated = await hyoshcoder.col.update_one(
+                            {"_id": referrer["_id"]},
+                            {"$addToSet": {"referrals": user_id}}
+                        )
+                        if updated.modified_count > 0:
+                            await hyoshcoder.col.update_one(
+                                {"_id": referrer["_id"]},
+                                {"$inc": {"token": settings.REFER_TOKEN}}
+                            )
+                            try:
+                                await client.send_message(
+                                    referrer["_id"],
+                                    f"**You received {settings.REFER_TOKEN} tokens for referring {user.mention}!**"
+                                )
+                            except Exception:
+                                pass
+        
+                # Handle token redemption (e.g. /start XYZ123)
+                else:
+                    await handle_token_redemption(client, message, arg)
+                    return
 
             # Send sticker
             m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
