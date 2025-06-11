@@ -69,7 +69,7 @@ async def generate_point_link(client: Client, message: Message):
     if not short_url:
         return await message.reply("**Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ᴘᴏɪɴᴛ ʟɪɴᴋ. Tʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.**")
 
-    await db.create_point_link(user_id, point_id, Config.SHORTENER_POINT_REWARD)
+    await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
 
     await message.reply(
         f"**Gᴇᴛ 100 Pᴏɪɴᴛs**\n\n"
