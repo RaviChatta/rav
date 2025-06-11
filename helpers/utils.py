@@ -16,6 +16,9 @@ from pyrogram.types import (
 )
 from scripts import Txt
 from config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Patterns for extracting season numbers
 SEASON_PATTERNS = [
