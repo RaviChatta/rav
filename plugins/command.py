@@ -129,9 +129,16 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
         if point_data['user_id'] != user_id:
             return await message.reply("**Tʜɪs ʟɪɴᴋ ʙᴇʟᴏɴɢs ᴛᴏ ᴀɴᴏᴛʜᴇʀ ᴜsᴇʀ...**")
 
+        user = await hyoshcoder.users.find_one({"_id": user_id})
+        if not isinstance(user.get("points", 0), (int, float)):
+            await hyoshcoder.users.update_one(
+                {"_id": user_id},
+                {"$set": {"points": 0}}
+            )
+        
         await hyoshcoder.users.update_one(
             {"_id": user_id},
-            {"$inc": {"points": point_data['points']}}  # increment points
+            {"$inc": {"points": point_data['points']}}
         )
 
 
