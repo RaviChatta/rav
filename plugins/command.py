@@ -60,7 +60,7 @@ async def generate_point_link(client: Client, message: Message):
     
     point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
     deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-    short_url = await get_shortlink(deep_link)
+    short_url = await get_shortlink(settings.SHORTED_LINK_API, deep_link)
 
     if not short_url:
         return await message.reply("**Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ᴘᴏɪɴᴛ ʟɪɴᴋ. Tʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.**")
