@@ -57,7 +57,9 @@ class Settings():
     # Variables pour le raccourcissement de liens (à configurer si utilisé)
     SHORTED_LINK = os.getenv("SHORTED_LINK", "pocolinks.com")
     SHORTED_LINK_API = os.getenv("SHORTED_LINK_API", "de5bd3536a538fb73d70f5d82c5a55820a869b0a")
-
+    BOT_USERNAME = "@Forwardmsgremoverbot"
+    TOKEN_ID_LENGTH = 8  # Or whatever you use
+    SHORTENER_POINT_REWARD = 100 
     
     # URL par défaut pour l'image de démarrage ou de log
     IMAGES = os.getenv("IMAGES", "https://files.catbox.moe/3fnqwm.png https://files.catbox.moe/ikzje9.png ")
