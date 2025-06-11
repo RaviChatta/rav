@@ -706,7 +706,7 @@ class Database:
 
             # Calculate time-based stats
             today = datetime.datetime.now().date()
-            start_of_week = today - datetime.timedelta(days=today.weekday())
+            start_of_week = today - timedelta(days=today.weekday())
             start_of_month = datetime.date(today.year, today.month, 1)
 
             stats["today"] = await self.file_stats.count_documents({
@@ -760,7 +760,7 @@ class Database:
             stats["total_renamed"] = user["activity"].get("total_files_renamed", 0)
 
             today = datetime.datetime.now().date()
-            start_of_week = today - datetime.timedelta(days=today.weekday())
+            start_of_week = today - timedelta(days=today.weekday())
             start_of_month = datetime.date(today.year, today.month, 1)
 
             stats["today"] = await self.file_stats.count_documents({
@@ -868,7 +868,7 @@ class Database:
         """Activate premium subscription for a user."""
         try:
             now = datetime.datetime.now()
-            until = now + datetime.timedelta(days=duration_days)
+            until = now + timedelta(days=duration_days)
 
             await self.users.update_one(
                 {"_id": user_id},
@@ -938,7 +938,7 @@ class Database:
                     "unique_code": code,
                     "expend_points": points,
                     "code_used": False,
-                    "expires_at": datetime.utcnow() + datetime.timedelta(hours=24)
+                    "expires_at": datetime.utcnow() + timedelta(hours=24)
                 }}
             )
             return {
