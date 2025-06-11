@@ -60,20 +60,6 @@ logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
 
 
-import random
-import string
-
-import random
-import string
-import logging
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from utils import get_shortlink  # Import your utility function
-from shortzy import Shortzy  # Make sure this is installed
-import asyncio
-
-logger = logging.getLogger(__name__)
-
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
     try:
