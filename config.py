@@ -60,7 +60,7 @@ class Settings():
     BOT_USERNAME = "@Forwardmsgremoverbot"
     TOKEN_ID_LENGTH = 8  # Or whatever you use
     SHORTENER_POINT_REWARD = 100 
-    
+    REFER_TOKEN = 100
     # URL par défaut pour l'image de démarrage ou de log
     IMAGES = os.getenv("IMAGES", "https://files.catbox.moe/3fnqwm.png https://files.catbox.moe/ikzje9.png ")
     ANIMATIONS = os.getenv("ANIMATIONS", "CgACAgUAAxkBAAI0Vmg7Mvvv5pviZa3X3EoOcPjELHRvAAKIFAACh_PgVUqDkRmyCLEnHgQ CgACAgUAAxkBAAI0VGg7MvR9HxCuyV4L4aWZWKGPUFV2AAKHFAACh_PgVacMEeJozkEcHgQ").strip()
