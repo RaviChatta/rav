@@ -154,7 +154,7 @@ async def cleanup_states():
 def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     periods = {
         "daily": "⏰ Daily",
-        "weekly": "📆 Weekly", 
+        "weekly": "📆 Weekly",
         "monthly": "🗓 Monthly",
         "alltime": "🏅 All-Time"
     }
@@ -162,7 +162,7 @@ def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
     types = {
         "points": "⭐ Points",
         "renames": "📁 Files",
-        "files": "🧬 Sequences"
+        "referrals": "🎁 Referrals"
     }
 
     period_buttons = [
@@ -274,25 +274,31 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 period = await hyoshcoder.get_leaderboard_period(user_id)
                 lb_type = await hyoshcoder.get_leaderboard_type(user_id)
         
-                if lb_type == "files":
-                    leaders_raw = await hyoshcoder.get_sequence_leaderboard(period, limit=20)
-                    leaders = [{
-                        'username': user.get('username', f"User {user['user_id']}"),
-                        'value': user.get('files_sequenced', 0),
-                        'is_premium': user.get('is_premium', False)
-                    } for user in leaders_raw]
-                    emoji = "🧬"
+                emoji_map = {
+                    "points": "⭐",
+                    "renames": "📁",
+                    "referrals": "🎁"
+                }
+                title_map = {
+                    "points": "Points",
+                    "renames": "Files Renamed",
+                    "referrals": "Referrals"
+                }
+        
+                emoji = emoji_map.get(lb_type, "⭐")
+                title = title_map.get(lb_type, "Points")
+        
+                if lb_type == "referrals":
+                    leaders = await hyoshcoder.get_referrals_leaderboard(period, limit=20)
                 elif lb_type == "renames":
                     leaders = await hyoshcoder.get_renames_leaderboard(period, limit=20)
-                    emoji = "📁"
-                else:  # Default to points
+                else:
                     leaders_raw = await hyoshcoder.get_leaderboard(period, limit=20)
                     leaders = [{
                         'username': user.get('username', f"User {user['_id']}"),
                         'value': user.get('points', 0),
                         'is_premium': user.get('is_premium', False)
                     } for user in leaders_raw]
-                    emoji = "⭐"
         
                 if not leaders:
                     response = {
@@ -310,13 +316,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         "alltime": "All-Time"
                     }.get(period, period.capitalize())
         
-                    type_title = {
-                        "points": f"{emoji} Points",
-                        "renames": f"{emoji} Files Renamed",
-                        "files": f"{emoji} Files Sequenced"
-                    }[lb_type]
-        
-                    text = f"🏆 **{period_name} Leaderboard - {type_title}**\n\n"
+                    text = f"🏆 **{period_name} Leaderboard - {emoji} {title}**\n\n"
                     for i, user in enumerate(leaders, 1):
                         premium_tag = " 💎" if user.get("is_premium") else ""
                         text += f"**{i}.** {user['username']} — `{user['value']}` {emoji}{premium_tag}\n"
@@ -336,6 +336,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     ]),
                     'photo': img
                 }
+
 
         # In callback.py - Update the freepoints section
         elif data == "freepoints":
