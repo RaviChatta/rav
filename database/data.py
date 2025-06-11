@@ -320,7 +320,7 @@ class Database:
                 "user_id": user_id,
                 "type": link_type,
                 "points": points,
-                "timestamp": datetime.datetime.now()
+                "timestamp": datetime.utcnow()
             })
             
             return True
@@ -361,8 +361,8 @@ class Database:
             "user_id": user_id,
             "username": username,
             "files": [],
-            "started_at": datetime.datetime.now(),
-            "updated_at": datetime.datetime.now()
+            "started_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
         })
         return True
     
@@ -371,7 +371,7 @@ class Database:
         result = await self.sequences.update_one(
             {"user_id": user_id},
             {"$push": {"files": file_data},
-             "$set": {"updated_at": datetime.datetime.now()}}
+             "$set": {"updated_at": datetime.utcnow()}}
         )
         return result.modified_count > 0
     
@@ -395,7 +395,7 @@ class Database:
                 "$inc": {"files_sequenced": count},
                 "$set": {
                     "username": username,
-                    "last_active": datetime.datetime.now()
+                    "last_active": datetime.utcnow()
                 }
             },
             upsert=True
@@ -420,7 +420,7 @@ class Database:
         try:
             await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"activity.last_active": datetime.datetime.now()}}
+                {"$set": {"activity.last_active": datetime.utcnow()}}
             )
             return True
         except PyMongoError as e:
@@ -476,7 +476,7 @@ class Database:
     async def get_daily_active_users(self) -> int:
         """Get count of daily active users."""
         try:
-            today = datetime.datetime.now().date()
+            today = datetime.utcnow().date()
             return await self.users.count_documents({
                 "activity.last_active": {
                     "$gte": datetime.datetime.combine(today, datetime.time.min)
@@ -499,7 +499,7 @@ class Database:
         try:
             await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"deleted": True, "deleted_at": datetime.datetime.now()}}
+                {"$set": {"deleted": True, "deleted_at": datetime.utcnow()}}
             )
             return True
         except Exception as e:
@@ -669,8 +669,8 @@ class Database:
                 "user_id": user_id,
                 "original_name": file_name,
                 "new_name": new_name,
-                "timestamp": datetime.datetime.now(),
-                "date": datetime.datetime.now().date().isoformat()
+                "timestamp": datetime.utcnow(),
+                "date": datetime.utcnow().date().isoformat()
             })
 
             # Also update the user's total rename count
@@ -705,7 +705,7 @@ class Database:
             stats["daily_usage"] = user["activity"].get("daily_usage", 0)
 
             # Calculate time-based stats
-            today = datetime.datetime.now().date()
+            today = datetime.utcnow().date()
             start_of_week = today - timedelta(days=today.weekday())
             start_of_month = datetime.date(today.year, today.month, 1)
 
@@ -759,7 +759,7 @@ class Database:
 
             stats["total_renamed"] = user["activity"].get("total_files_renamed", 0)
 
-            today = datetime.datetime.now().date()
+            today = datetime.utcnow().date()
             start_of_week = today - timedelta(days=today.weekday())
             start_of_month = datetime.date(today.year, today.month, 1)
 
@@ -794,7 +794,7 @@ class Database:
                         "points.balance": points,
                         "points.total_earned": points
                     },
-                    "$set": {"points.last_earned": datetime.datetime.now()}
+                    "$set": {"points.last_earned": datetime.utcnow()}
                 }
             )
 
@@ -804,7 +804,7 @@ class Database:
                 "amount": points,
                 "source": source,
                 "description": description or f"Added {points} points",
-                "timestamp": datetime.datetime.now(),
+                "timestamp": datetime.utcnow(),
                 "balance_after": (await self.get_points(user_id)) + points
             })
 
@@ -836,7 +836,7 @@ class Database:
                 "amount": points,
                 "source": reason,
                 "description": f"Deducted {points} points",
-                "timestamp": datetime.datetime.now(),
+                "timestamp": datetime.utcnow(),
                 "balance_after": current_points - points
             })
 
@@ -867,7 +867,7 @@ class Database:
                              payment_method: str = "manual") -> bool:
         """Activate premium subscription for a user."""
         try:
-            now = datetime.datetime.now()
+            now = datetime.utcnow()
             until = now + timedelta(days=duration_days)
 
             await self.users.update_one(
@@ -894,7 +894,7 @@ class Database:
 
             if user["premium"]["is_premium"]:
                 if user["premium"]["until"] and \
-                   datetime.datetime.fromisoformat(user["premium"]["until"]) < datetime.datetime.now():
+                   datetime.datetime.fromisoformat(user["premium"]["until"]) < datetime.utcnow():
                     await self.deactivate_premium(user_id)
                     return {"is_premium": False, "reason": "Subscription expired"}
                 return {"is_premium": True, "until": user["premium"]["until"], "plan": user["premium"]["plan"]}
@@ -1206,7 +1206,7 @@ class Database:
                         "$sum": {
                             "$cond": [
                                 {"$and": [
-                                    {"$gt": ["$expires_at", datetime.datetime.now()]},
+                                    {"$gt": ["$expires_at", datetime.utcnow()]},
                                     {"$gt": ["$claims_remaining", 0]}
                                 ]},
                                 1, 0
@@ -1236,7 +1236,7 @@ class Database:
     async def generate_points_report(self, days: int = 7) -> Dict:
         """Generate a points activity report for admins."""
         try:
-            end_date = datetime.datetime.now()
+            end_date = datetime.utcnow()
             start_date = end_date - timedelta(days=days)
 
             report = await self.transactions.aggregate([
@@ -1303,8 +1303,8 @@ class Database:
             logger.error(f"Error generating points report: {e}")
             return {
                 "period": {
-                    "start": (datetime.datetime.now() - timedelta(days=days)).isoformat(),
-                    "end": datetime.datetime.now().isoformat()
+                    "start": (datetime.utcnow() - timedelta(days=days)).isoformat(),
+                    "end": datetime.utcnow().isoformat()
                 },
                 "total_points_distributed": 0,
                 "distribution": [],
@@ -1366,7 +1366,7 @@ class Database:
     async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
         """Ban a user from using the bot."""
         try:
-            banned_on = datetime.datetime.now(pytz.timezone("Africa/Lubumbashi")).isoformat()
+            banned_on = datetime.utcnow(pytz.timezone("Africa/Lubumbashi")).isoformat()
             await self.users.update_one(
                 {"_id": user_id},
                 {"$set": {
