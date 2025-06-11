@@ -459,13 +459,15 @@ async def addthumbs(client, message):
         )
 
 # In command.py
+
+# --- Command to show leaderboard ---
 @Client.on_message(filters.command(["leaderboard", "lb"]))
 async def leaderboard_command(client: Client, message: Message):
     try:
-        lb_type = "renames"
+        lb_type = "referrals"  # defaulting to referrals now
         if len(message.command) > 1:
             arg = message.command[1].lower()
-            if arg in ["points", "renames", "files"]:
+            if arg in ["points", "renames", "referrals"]:
                 lb_type = arg
 
         sent = await show_leaderboard_ui(client, message, lb_type)
@@ -476,8 +478,7 @@ async def leaderboard_command(client: Client, message: Message):
         logger.error(f"Leaderboard command error: {e}")
         await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
 
-
-# Leaderboard UI Renderer
+# --- Show leaderboard UI ---
 async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQuery], lb_type: str = None):
     try:
         msg = message if isinstance(message, Message) else message.message
@@ -486,22 +487,22 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         lb_type = lb_type or await hyoshcoder.get_leaderboard_type(user_id)
 
         leaders = []
-        if lb_type == "files":
-            raw = await hyoshcoder.get_sequence_leaderboard(period, limit=10)
+        if lb_type == "referrals":
+            raw = await hyoshcoder.get_referral_leaderboard(period, limit=10)
             leaders = [{
-                '_id': str(user['user_id']),
+                '_id': str(user['_id']),
                 'username': user.get('username'),
-                'value': user.get('files_sequenced', 0),
+                'value': user.get('total_referrals', 0),
                 'rank': idx + 1,
                 'is_premium': user.get('is_premium', False)
             } for idx, user in enumerate(raw)]
         elif lb_type == "renames":
             raw = await hyoshcoder.get_renames_leaderboard(period, limit=10)
             leaders = [{
-                '_id': str(user['user_id']),
+                '_id': str(user['_id']),
                 'username': user.get('username'),
-                'value': user.get('renames', 0),
-                'rank': idx + 1,
+                'value': user.get('value', 0),
+                'rank': user.get('rank', idx + 1),
                 'is_premium': user.get('is_premium', False)
             } for idx, user in enumerate(raw)]
         else:  # points
@@ -514,7 +515,7 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
                 'is_premium': user.get('is_premium', False)
             } for idx, user in enumerate(raw)]
 
-        emoji = {"points": "⭐", "renames": "📁", "files": "🧬"}.get(lb_type, "🏆")
+        emoji = {"points": "⭐", "renames": "📁", "referrals": "🎯"}.get(lb_type, "🏆")
         period_display = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "alltime": "All-Time"}.get(period, period.capitalize())
         title = f"🏆 **{period_display} {lb_type.capitalize()} Leaderboard**\n\n"
 
@@ -542,7 +543,7 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
             [
                 InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data="lb_type_points"),
                 InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data="lb_type_renames"),
-                InlineKeyboardButton("FILES" if lb_type != "files" else "• FILES •", callback_data="lb_type_files")
+                InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data="lb_type_referrals")
             ]
         ])
 
@@ -557,8 +558,7 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         if isinstance(message, CallbackQuery):
             await message.answer("⚠️ Failed to load leaderboard.", show_alert=True)
 
-
-# Period Callback
+# --- Period Callback ---
 @Client.on_callback_query(filters.regex(r'^lb_period_'))
 async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
     try:
@@ -574,14 +574,13 @@ async def leaderboard_period_callback(client: Client, callback: CallbackQuery):
         logger.error(f"Period callback error: {e}")
         await callback.answer("Failed to update period", show_alert=True)
 
-
-# Type Callback
+# --- Type Callback ---
 @Client.on_callback_query(filters.regex(r'^lb_type_'))
 async def leaderboard_type_callback(client: Client, callback: CallbackQuery):
     try:
         user_id = callback.from_user.id
         lb_type = callback.data.split('_')[-1]
-        if lb_type not in ["points", "renames", "files"]:
+        if lb_type not in ["points", "renames", "referrals"]:
             await callback.answer("Invalid type", show_alert=True)
             return
         await hyoshcoder.set_leaderboard_type(user_id, lb_type)
