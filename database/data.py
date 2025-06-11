@@ -967,7 +967,7 @@ class Database:
             return False
 
     # --- General leaderboard updater for points ---
-    async def _update_leaderboard_period(self, period: str):
+    async def update_leaderboard_period(self, period: str):
         try:
             leaders = await self._get_leaderboard_data(period)
             await self.leaderboards.update_one(
@@ -979,7 +979,7 @@ class Database:
             logger.error(f"Error updating {period} points leaderboard: {e}")
 
     # --- Get points leaderboard data per period ---
-    async def _get_leaderboard_data(self, period: str) -> List[Dict]:
+    async def get_leaderboard(self, period: str) -> List[Dict]:
         try:
             if period == "alltime":
                 pipeline = [
