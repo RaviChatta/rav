@@ -246,6 +246,44 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error adding user {id}: {e}")
             return False
+    # Create a point link (valid for 24 hours, one-time use)
+    async def create_point_link(self, user_id: int, point_id: str, points: int):
+        expiry = datetime.utcnow().replace(tzinfo=pytz.UTC) + timedelta(hours=24)
+        try:
+            await self.token_links.update_one(
+                {"_id": point_id},
+                {
+                    "$set": {
+                        "user_id": user_id,
+                        "points": points,
+                        "used": False,
+                        "expiry": expiry
+                    }
+                },
+                upsert=True
+            )
+            logging.info(f"Point link created for user {user_id} with ID {point_id}.")
+        except Exception as e:
+            logging.error(f"Error creating point link: {e}")
+    
+    # Fetch a point link by ID
+    async def get_point_link(self, point_id: str):
+        try:
+            return await self.token_links.find_one({"_id": point_id})
+        except Exception as e:
+            logging.error(f"Error fetching point link for ID {point_id}: {e}")
+            return None
+    
+    # Mark a point link as used
+    async def mark_point_used(self, point_id: str):
+        try:
+            await self.token_links.update_one(
+                {"_id": point_id},
+                {"$set": {"used": True}}
+            )
+            logging.info(f"Point link {point_id} marked as used.")
+        except Exception as e:
+            logging.error(f"Error marking point link as used: {e}")
 
     async def is_user_exist(self, id: int) -> bool:
         """Check if user exists in database."""
