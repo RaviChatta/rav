@@ -64,6 +64,7 @@ class Database:
             self.rewards = self.db.rewards
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
+            self.referrals = db.referrals
             self.config = self.db.config
             self._is_connected = True
 
@@ -959,14 +960,14 @@ class Database:
         try:
             for period in ["daily", "weekly", "monthly", "alltime"]:
                 await self.update_leaderboard_period(period)
-                await self.update_sequence_leaderboard(period)
+                await self.update_renames_leaderboard(period)
+                await self.update_referral_leaderboard(period)
             logger.info("All leaderboards updated successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to update leaderboards: {e}")
             return False
-    
-    # --- General leaderboard updater for points ---
+
     async def update_leaderboard_period(self, period: str):
         try:
             leaders = await self.get_leaderboard(period)
@@ -977,8 +978,7 @@ class Database:
             )
         except Exception as e:
             logger.error(f"Error updating {period} points leaderboard: {e}")
-    
-    # --- Get points leaderboard data per period ---
+
     async def get_leaderboard(self, period: str, limit: int = 10) -> List[Dict]:
         try:
             if period == "alltime":
@@ -1015,44 +1015,6 @@ class Database:
             logger.error(f"Error getting {period} points leaderboard: {e}")
             return []
 
-    # --- Get sequence leaderboard ---
-    async def get_sequence_leaderboard(self, period: str = "alltime", limit: int = 10) -> List[Dict]:
-        try:
-            query = {}
-            if period != "alltime":
-                days = 1 if period == "daily" else 7 if period == "weekly" else 30
-                start_date = datetime.utcnow() - timedelta(days=days)
-                query["last_active"] = {"$gte": start_date}
-    
-            cursor = self.users_sequence.find(query).sort("files_sequenced", -1).limit(limit)
-            leaderboard = []
-            async for user in cursor:
-                leaderboard.append({
-                    "user_id": user["_id"],
-                    "username": user.get("username", f"User {user['_id']}"),
-                    "files_sequenced": user.get("files_sequenced", 0),
-                    "last_active": user.get("last_active", datetime.utcnow())
-                })
-            return leaderboard
-        except Exception as e:
-            logger.error(f"Error getting {period} sequence leaderboard: {e}")
-            return []
-    
-    # --- Update sequence leaderboard ---
-    async def update_sequence_leaderboard(self, period: str = "alltime"):
-        try:
-            leaders = await self.get_sequence_leaderboard(period, limit=10)
-            await self.leaderboards.update_one(
-                {"type": "files", "period": period},
-                {"$set": {"data": leaders, "updated_at": datetime.utcnow()}},
-                upsert=True
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Error updating sequence leaderboard for {period}: {e}")
-            return False
-
-    # --- Get renames leaderboard ---
     async def get_renames_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
         try:
             now = datetime.utcnow()
@@ -1090,50 +1052,85 @@ class Database:
             logger.error(f"Error getting {period} renames leaderboard: {e}")
             return []
 
-    # --- Update leaderboard cache for all types ---
-    async def update_leaderboard_cache(self):
+    async def get_referral_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
         try:
-            periods = ["daily", "weekly", "monthly", "alltime"]
-            for period in periods:
-                points = await self.get_leaderboard(period)
-                renames = await self.get_renames_leaderboard(period, limit=10)
-                sequences = await self.get_sequence_leaderboard(period, limit=10)
+            days = 1 if period == "daily" else 7 if period == "weekly" else 30
+            start_date = datetime.utcnow() - timedelta(days=days) if period != "alltime" else None
 
-                await self.leaderboards.update_one(
-                    {"period": period, "type": "points"},
-                    {"$set": {"data": points, "updated_at": datetime.utcnow()}},
-                    upsert=True
-                )
-                await self.leaderboards.update_one(
-                    {"period": period, "type": "renames"},
-                    {"$set": {"data": renames, "updated_at": datetime.utcnow()}},
-                    upsert=True
-                )
-                await self.leaderboards.update_one(
-                    {"period": period, "type": "files"},
-                    {"$set": {"data": sequences, "updated_at": datetime.utcnow()}},
-                    upsert=True
-                )
-            logger.info("Successfully updated all leaderboard caches")
+            match_stage = {}
+            if start_date:
+                match_stage["joined_at"] = {"$gte": start_date}
+
+            pipeline = [
+                {"$match": match_stage} if match_stage else {"$match": {}},
+                {"$group": {
+                    "_id": "$referrer_id",
+                    "referrals": {"$sum": 1}
+                }},
+                {"$sort": {"referrals": -1}},
+                {"$limit": limit},
+                {"$lookup": {
+                    "from": "users",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "user"
+                }},
+                {"$unwind": "$user"},
+                {"$project": {
+                    "_id": 1,
+                    "username": "$user.username",
+                    "referrals": 1,
+                    "is_premium": "$user.premium.is_premium"
+                }}
+            ]
+            results = await self.referrals.aggregate(pipeline).to_list(length=limit)
+            for i, user in enumerate(results, 1):
+                user["rank"] = i
+                if not user.get("username"):
+                    user["username"] = f"User {user['_id']}"
+            return results
+        except Exception as e:
+            logger.error(f"Error getting {period} referral leaderboard: {e}")
+            return []
+
+    async def update_referral_leaderboard(self, period: str):
+        try:
+            leaders = await self.get_referral_leaderboard(period)
+            await self.leaderboards.update_one(
+                {"type": "referrals", "period": period},
+                {"$set": {"data": leaders, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
             return True
         except Exception as e:
-            logger.error(f"Error updating leaderboard caches: {e}")
+            logger.error(f"Error updating referral leaderboard for {period}: {e}")
             return False
 
-    # --- Get leaderboard from cache or fresh if expired ---
+    async def update_renames_leaderboard(self, period: str):
+        try:
+            leaders = await self.get_renames_leaderboard(period)
+            await self.leaderboards.update_one(
+                {"type": "renames", "period": period},
+                {"$set": {"data": leaders, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error updating renames leaderboard for {period}: {e}")
+            return False
+
     async def get_cached_leaderboard(self, period: str, lb_type: str) -> List[Dict]:
         try:
             cache = await self.leaderboards.find_one({"period": period, "type": lb_type})
             if cache and (datetime.utcnow() - cache["updated_at"]).total_seconds() < 3600:
                 return cache["data"]
 
-            # Generate fresh
             if lb_type == "points":
                 data = await self.get_leaderboard(period)
             elif lb_type == "renames":
                 data = await self.get_renames_leaderboard(period)
-            elif lb_type == "files":
-                data = await self.get_sequence_leaderboard(period)
+            elif lb_type == "referrals":
+                data = await self.get_referral_leaderboard(period)
             else:
                 return []
 
@@ -1147,7 +1144,6 @@ class Database:
             logger.error(f"Error getting cached leaderboard: {e}")
             return []
 
-    # --- Get/set leaderboard user preferences (period & type) ---
     async def set_leaderboard_period(self, user_id: int, period: str) -> bool:
         if period not in ["daily", "weekly", "monthly", "alltime"]:
             return False
@@ -1171,7 +1167,7 @@ class Database:
             return "weekly"
 
     async def set_leaderboard_type(self, user_id: int, lb_type: str) -> bool:
-        if lb_type not in ["points", "renames", "files"]:
+        if lb_type not in ["points", "renames", "referrals"]:
             return False
         try:
             result = await self.users.update_one(
@@ -1191,7 +1187,6 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting leaderboard type: {e}")
             return "points"
-
     async def get_points_links_stats(self, admin_id: int = None) -> Dict:
         """Get statistics about points links."""
         try:
