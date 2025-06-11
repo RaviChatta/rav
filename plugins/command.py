@@ -53,7 +53,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
 @Client.on_message(filters.command("genpoints") & filters.private)
-@check_ban_status
 async def generate_point_link(client: Client, message: Message):
     user_id = message.from_user.id
     db = hyoshcoder
