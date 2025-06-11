@@ -958,7 +958,7 @@ class Database:
     async def update_leaderboards(self):
         try:
             for period in ["daily", "weekly", "monthly", "alltime"]:
-                await self._update_leaderboard_period(period)
+                await self.update_leaderboard_period(period)
                 await self.update_sequence_leaderboard(period)
             logger.info("All leaderboards updated successfully")
             return True
@@ -969,7 +969,7 @@ class Database:
     # --- General leaderboard updater for points ---
     async def update_leaderboard_period(self, period: str):
         try:
-            leaders = await self._get_leaderboard_data(period)
+            leaders = await self.get_leaderboard_data(period)
             await self.leaderboards.update_one(
                 {"period": period, "type": "points"},
                 {"$set": {"data": leaders, "updated_at": datetime.datetime.utcnow()}},
