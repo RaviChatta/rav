@@ -59,6 +59,7 @@ class Database:
             self.premium_codes = self.db.premium_codes
             self.sequences = self.db["active_sequences"]
             self.users_sequence = self.db["users_sequence"]
+            self.token_links = db["token_links"]
             self.transactions = self.db.transactions
             self.rewards = self.db.rewards
             self.leaderboards = self.db.leaderboards
