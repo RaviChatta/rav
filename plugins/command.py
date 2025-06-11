@@ -143,10 +143,11 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
         if point_data['user_id'] != user_id:
             return await message.reply("**Tʜɪs ʟɪɴᴋ ʙᴇʟᴏɴɢs ᴛᴏ ᴀɴᴏᴛʜᴇʀ ᴜsᴇʀ...**")
 
-        await hyoshcoder.col.update_one(
+        await hyoshcoder.users.update_one(
             {"_id": user_id},
-            {"$inc": {"points": point_data['points']}}  # Changed from token to points
+            {"$inc": {"points": point_data['points']}}  # increment points
         )
+
 
         await hyoshcoder.mark_point_used(point_id)
 
