@@ -1095,7 +1095,7 @@ class Database:
         try:
             periods = ["daily", "weekly", "monthly", "alltime"]
             for period in periods:
-                points = await self._get_leaderboard_data(period)
+                points = await self.get_leaderboard_data(period)
                 renames = await self.get_renames_leaderboard(period, limit=10)
                 sequences = await self.get_sequence_leaderboard(period, limit=10)
 
@@ -1129,7 +1129,7 @@ class Database:
 
             # Generate fresh
             if lb_type == "points":
-                data = await self._get_leaderboard_data(period)
+                data = await self.get_leaderboard_data(period)
             elif lb_type == "renames":
                 data = await self.get_renames_leaderboard(period)
             elif lb_type == "files":
