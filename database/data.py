@@ -1,5 +1,4 @@
 import motor.motor_asyncio
-import datetime
 import pytz
 import secrets
 import asyncio
@@ -10,7 +9,7 @@ from bson.objectid import ObjectId
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, ConnectionFailure
 import logging
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from config import settings
 from pyrogram import Client
 
@@ -138,7 +137,7 @@ class Database:
 
     def new_user(self, id: int) -> Dict[str, Any]:
         """Create a new user document with ad campaign support."""
-        now = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
+        now = datetime.now(pytz.timezone("Asia/Kolkata"))
         return {
             "_id": int(id),
             "username": None,
