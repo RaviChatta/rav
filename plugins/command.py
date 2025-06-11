@@ -64,50 +64,49 @@ ADMIN_USER_ID = settings.ADMIN
 async def generate_point_link(client: Client, message: Message):
     try:
         user_id = message.from_user.id
-        db = hyoshcoder  # Make sure this is properly defined
+        db = hyoshcoder  # Ensure this is your database instance
 
-        if not all([settings.BOT_USERNAME, settings.TOKEN_ID_LENGTH, settings.SHORTENER_POINT_REWARD]):
-            logger.error("Missing required settings")
-            return await message.reply("⚠️ Configuration error. Please contact admin.")
+        # 1. Validate Bot Username
+        if not hasattr(settings, "BOT_USERNAME") or not settings.BOT_USERNAME:
+            logger.error("BOT_USERNAME not set in settings")
+            return await message.reply("❌ Bot username is not configured. Contact admin.")
 
-        # 1. Generate unique ID
+        bot_username = settings.BOT_USERNAME.strip("@")  # Remove "@" if present
+
+        # 2. Generate a URL-safe point_id
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
+        encoded_point_id = quote(point_id)  # URL-encode to handle special chars
 
-        # 2. Create deep link
-        deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-        logger.info(f"Generated deep link for user {user_id}: {deep_link}")
+        # 3. Build the correct deep link
+        deep_link = f"https://t.me/{bot_username}?start={encoded_point_id}"
+        logger.info(f"Generated deep link: {deep_link}")
 
-        # 3. Shorten the link with retry mechanism
+        # 4. Shorten the link (fallback to original if shortening fails)
         short_url = await get_shortlink(
-            url=settings.SHORTED_LINK,
-            api=settings.SHORTED_LINK_API,
-            link=deep_link
+            settings.SHORTED_LINK,
+            settings.SHORTED_LINK_API,
+            deep_link
         )
 
-        # 4. Validate shortened URL
-        if not isinstance(short_url, str) or not short_url.startswith(('http://', 'https://')):
-            logger.warning(f"Invalid short URL format: {short_url}")
+        # 5. Verify the short URL points to the bot
+        if not short_url or "t.me/" not in short_url:
+            logger.warning("Shortener may have broken the link. Using original.")
             short_url = deep_link
 
-        # 5. Save to database
-        try:
-            await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-            logger.info(f"Point link saved to DB for user {user_id}")
-        except Exception as db_error:
-            logger.error(f"Database error: {db_error}")
-            return await message.reply("❌ Failed to save point link. Please try again.")
+        # 6. Save to DB
+        await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
 
-        # 6. Send response
+        # 7. Send the link to the user
         await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
-            f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
-            "**🕒 Link valid for 24 hours | 🧬 One-time use only**",
-            disable_web_page_preview=True
+            f"**🔗 [Click Here]({short_url}) and complete tasks**\n\n"
+            "🕒 **Link valid for 24 hours** | 🧬 **One-time use only**",
+            disable_web_page_preview=False  # Let Telegram show link preview
         )
 
     except Exception as e:
-        logger.error(f"Unexpected error in generate_point_link: {str(e)}", exc_info=True)
-        await message.reply("❌ An unexpected error occurred. Please try again later.")
+        logger.error(f"Failed to generate points link: {e}", exc_info=True)
+        await message.reply("❌ Failed to generate link. Please try again.")
 async def handle_point_redemption(client: Client, message: Message, point_id: str):
     user_id = message.from_user.id
 
