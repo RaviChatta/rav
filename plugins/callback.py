@@ -584,8 +584,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     "⚠️ Failed to update setting. Please try again later.",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("🔙 Back", callback_data="help")]
-
-
+                    ])
+                )
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
