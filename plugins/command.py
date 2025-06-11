@@ -24,6 +24,7 @@ import pytz
 from pyrogram.errors import PeerIdInvalid
 from pyrogram.enums import ChatMemberStatus
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
+from shortzy import Shortzy  # Make sure this is installed
 from database.data import hyoshcoder
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 from os import makedirs, path as ospath
@@ -55,49 +56,56 @@ async def auto_delete_message(message, delay):
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
-import random
-import string
+
 
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
     try:
         user_id = message.from_user.id
-        db = hyoshcoder  # Make sure this is properly defined elsewhere
+        db = hyoshcoder  # Make sure this is properly defined
+
+        if not all([settings.BOT_USERNAME, settings.TOKEN_ID_LENGTH, settings.SHORTENER_POINT_REWARD]):
+            logger.error("Missing required settings")
+            return await message.reply("⚠️ Configuration error. Please contact admin.")
 
         # 1. Generate unique ID
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
 
-        # 2. Create deep link (with start parameter)
+        # 2. Create deep link
         deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-        logging.info(f"Generated deep link: {deep_link}")
+        logger.info(f"Generated deep link for user {user_id}: {deep_link}")
 
-        # 3. Shorten the link
+        # 3. Shorten the link with retry mechanism
         short_url = await get_shortlink(
-            settings.SHORTED_LINK,
-            settings.SHORTED_LINK_API,
-            deep_link
+            url=settings.SHORTED_LINK,
+            api=settings.SHORTED_LINK_API,
+            link=deep_link
         )
 
-        # 4. Fallback check
-        if not short_url or "?" not in short_url:
-            logging.warning("Shortened URL may have lost query params.")
-            short_url = deep_link  # Fallback to full deep link
+        # 4. Validate shortened URL
+        if not isinstance(short_url, str) or not short_url.startswith(('http://', 'https://')):
+            logger.warning(f"Invalid short URL format: {short_url}")
+            short_url = deep_link
 
-        # 5. Save point link in DB
-        await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-        logging.info(f"Point link created for user {user_id} with ID {point_id}.")
+        # 5. Save to database
+        try:
+            await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
+            logger.info(f"Point link saved to DB for user {user_id}")
+        except Exception as db_error:
+            logger.error(f"Database error: {db_error}")
+            return await message.reply("❌ Failed to save point link. Please try again.")
 
-        # 6. Reply to user
+        # 6. Send response
         await message.reply(
-            f"**🎁 Gᴇᴛ {settings.SHORTENER_POINT_REWARD} Pᴏɪɴᴛs**\n\n"
-            f"**🔗 Cʟɪᴄᴋ ʙᴇʟᴏᴡ ʟɪɴᴋ ᴀɴᴅ ᴄᴏᴍᴘʟᴇᴛᴇ ᴛᴀsᴋs:**\n{short_url}\n\n"
-            "**🕒 Lɪɴᴋ ᴠᴀʟɪᴅ ғᴏʀ 24 ʜᴏᴜʀs | 🧬 Oɴᴇ-ᴛɪᴍᴇ ᴜsᴇ ᴏɴʟʏ**",
+            f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
+            f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
+            "**🕒 Link valid for 24 hours | 🧬 One-time use only**",
             disable_web_page_preview=True
         )
-    
+
     except Exception as e:
-        logging.error(f"Error in generate_point_link: {str(e)}")
-        await message.reply("❌ An error occurred while generating the point link. Please try again later.")
+        logger.error(f"Unexpected error in generate_point_link: {str(e)}", exc_info=True)
+        await message.reply("❌ An unexpected error occurred. Please try again later.")
 async def handle_point_redemption(client: Client, message: Message, point_id: str):
     user_id = message.from_user.id
 
