@@ -113,14 +113,15 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
 @Client.on_message(filters.command("refer") & filters.private)
 async def refer(client, message):
     user_id = message.from_user.id
-    user = await hyoshcoder.col.find_one({"_id": user_id})
-
+    user = await hyoshcoder.users.find_one({"_id": user_id})
+    
     if not user or not user.get("referral_code"):
         referral_code = secrets.token_hex(4)
-        await hyoshcoder.col.update_one(
+        await hyoshcoder.users.update_one(
             {"_id": user_id},
             {"$set": {"referral_code": referral_code}},
             upsert=True
+
         )
     else:
         referral_code = user["referral_code"]
