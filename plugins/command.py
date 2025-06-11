@@ -132,7 +132,7 @@ async def refer(client, message):
     await message.reply_text(
         f"**Your Referral Link:**\n{refer_link}\n\n"
         f"**Total Referrals:** {count}\n"
-        f"**You get 100 tokens for every successful referral!**"
+        f"**You get 100 Pᴏɪɴᴛs for every successful referral!**"
     )
 @Client.on_message(filters.private & filters.command([
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
