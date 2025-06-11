@@ -469,15 +469,26 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         lb_type = lb_type or await hyoshcoder.get_leaderboard_type(user_id)
 
         if lb_type == "files":
-            leaders = await hyoshcoder.get_sequence_leaderboard(10)
+            leaders = await hyoshcoder.get_sequence_leaderboard(period, limit=10)
             leaders = [{
                 '_id': str(user['user_id']),
                 'username': user['username'],
                 'value': user['files_sequenced'],
-                'rank': idx + 1
+                'rank': idx + 1,
+                'is_premium': user.get('is_premium', False)
             } for idx, user in enumerate(leaders)]
-        else:
-            leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=10)
+        elif lb_type == "renames":
+            leaders = await hyoshcoder.get_renames_leaderboard(period, limit=10)
+        else:  # points
+            raw = await hyoshcoder.get_leaderboard(period, limit=10)
+            leaders = [{
+                '_id': str(user['_id']),
+                'username': user.get('username'),
+                'value': user.get('points', 0),
+                'rank': idx + 1,
+                'is_premium': user.get('is_premium', False)
+            } for idx, user in enumerate(raw)]
+
 
         emoji = {"points": "⭐", "renames": "📁", "files": "🧬"}.get(lb_type, "🏆")
         title = f"🏆 **{period.capitalize()} {lb_type.capitalize()} Leaderboard**\n\n"
