@@ -157,53 +157,44 @@ async def command_handler(client: Client, message: Message):
 
         if cmd == 'start':
             user = message.from_user
+            user_id = user.id
+            
+            # Add user to database
             await hyoshcoder.add_user(user_id)
-        
+            
+            # Handle /start with arguments
             if args:
                 arg = args[0]
-        
-                # Handle referral link with numeric user ID (refer_12345)
-                if arg.startswith("refer_"):
-                    referrer_id = int(arg.replace("refer_", ""))
-                    reward = 10
-        
-                    if not await hyoshcoder.is_refferer(user_id) and referrer_id != user_id:
-                        referrer = await hyoshcoder.read_user(referrer_id)
-                        if referrer:
-                            await hyoshcoder.set_referrer(user_id, referrer_id)
-                            await hyoshcoder.add_points(referrer_id, reward)
-                            try:
-                                cap = f"🎉 {user.mention} joined using your referral! You earned {reward} points!"
-                                await client.send_message(referrer_id, cap)
-                            except Exception:
-                                pass
-        
-                # Handle token-based referral (ref_xxx)
-                elif arg.startswith("ref_"):
+            
+                # Handle referral code (e.g. /start ref_ABC123)
+                if arg.startswith("ref_"):
                     referral_code = arg[4:]
                     referrer = await hyoshcoder.col.find_one({"referral_code": referral_code})
+            
                     if referrer and referrer["_id"] != user_id:
                         updated = await hyoshcoder.col.update_one(
                             {"_id": referrer["_id"]},
                             {"$addToSet": {"referrals": user_id}}
                         )
+            
                         if updated.modified_count > 0:
                             await hyoshcoder.col.update_one(
                                 {"_id": referrer["_id"]},
-                                {"$inc": {"token": settings.REFER_TOKEN}}
+                                {"$inc": {"points": settings.REFER_POINT_REWARD}}  # <-- changed to points
                             )
                             try:
                                 await client.send_message(
                                     referrer["_id"],
-                                    f"**You received {settings.REFER_TOKEN} tokens for referring {user.mention}!**"
+                                    f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
                                 )
                             except Exception:
                                 pass
-        
-                # Handle token redemption (e.g. /start XYZ123)
+            
+                # Handle point redemption link (e.g. /start XYZ123)
                 else:
-                    await handle_token_redemption(client, message, arg)
+                    await handle_point_redemption(client, message, arg)
                     return
+
 
             # Send sticker
             m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
