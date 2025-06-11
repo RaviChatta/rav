@@ -569,15 +569,22 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
-
         elif data in ["sequential", "toggle_src"]:
-            if data == "sequential":
-                await hyoshcoder.toggle_sequential_mode(user_id)
-            else:
-                await hyoshcoder.toggle_src_info(user_id)
-            # Refresh the help menu
-            await cb_handler(client, query)
-            return
+            try:
+                if data == "sequential":
+                    await hyoshcoder.toggle_sequential_mode(user_id)
+                elif data == "toggle_src":
+                    await hyoshcoder.toggle_src_info(user_id)
+        
+                # Refresh the help menu (assuming cb_handler shows help)
+                await cb_handler(client, query)
+            except Exception as e:
+                logger.error(f"Error toggling setting for '{data}': {e}")
+                await query.message.edit_caption(
+                    "⚠️ Failed to update setting. Please try again later.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+
 
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
