@@ -3,6 +3,7 @@ import random
 import asyncio
 import logging
 import uuid
+from urllib.parse import quote
 from pyrogram import Client, filters
 from pyrogram.types import (
     CallbackQuery, 
