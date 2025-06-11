@@ -51,6 +51,59 @@ async def auto_delete_message(message, delay):
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ADMIN_USER_ID = settings.ADMIN
+@Client.on_message(filters.command("genpoints") & filters.private)
+@check_ban_status
+async def generate_point_link(client: Client, message: Message):
+    user_id = message.from_user.id
+    db = hyoshcoder
+    
+    point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=Config.TOKEN_ID_LENGTH))
+    deep_link = f"https://t.me/{@Forwardmsgremoverbot}?start={point_id}"
+    short_url = await get_shortlink(deep_link)
+
+    if not short_url:
+        return await message.reply("**Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ᴘᴏɪɴᴛ ʟɪɴᴋ. Tʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.**")
+
+    await db.create_point_link(user_id, point_id, Config.SHORTENER_TOKEN_GEN)
+
+    await message.reply(
+        f"**Gᴇᴛ 100 Pᴏɪɴᴛs**\n\n"
+        f"**Cʟɪᴄᴋ ʙᴇʟᴏᴡ ʟɪɴᴋ ᴀɴᴅ ᴄᴏᴍᴘʟᴇᴛᴇ ᴛᴀsᴋs:**\n{short_url}\n\n"
+        "**Lɪɴᴋ ᴠᴀʟɪᴅ ғᴏʀ 24 ʜᴏᴜʀs | Oɴᴇ-ᴛɪᴍᴇ ᴜsᴇ ᴏɴʟʏ**",
+        disable_web_page_preview=True
+    )
+async def handle_point_redemption(client: Client, message: Message, point_id: str):
+    user_id = message.from_user.id
+
+    try:
+        point_data = await hyoshcoder.get_point_link(point_id)
+
+        if not point_data:
+            return await message.reply("**Iɴᴠᴀʟɪᴅ ᴏʀ ᴇxᴘɪʀᴇᴅ ʟɪɴᴋ...**")
+
+        if point_data['used']:
+            return await message.reply("**Tʜɪs ʟɪɴᴋ ʜᴀs ᴀʟʀᴇᴀᴅʏ ʙᴇᴇɴ ᴜsᴇᴅ...**")
+
+        expiry_utc = point_data['expiry'].replace(tzinfo=pytz.UTC)
+
+        if datetime.now(pytz.UTC) > expiry_utc:
+            return await message.reply("**Pᴏɪɴᴛ ʟɪɴᴋ ᴇxᴘɪʀᴇᴅ...**")
+
+        if point_data['user_id'] != user_id:
+            return await message.reply("**Tʜɪs ʟɪɴᴋ ʙᴇʟᴏɴɢs ᴛᴏ ᴀɴᴏᴛʜᴇʀ ᴜsᴇʀ...**")
+
+        await hyoshcoder.col.update_one(
+            {"_id": user_id},
+            {"$inc": {"points": point_data['points']}}  # Changed from token to points
+        )
+
+        await hyoshcoder.mark_point_used(point_id)
+
+        await message.reply(f"✅ Sᴜᴄᴄᴇss! {point_data['points']} ᴘᴏɪɴᴛs ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ!")
+
+    except Exception as e:
+        logging.error(f"Error during point redemption: {e}")
+        await message.reply("**Aɴ ᴇʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.**")
 
 @Client.on_message(filters.private & filters.command([
     "start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
