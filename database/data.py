@@ -663,25 +663,25 @@ class Database:
             return None
 
     async def track_file_rename(self, user_id: int, file_name: str, new_name: str) -> bool:
-        """Track a file rename operation."""
+        """Track a file rename operation with proper date handling."""
         try:
-            # Insert the rename record
+            now = datetime.utcnow()
             result = await self.file_stats.insert_one({
                 "user_id": user_id,
                 "original_name": file_name,
                 "new_name": new_name,
-                "timestamp": datetime.utcnow(),
-                "date": datetime.utcnow().date().isoformat()
+                "timestamp": now,
+                "date": now.date().isoformat()  # Store as ISO format string
             })
-
-            # Also update the user's total rename count
+    
             await self.users.update_one(
                 {"_id": user_id},
-                {"$inc": {"activity.total_files_renamed": 1}}
+                {
+                    "$inc": {"activity.total_files_renamed": 1},
+                    "$set": {"activity.last_active": now}
+                }
             )
-
             return result.inserted_id is not None
-
         except Exception as e:
             logger.error(f"Error tracking file rename for user {user_id}: {e}")
             return False
@@ -979,55 +979,49 @@ class Database:
         except Exception as e:
             logger.error(f"Error updating {period} points leaderboard: {e}")
 
+    # In your data.py, update these methods:
+
     async def get_leaderboard(self, period: str, limit: int = 10) -> List[Dict]:
         """Get points leaderboard for a specific period."""
         try:
-            if period == "alltime":
-                pipeline = [
-                    {"$match": {"ban_status.is_banned": False}},
-                    {"$sort": {"points.balance": -1}},
-                    {"$limit": limit},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "points": "$points.balance",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ]
-            else:
+            now = datetime.utcnow()
+            match_stage = {"ban_status.is_banned": False}
+            
+            if period != "alltime":
                 days = 1 if period == "daily" else 7 if period == "weekly" else 30
-                start_date = datetime.utcnow() - timedelta(days=days)
-                pipeline = [
-                    {"$match": {
-                        "activity.last_active": {"$gte": start_date},
-                        "ban_status.is_banned": False
-                    }},
-                    {"$sort": {"points.balance": -1}},
-                    {"$limit": limit},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "points": "$points.balance",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ]
+                start_date = now - timedelta(days=days)
+                match_stage["activity.last_active"] = {"$gte": start_date}
+    
+            pipeline = [
+                {"$match": match_stage},
+                {"$sort": {"points.balance": -1}},
+                {"$limit": limit},
+                {"$project": {
+                    "_id": 1,
+                    "username": 1,
+                    "points": "$points.balance",
+                    "is_premium": "$premium.is_premium",
+                    "last_active": "$activity.last_active"
+                }}
+            ]
             return await self.users.aggregate(pipeline).to_list(length=limit)
         except Exception as e:
             logger.error(f"Error getting {period} points leaderboard: {e}")
             return []
-    
+
     async def get_renames_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
         """Get renames leaderboard for a specific period."""
         try:
             now = datetime.utcnow()
             days = 1 if period == "daily" else 7 if period == "weekly" else 30
-            start_date = now - timedelta(days=days)
-            
+            start_date = now - timedelta(days=days) if period != "alltime" else None
+    
             pipeline = [
-                {"$match": {"timestamp": {"$gte": start_date}}},
+                {"$match": {"timestamp": {"$gte": start_date}} if start_date else {}},
                 {"$group": {
                     "_id": "$user_id",
-                    "total_renames": {"$sum": 1}
+                    "total_renames": {"$sum": 1},
+                    "last_rename": {"$max": "$timestamp"}
                 }},
                 {"$sort": {"total_renames": -1}},
                 {"$limit": limit},
@@ -1042,35 +1036,32 @@ class Database:
                     "_id": "$_id",
                     "username": "$user.username",
                     "total_renames": 1,
-                    "is_premium": "$user.premium.is_premium"
+                    "is_premium": "$user.premium.is_premium",
+                    "last_active": "$user.activity.last_active"
                 }}
             ]
-            
             results = await self.file_stats.aggregate(pipeline).to_list(length=limit)
-            for i, user in enumerate(results, 1):
-                user["rank"] = i
-                if not user.get("username"):
-                    user["username"] = f"User {user['_id']}"
             return results
         except Exception as e:
             logger.error(f"Error getting {period} renames leaderboard: {e}")
             return []
-    
+
     async def get_referral_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
         """Get referral leaderboard for a specific period."""
         try:
+            now = datetime.utcnow()
             days = 1 if period == "daily" else 7 if period == "weekly" else 30
-            start_date = datetime.utcnow() - timedelta(days=days) if period != "alltime" else None
-    
-            match_stage = {"referral.referrer_id": {"$ne": None}}
-            if start_date:
-                match_stage["join_date"] = {"$gte": start_date}
+            start_date = now - timedelta(days=days) if period != "alltime" else None
     
             pipeline = [
-                {"$match": match_stage},
+                {"$match": {
+                    "referral.referrer_id": {"$ne": None},
+                    "join_date": {"$gte": start_date} if start_date else {"$exists": True}
+                }},
                 {"$group": {
                     "_id": "$referral.referrer_id",
-                    "total_referrals": {"$sum": 1}
+                    "total_referrals": {"$sum": 1},
+                    "last_referral": {"$max": "$join_date"}
                 }},
                 {"$sort": {"total_referrals": -1}},
                 {"$limit": limit},
@@ -1085,15 +1076,11 @@ class Database:
                     "_id": "$_id",
                     "username": "$user.username",
                     "total_referrals": 1,
-                    "is_premium": "$user.premium.is_premium"
+                    "is_premium": "$user.premium.is_premium",
+                    "last_active": "$user.activity.last_active"
                 }}
             ]
-            
             results = await self.users.aggregate(pipeline).to_list(length=limit)
-            for i, user in enumerate(results, 1):
-                user["rank"] = i
-                if not user.get("username"):
-                    user["username"] = f"User {user['_id']}"
             return results
         except Exception as e:
             logger.error(f"Error getting {period} referral leaderboard: {e}")
@@ -1320,7 +1307,17 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting banned users: {e}")
             return []
-
+    async def set_sequential_mode(self, user_id: int, enabled: bool) -> bool:
+        """Set user's sequential mode setting."""
+        try:
+            await self.users.update_one(
+                {"_id": user_id},
+                {"$set": {"settings.sequential_mode": enabled}}
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error setting sequential mode for {user_id}: {e}")
+            return False
     async def get_sequential_mode(self, user_id: int) -> bool:
         """Get user's sequential mode setting."""
         try:
