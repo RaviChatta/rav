@@ -113,20 +113,26 @@ async def edit_or_resend(client, query, response):
             disable_web_page_preview=True
         )
 
-def get_metadata_keyboard(is_enabled):
+
+def get_metadata_keyboard(is_enabled: bool):
     """Return metadata toggle keyboard based on current state"""
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "✅ Metadata Enabled" if is_enabled else "❌ Metadata Disabled",
-                callback_data=f"metadata_{int(not is_enabled)}"
-            )
-        ],
-        [
-            InlineKeyboardButton("🛠 Set Custom Metadata", callback_data="set_metadata"),
-            InlineKeyboardButton("🔙 Back", callback_data="help")
-        ]
-    ])
+
+    METADATA_ON = [
+        [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
+         InlineKeyboardButton('✅', callback_data='metadata_1')],
+        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+         InlineKeyboardButton('Back', callback_data='help')]
+    ]
+
+    METADATA_OFF = [
+        [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
+         InlineKeyboardButton('❌', callback_data='metadata_0')],
+        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+         InlineKeyboardButton('Back', callback_data='help')]
+    ]
+
+    return InlineKeyboardMarkup(METADATA_ON if is_enabled else METADATA_OFF)
+
 
 async def cleanup_states():
     """Clean up expired states"""
@@ -226,8 +232,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
             
             btn = create_keyboard([
-                create_button("Leaderboard", "leaderboard", emoji=EMOJI['leaderboard']),
-                create_button("Invite Friends", "invite", emoji=EMOJI['referral']),
+               
+                
                 create_button("Back", "help")
             ])
             
