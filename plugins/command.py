@@ -293,8 +293,6 @@ async def command_handler(client: Client, message: Message):
             await handle_view_thumb(client, message)
         elif cmd in ["del_thumb", "delthumb"]:
             await handle_del_thumb(client, message)
-        elif cmd == "metadata":
-            await handle_metadata(client, message)
         elif cmd in ["donate", "premium", "plan", "bought"]:
             await handle_premium(client, message)
         elif cmd == "help":
