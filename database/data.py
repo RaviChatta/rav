@@ -96,41 +96,54 @@ class Database:
     async def _create_indexes(self):
         """Create optimized indexes for all collections with campaign support."""
         indexes = [
-            # Users collection (enhanced for campaigns)
-            ("users", [("referrer_id", 1)]),
-            ("users", [("ban_status.is_banned", 1)]),
-            ("users", [("points.balance", -1)]),
-            ("users", [("activity.total_files_renamed", -1)]),
-            ("users", [("premium.is_premium", 1)]),
-            ("users", [("activity.last_ad_view", -1)]),  # New for ad rate limiting
-
-
-            # Leaderboards (unchanged)
-            ("leaderboards", [("period", 1), ("type", 1), ("updated_at", -1)]),
-
-            # File stats (unchanged)
-            ("file_stats", [("user_id", 1)]),
-            ("file_stats", [("date", 1)]),
-            ("file_stats", [("timestamp", -1)]),
-            # Add to _create_indexes method in data.py
-            ("active_sequences", [("user_id", 1)]),
+            # Users collection - Enhanced for all leaderboard types
+            ("users", [("_id", 1)]),  # Essential for primary key lookups
+            ("users", [("ban_status.is_banned", 1)]),  # For filtering banned users
+            ("users", [("points.balance", -1)]),  # For points leaderboard
+            ("users", [("activity.total_files_renamed", -1)]),  # For renames leaderboard
+            ("users", [("referral.referred_count", -1)]),  # For referral leaderboard
+            ("users", [("activity.last_active", -1)]),  # For time-based filtering
+            ("users", [("premium.is_premium", 1)]),  # For premium user filtering
+            ("users", [("join_date", -1)]),  # For referral tracking
+            
+            # File stats collection - Optimized for renames leaderboard
+            ("file_stats", [("user_id", 1), ("timestamp", -1)]),  # Compound index for user activity
+            ("file_stats", [("timestamp", -1)]),  # For time-based queries
+            ("file_stats", [("date", 1)]),  # For daily aggregations
+            
+            # Referral tracking (if using separate collection)
+            ("referrals", [("referrer_id", 1), ("joined_at", -1)]),
+            ("referrals", [("joined_at", -1)]),
+            
+            # Leaderboard cache
+            ("leaderboards", [("period", 1), ("type", 1), ("updated_at", -1)]),  # Compound index
+            
+            # Sequences
+            ("active_sequences", [("user_id", 1)], {"unique": True}),
             ("users_sequence", [("files_sequenced", -1)]),
-
-            # Config (unchanged)
-            ("config", [("key", 1)], {"unique": True})
+            
+            # Config
+            ("config", [("key", 1)], {"unique": True}),
+            
+            # Additional performance indexes
+            ("users", [("username", 1)]),  # For username lookups
+            ("users", [("settings.leaderboard_period", 1), ("settings.leaderboard_type", 1)]),
         ]
-
         for entry in indexes:
-            collection, keys, *options = entry if len(entry) > 2 else [*entry, {}]
+            collection_name, keys, *options = entry if len(entry) > 2 else [*entry, {}]
             opts = options[0] if options else {}
+            
             try:
-                await self.db[collection].create_index(keys, **opts)
-                logger.debug(f"Created index on {collection} for {keys}")
+                # Skip if collection doesn't exist
+                if collection_name not in await self.db.list_collection_names():
+                    continue
+                    
+                await self.db[collection_name].create_index(keys, **opts)
+                logger.info(f"Created index on {collection_name} for {keys}")
             except Exception as e:
-                logger.error(f"Failed to create index on {collection}: {e}")
-                # For critical indexes, you might want to raise the exception
-                if collection == "campaigns" and "code" in keys:
-                    raise
+                logger.error(f"Failed to create index on {collection_name}: {e}")
+                if collection_name == "users" and "referral.referred_count" in keys:
+                    raise  # Critical index, fail hard
 
     def set_client(self, client: Client):
         """Store the Pyrogram client for Telegram API calls"""
