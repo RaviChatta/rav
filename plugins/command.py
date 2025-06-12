@@ -528,20 +528,17 @@ async def handle_leaderboard(client: Client, message: Message):
         if lb_type == "points":
             leaders = await hyoshcoder.get_leaderboard(period, limit=10)
             value_key = "points"
+            emoji = "⭐"
         elif lb_type == "renames":
             leaders = await hyoshcoder.get_renames_leaderboard(period, limit=10)
             value_key = "total_renames"
+            emoji = "📁"
         else:  # referrals
             leaders = await hyoshcoder.get_referral_leaderboard(period, limit=10)
             value_key = "total_referrals"
+            emoji = "🎁"
 
         # Prepare leaderboard display
-        emoji = {
-            "points": "⭐",
-            "renames": "📁",
-            "referrals": "🎁"
-        }.get(lb_type, "🏆")
-        
         period_name = {
             "daily": "Daily",
             "weekly": "Weekly",
@@ -557,7 +554,7 @@ async def handle_leaderboard(client: Client, message: Message):
             body = ""
             for idx, user in enumerate(leaders, 1):
                 try:
-                    # Try to get user info from Telegram
+                    # Try to get fresh user info from Telegram
                     user_info = await client.get_users(int(user["_id"]))
                     username = f"@{user_info.username}" if user_info.username else user_info.first_name
                 except Exception:
@@ -568,12 +565,10 @@ async def handle_leaderboard(client: Client, message: Message):
                 body += f"**{idx}.** {username} — `{user.get(value_key, 0)}` {emoji}{premium_tag}\n"
 
         # Create inline keyboard
-        keyboard = InlineKeyboardMarkup([
+        buttons = [
             [
                 InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data="lb_period_daily"),
-                InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data="lb_period_weekly")
-            ],
-            [
+                InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data="lb_period_weekly"),
                 InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data="lb_period_monthly"),
                 InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data="lb_period_alltime")
             ],
@@ -583,21 +578,33 @@ async def handle_leaderboard(client: Client, message: Message):
                 InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data="lb_type_referrals")
             ],
             [InlineKeyboardButton("🔙 Back", callback_data="help")]
-        ])
+        ]
+        
+        # Ensure we don't exceed button limits
+        if len(buttons[0]) > 3:
+            buttons.insert(1, buttons[0][2:])
+            buttons[0] = buttons[0][:2]
+
+        keyboard = InlineKeyboardMarkup(buttons)
 
         # Try to send with photo, fallback to text
-        img = await get_random_photo()
-        if img:
-            await message.reply_photo(
-                photo=img,
-                caption=title + body,
-                reply_markup=keyboard
-            )
-        else:
-            await message.reply_text(
-                text=title + body,
-                reply_markup=keyboard
-            )
+        try:
+            img = await get_random_photo()
+            if img:
+                msg = await message.reply_photo(
+                    photo=img,
+                    caption=title + body,
+                    reply_markup=keyboard
+                )
+            else:
+                msg = await message.reply_text(
+                    text=title + body,
+                    reply_markup=keyboard
+                )
+            return msg
+        except Exception as e:
+            logger.error(f"Error sending leaderboard: {e}")
+            await message.reply_text("⚠️ Error displaying leaderboard. Please try again.")
 
     except Exception as e:
         logger.error(f"Error in leaderboard command: {e}", exc_info=True)
