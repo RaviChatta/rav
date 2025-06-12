@@ -517,119 +517,213 @@ async def handle_set_dump(client: Client, message: Message, args: list):
             "Please enter a valid channel ID.\n"
             "Example: `/set_dump -1001234567890`"
         )
-
-async def handle_leaderboard(client: Client, message: Message):
+@Client.on_message((filters.group | filters.private) & filters.command("leaderboard"))
+async def leaderboard_handler(bot: Client, message: Message):
     try:
-        user_id = message.from_user.id
-        period = await hyoshcoder.get_leaderboard_period(user_id)
-        lb_type = await hyoshcoder.get_leaderboard_type(user_id)
+        user_id = message.from_user.id if message.from_user else None
+        period = await hyoshcoder.get_leaderboard_period(user_id) if user_id else "weekly"
+        lb_type = await hyoshcoder.get_leaderboard_type(user_id) if user_id else "points"
 
-        # Get leaderboard data
-        if lb_type == "points":
-            leaders = await hyoshcoder.get_leaderboard(period, limit=10)
-            value_key = "points"
-            emoji = "⭐"
-        elif lb_type == "renames":
-            leaders = await hyoshcoder.get_renames_leaderboard(period, limit=10)
-            value_key = "total_renames"
-            emoji = "📁"
-        else:  # referrals
-            leaders = await hyoshcoder.get_referral_leaderboard(period, limit=10)
-            value_key = "total_referrals"
-            emoji = "🎁"
+        async def generate_leaderboard(period_filter, lb_type_filter):
+            # Get leaderboard data based on type
+            if lb_type_filter == "points":
+                leaders = await hyoshcoder.get_leaderboard(period_filter, limit=10)
+                value_key = "points"
+                emoji = "⭐"
+            elif lb_type_filter == "renames":
+                leaders = await hyoshcoder.get_renames_leaderboard(period_filter, limit=10)
+                value_key = "total_renames"
+                emoji = "📁"
+            else:  # referrals
+                leaders = await hyoshcoder.get_referral_leaderboard(period_filter, limit=10)
+                value_key = "total_referrals"
+                emoji = "🎁"
 
-        # Prepare leaderboard display
-        period_name = {
-            "daily": "Daily",
-            "weekly": "Weekly",
-            "monthly": "Monthly",
-            "alltime": "All-Time"
-        }.get(period, period.capitalize())
-        
-        title = f"🏆 **{period_name} Leaderboard - {emoji} {lb_type.capitalize()}**\n\n"
-        
-        if not leaders:
-            body = "No data yet. Start using the bot to enter the leaderboard!"
-        else:
-            body = ""
+            # Prepare leaderboard display
+            period_name = {
+                "daily": "Today's",
+                "weekly": "This Week's",
+                "monthly": "This Month's",
+                "alltime": "All-Time"
+            }.get(period_filter, period_filter.capitalize())
+            
+            title = f"🏆 <b>{period_name} Leaderboard - {emoji} {lb_type_filter.capitalize()}</b>\n\n"
+            
+            if not leaders:
+                return None
+            
+            leaderboard = [title]
+            
+            # Get user's rank if available
+            user_rank = None
+            user_value = 0
+            
+            if user_id:
+                if lb_type_filter == "points":
+                    user_data = await hyoshcoder.get_user(user_id)
+                    if user_data:
+                        user_value = user_data["points"]["balance"]
+                        user_rank = await hyoshcoder.users.count_documents({
+                            "points.balance": {"$gt": user_value},
+                            "ban_status.is_banned": False
+                        }) + 1
+                elif lb_type_filter == "renames":
+                    user_stats = await hyoshcoder.file_stats.aggregate([
+                        {"$match": {"user_id": user_id}},
+                        {"$group": {"_id": None, "total": {"$sum": 1}}}
+                    ]).to_list(1)
+                    if user_stats:
+                        user_value = user_stats[0]["total"]
+                        user_rank = await hyoshcoder.file_stats.aggregate([
+                            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+                            {"$match": {"total": {"$gt": user_value}}},
+                            {"$count": "total"}
+                        ]).to_list(1)
+                        user_rank = (user_rank[0]["total"] + 1) if user_rank else 1
+                else:  # referrals
+                    user_data = await hyoshcoder.get_user(user_id)
+                    if user_data:
+                        user_value = user_data["referral"]["referred_count"]
+                        user_rank = await hyoshcoder.users.count_documents({
+                            "referral.referred_count": {"$gt": user_value},
+                            "ban_status.is_banned": False
+                        }) + 1
+            
+            # Format leaderboard entries
             for idx, user in enumerate(leaders, 1):
                 try:
                     # Try to get fresh user info from Telegram
-                    user_info = await client.get_users(int(user["_id"]))
-                    username = f"@{user_info.username}" if user_info.username else user_info.first_name
+                    tg_user = await bot.get_users(int(user["_id"]))
+                    name = html.escape(tg_user.first_name or "Anonymous")
+                    username = f"@{tg_user.username}" if tg_user.username else "No UN"
                 except Exception:
                     # Fallback to stored username or user ID
-                    username = user.get("username", f"User {user['_id']}")
+                    name = html.escape(user.get("username", f"User {user['_id']}"))
+                    username = f"@{user['username']}" if user.get("username") else "No UN"
                 
                 premium_tag = " 💎" if user.get("is_premium", False) else ""
-                body += f"**{idx}.** {username} — `{user.get(value_key, 0)}` {emoji}{premium_tag}\n"
-
+                leaderboard.append(
+                    f"{idx}. <b>{name}</b> "
+                    f"(<code>{username}</code>) ➜ "
+                    f"<i>{user.get(value_key, 0)} {lb_type_filter} {emoji}{premium_tag}</i>"
+                )
+            
+            # Add user's rank if available
+            if user_rank is not None:
+                leaderboard.append(f"\n<b>Your Rank:</b> {user_rank} with {user_value} {lb_type_filter}")
+            
+            leaderboard.append(f"\nLast updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            leaderboard.append(f"\n<i>**This message will auto-delete in {settings.LEADERBOARD_DELETE_TIMER} seconds**</i>")
+            
+            return "\n".join(leaderboard)
+        
+        # Generate initial leaderboard
+        leaderboard_text = await generate_leaderboard(period, lb_type)
+        
+        if not leaderboard_text:
+            no_data_msg = await message.reply_text("<blockquote>No leaderboard data available yet!</blockquote>")
+            await asyncio.sleep(10)
+            await no_data_msg.delete()
+            return
+        
         # Create inline keyboard
-        buttons = [
+        keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data="lb_period_daily"),
-                InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data="lb_period_weekly"),
-                InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data="lb_period_monthly"),
-                InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data="lb_period_alltime")
+                InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data=f"lb_period_daily_{lb_type}"),
+                InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data=f"lb_period_weekly_{lb_type}"),
+                InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data=f"lb_period_monthly_{lb_type}")
             ],
             [
-                InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data="lb_type_points"),
-                InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data="lb_type_renames"),
-                InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data="lb_type_referrals")
+                InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data=f"lb_period_alltime_{lb_type}"),
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="help")]
-        ]
+            [
+                InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data=f"lb_type_points_{period}"),
+                InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data=f"lb_type_renames_{period}"),
+                InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data=f"lb_type_referrals_{period}")
+            ]
+        ])
         
-        # Ensure we don't exceed button limits
-        if len(buttons[0]) > 3:
-            buttons.insert(1, buttons[0][2:])
-            buttons[0] = buttons[0][:2]
-
-        keyboard = InlineKeyboardMarkup(buttons)
-
-        # Try to send with photo, fallback to text
-        try:
-            img = await get_random_photo()
-            if img:
-                msg = await message.reply_photo(
-                    photo=img,
-                    caption=title + body,
-                    reply_markup=keyboard
+        sent_msg = await message.reply_text(
+            leaderboard_text,
+            reply_markup=keyboard
+        )
+        
+        # Callback handler for leaderboard updates
+        @Client.on_callback_query(filters.regex(r"^lb_(period|type)_"))
+        async def leaderboard_callback(client: Client, callback_query: CallbackQuery):
+            if callback_query.from_user.id != user_id:
+                await callback_query.answer("This is not your leaderboard!", show_alert=True)
+                return
+            
+            data_parts = callback_query.data.split("_")
+            filter_type = data_parts[1]  # "period" or "type"
+            selected_value = data_parts[2]  # "daily", "points", etc.
+            
+            # Update user preferences
+            if filter_type == "period":
+                if user_id:
+                    await hyoshcoder.set_leaderboard_period(user_id, selected_value)
+                period = selected_value
+            else:  # type
+                if user_id:
+                    await hyoshcoder.set_leaderboard_type(user_id, selected_value)
+                lb_type = selected_value
+            
+            # Generate updated leaderboard
+            new_leaderboard = await generate_leaderboard(period, lb_type)
+            
+            if not new_leaderboard:
+                await callback_query.answer("No data available for this filter", show_alert=True)
+                return
+            
+            # Update keyboard with current selections
+            new_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data=f"lb_period_daily_{lb_type}"),
+                    InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data=f"lb_period_weekly_{lb_type}"),
+                    InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data=f"lb_period_monthly_{lb_type}")
+                ],
+                [
+                    InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data=f"lb_period_alltime_{lb_type}"),
+                ],
+                [
+                    InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data=f"lb_type_points_{period}"),
+                    InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data=f"lb_type_renames_{period}"),
+                    InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data=f"lb_type_referrals_{period}")
+                ]
+            ])
+            
+            try:
+                await callback_query.message.edit_text(
+                    new_leaderboard,
+                    reply_markup=new_keyboard
                 )
-            else:
-                msg = await message.reply_text(
-                    text=title + body,
-                    reply_markup=keyboard
-                )
-            return msg
-        except Exception as e:
-            logger.error(f"Error sending leaderboard: {e}")
-            await message.reply_text("⚠️ Error displaying leaderboard. Please try again.")
-
-    except Exception as e:
-        logger.error(f"Error in leaderboard command: {e}", exc_info=True)
-        await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
-# Add these callback handlers
-
-async def handle_leaderboard_callback(client: Client, callback_query: CallbackQuery):
-    try:
-        user_id = callback_query.from_user.id
-        data = callback_query.data
+                await callback_query.answer()
+            except Exception as e:
+                logger.error(f"Error updating leaderboard: {e}")
+                await callback_query.answer("Error updating leaderboard", show_alert=True)
         
-        if data.startswith("lb_period_"):
-            period = data.split("_")[-1]
-            await hyoshcoder.set_leaderboard_period(user_id, period)
-        elif data.startswith("lb_type_"):
-            lb_type = data.split("_")[-1]
-            await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+        # Auto-delete messages
+        async def delete_messages():
+            await asyncio.sleep(settings.LEADERBOARD_DELETE_TIMER)
+            try:
+                await sent_msg.delete()
+            except:
+                pass
+            try:
+                await message.delete()
+            except:
+                pass
         
-        # Edit the message with updated leaderboard
-        try:
-            await handle_leaderboard(client, callback_query.message)
-            await callback_query.answer()
-        except Exception as e:
-            logger.error(f"Error updating leaderboard: {e}")
-            await callback_query.answer("Error updating leaderboard", show_alert=True)
+        asyncio.create_task(delete_messages())
+        
     except Exception as e:
-        logger.error(f"Error in leaderboard callback: {e}")
-        await callback_query.answer("Error processing request", show_alert=True)
+        error_msg = await message.reply_text(
+            "<b>Error generating leaderboard!</b>\n"
+            f"<code>{str(e)}</code>\n\n"
+            f"**This message will self-destruct in {settings.LEADERBOARD_DELETE_TIMER} seconds.**"
+        )
+        await asyncio.sleep(settings.LEADERBOARD_DELETE_TIMER)
+        await error_msg.delete()
+
+
