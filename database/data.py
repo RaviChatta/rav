@@ -1470,8 +1470,6 @@ class Database:
             return default
 
 # Initialize database instance with retry logic
-hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
-
 async def initialize_database():
     """Initialize database connection with retry logic."""
     max_retries = 3
@@ -1481,7 +1479,7 @@ async def initialize_database():
         try:
             await hyoshcoder.connect()
             # Initialize leaderboard cache on startup
-            await hyoshcoder.update_leaderboard_cache()
+            await hyoshcoder.update_leaderboards()  # <- fixed here
             return hyoshcoder
         except Exception as e:
             if attempt == max_retries - 1:
@@ -1490,3 +1488,4 @@ async def initialize_database():
             logger.warning(f"⚠️ Database connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
             await asyncio.sleep(retry_delay)
             retry_delay *= 2  # Exponential backoff
+
