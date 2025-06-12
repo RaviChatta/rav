@@ -86,7 +86,10 @@ async def generate_point_link(client: Client, message: Message):
             "**🕒 Link valid for 24 hours | 🧬 One-time use only**",
             disable_web_page_preview=True
         )
-
+        # Auto-delete both messages after 60 seconds
+        await asyncio.sleep(30)
+        await message.delete()
+        await bot_reply.delete()
     except Exception as e:
         logger.error(f"Unexpected error in generate_point_link: {str(e)}", exc_info=True)
         await message.reply("❌ An unexpected error occurred. Please try again later.")
@@ -120,6 +123,8 @@ async def refer(client, message):
         logger.error(f"Error in refer command: {e}")
         await message.reply_text("❌ Failed to generate referral link. Please try again.")
 
+
+
 @Client.on_message(filters.command("freepoints") & filters.private)
 async def freepoints(client: Client, message: Message):
     try:
@@ -138,7 +143,7 @@ async def freepoints(client: Client, message: Message):
             referral_code = user["referral_code"]
         
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-        
+
         # Generate points link
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
         deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
@@ -147,7 +152,7 @@ async def freepoints(client: Client, message: Message):
             api=settings.SHORTED_LINK_API,
             link=deep_link
         )
-        
+
         # Save the points link
         await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
 
@@ -159,7 +164,7 @@ async def freepoints(client: Client, message: Message):
             ],
             [InlineKeyboardButton("🔙 Back", callback_data="help")]
         ])
-        
+
         caption = (
             "**🎁 Free Points Menu**\n\n"
             "Earn points by:\n"
@@ -169,25 +174,31 @@ async def freepoints(client: Client, message: Message):
             f"💰 Your points link: `{short_url}`\n\n"
             "Your points will be added automatically!"
         )
-        
+
         img = await get_random_photo()
         if img:
-            await message.reply_photo(
+            bot_reply = await message.reply_photo(
                 photo=img,
                 caption=caption,
                 reply_markup=buttons,
                 disable_web_page_preview=True
             )
         else:
-            await message.reply_text(
+            bot_reply = await message.reply_text(
                 text=caption,
                 reply_markup=buttons,
                 disable_web_page_preview=True
             )
-            
+
+        # Auto-delete both messages after 60 seconds
+        await asyncio.sleep(30)
+        await message.delete()
+        await bot_reply.delete()
+
     except Exception as e:
         logger.error(f"Error in freepoints command: {e}")
         await message.reply_text("❌ Failed to load free points options. Please try again.")
+
 
 @Client.on_message(filters.command(["view_dump", "viewdump"]) & filters.private)
 async def view_dump_channel(client: Client, message: Message):
@@ -440,30 +451,6 @@ async def handle_view_thumb(client: Client, message: Message):
 async def handle_del_thumb(client: Client, message: Message):
     await hyoshcoder.set_thumbnail(message.from_user.id, None)
     await message.reply_text("✅ Thumbnail removed successfully!")
-
-async def handle_metadata(client: Client, message: Message):
-    bool_meta = await hyoshcoder.get_metadata(message.from_user.id)
-    meta_code = await hyoshcoder.get_metadata_code(message.from_user.id) or "Not set"
-    
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "✅ Metadata Enabled" if bool_meta else "❌ Metadata Disabled",
-                callback_data=f"metadata_{int(not bool_meta)}"
-            )
-        ],
-        [
-            InlineKeyboardButton("Set Custom Metadata", callback_data="set_metadata"),
-            InlineKeyboardButton("Back", callback_data="help")
-        ]
-    ])
-    
-    await message.reply_text(
-        f"📝 <b>Metadata Settings</b>\n\n"
-        f"Status: {'Enabled ✅' if bool_meta else 'Disabled ❌'}\n"
-        f"Current Code:\n<code>{meta_code}</code>",
-        reply_markup=keyboard
-    )
 
 async def handle_premium(client: Client, message: Message):
     await message.reply_text(
