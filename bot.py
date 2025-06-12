@@ -76,7 +76,7 @@ class Bot(Client):
         
         await initialize_database()
         hyoshcoder.set_client(self)
-        await start_cleanup()
+  #      await start_cleanup()
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
