@@ -80,19 +80,21 @@ async def generate_point_link(client: Client, message: Message):
             logger.error(f"Database error: {db_error}")
             return await message.reply("❌ Failed to save point link. Please try again.")
 
-        await message.reply(
+        bot_reply = await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
             f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
             "**🕒 Link valid for 24 hours | 🧬 One-time use only**",
             disable_web_page_preview=True
         )
-        # Auto-delete both messages after 60 seconds
+
         await asyncio.sleep(30)
         await message.delete()
         await bot_reply.delete()
+
     except Exception as e:
         logger.error(f"Unexpected error in generate_point_link: {str(e)}", exc_info=True)
         await message.reply("❌ An unexpected error occurred. Please try again later.")
+
 
 @Client.on_message(filters.command("refer") & filters.private)
 async def refer(client, message):
