@@ -52,7 +52,9 @@ BTN_STYLE = {
 }
 
 # State trackers
+metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
+dump_states = defaultdict(dict)
 
 def create_button(text, callback_data, style='medium', emoji=None):
     """Create button with consistent styling"""
@@ -110,6 +112,45 @@ async def edit_or_resend(client, query, response):
             reply_markup=response['reply_markup'],
             disable_web_page_preview=True
         )
+
+def get_metadata_keyboard(is_enabled):
+    """Return metadata toggle keyboard based on current state"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "✅ Metadata Enabled" if is_enabled else "❌ Metadata Disabled",
+                callback_data=f"metadata_{int(not is_enabled)}"
+            )
+        ],
+        [
+            InlineKeyboardButton("🛠 Set Custom Metadata", callback_data="set_metadata"),
+            InlineKeyboardButton("🔙 Back", callback_data="help")
+        ]
+    ])
+
+async def cleanup_states():
+    """Clean up expired states"""
+    while True:
+        await asyncio.sleep(300)  # Clean every 5 minutes
+        current_time = time.time()
+        
+        # Clean metadata states
+        expired_meta = [uid for uid, state in metadata_states.items() 
+                       if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_meta:
+            metadata_states.pop(uid, None)
+            
+        # Clean caption states
+        expired_caption = [uid for uid, state in caption_states.items()
+                          if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_caption:
+            caption_states.pop(uid, None)
+            
+        # Clean dump states
+        expired_dump = [uid for uid, state in dump_states.items()
+                       if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_dump:
+            dump_states.pop(uid, None)
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -344,6 +385,43 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': img
             })
 
+        # Metadata Handling
+        elif data in ["meta", "metadata_0", "metadata_1"]:
+            if data.startswith("metadata_"):
+                new_state = data.endswith("_1")
+                await hyoshcoder.set_metadata(user_id, new_state)
+                await query.answer(f"Metadata {'enabled' if new_state else 'disabled'}")
+            
+            bool_meta = await hyoshcoder.get_metadata(user_id)
+            meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
+            
+            await edit_or_resend(client, query, {
+                'caption': f"<b>Metadata Settings</b>\n\nCurrent status: {'Enabled ✅' if bool_meta else 'Disabled ❌'}\n\n"
+                          f"<b>Current Metadata:</b>\n<code>{meta_code}</code>",
+                'reply_markup': get_metadata_keyboard(bool_meta)
+            })
+
+        # Set Metadata Text
+        elif data == "set_metadata":
+            metadata_states[user_id] = {
+                'timestamp': time.time(),
+                'message_id': query.message.id
+            }
+            
+            current_meta = await hyoshcoder.get_metadata_code(user_id) or "None"
+            
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("❌ Cancel", callback_data="meta")]
+            ])
+            
+            await edit_or_resend(client, query, {
+                'caption': "📝 <b>Send new metadata text</b>\n\n"
+                          "Example: <code>-map 0 -c:s copy -c:a copy -c:v copy -metadata title=\"My Video\"</code>\n\n"
+                          f"Current: <code>{current_meta}</code>\n\n"
+                          "Reply with your new metadata or /cancel",
+                'reply_markup': btn
+            })
+
         # Sequential Toggle
         elif data == "sequential":
             try:
@@ -368,6 +446,37 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 logger.error(f"Error toggling source: {e}")
                 await query.answer("⚠️ Failed to update source", show_alert=True)
 
+        # Dump Channel Handling
+        elif data == "setdump":
+            current_dump = await hyoshcoder.get_user_channel(user_id)
+            btn = create_keyboard([
+                create_button("Set Dump Channel", "setdump_instructions"),
+                create_button("Remove Dump Channel", "remove_dump"),
+                create_button("Back", "help")
+            ])
+            
+            await edit_or_resend(client, query, {
+                'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
+                          "You can set a channel where renamed files will be automatically forwarded.",
+                'reply_markup': btn,
+                'photo': img
+            })
+
+        elif data == "setdump_instructions":
+            await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
+
+        elif data == "remove_dump":
+            await hyoshcoder.set_user_channel(user_id, None)
+            btn = create_keyboard([
+                create_button("Back", "setdump")
+            ])
+            
+            await edit_or_resend(client, query, {
+                'caption': "✅ Dump channel removed successfully",
+                'reply_markup': btn,
+                'photo': img
+            })
+
         # Close Button
         elif data == "close":
             try:
@@ -389,5 +498,13 @@ async def cb_handler(client: Client, query: CallbackQuery):
         except:
             pass
 
-# Start the cleanup task
-asyncio.create_task(cleanup_states())
+# Start the cleanup task when the bot starts
+async def start_cleanup():
+    asyncio.create_task(cleanup_states())
+
+# Call this function when your bot starts
+# Example: 
+# from callback import start_cleanup
+# async def main():
+#     await start_cleanup()
+#     # rest of your startup code
