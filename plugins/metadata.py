@@ -4,6 +4,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, 
 from pyrogram.errors import FloodWait, MessageNotModified, MessageDeleteForbidden
 import asyncio
 import logging
+import time
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -11,16 +12,16 @@ logger = logging.getLogger(__name__)
 # Track metadata editing state
 metadata_states: Dict[int, Dict] = {}
 
-# Button layouts with improved structure
+# Enhanced button layouts with emoji and better structure
 METADATA_BUTTONS = {
     True: [
-        [InlineKeyboardButton('✅ Metadata Enabled', callback_data='disable_metadata')],
-        [InlineKeyboardButton('✏️ Set Custom Metadata', callback_data='set_metadata')],
+        [InlineKeyboardButton('✅ Metadata Enabled', callback_data='toggle_metadata')],
+        [InlineKeyboardButton('✏️ Set Custom Code', callback_data='set_metadata')],
         [InlineKeyboardButton('🔙 Back', callback_data='help')]
     ],
     False: [
-        [InlineKeyboardButton('❌ Metadata Disabled', callback_data='enable_metadata')],
-        [InlineKeyboardButton('✏️ Set Custom Metadata', callback_data='set_metadata')],
+        [InlineKeyboardButton('❌ Metadata Disabled', callback_data='toggle_metadata')],
+        [InlineKeyboardButton('✏️ Set Custom Code', callback_data='set_metadata')],
         [InlineKeyboardButton('🔙 Back', callback_data='help')]
     ]
 }
@@ -68,38 +69,41 @@ async def metadata_command(client: Client, message: Message):
         text = (
             "📝 <b>Metadata Settings</b>\n\n"
             f"• Status: {'Enabled ✅' if bool_meta else 'Disabled ❌'}\n"
-            f"• Current Code: <code>{meta_code}</code>"
+            f"• Current Code:\n<code>{meta_code}</code>"
         )
         
         await message.reply_text(
             text,
-            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[bool_meta])
+            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[bool_meta]),
+            disable_web_page_preview=True
         )
     except Exception as e:
         logger.error(f"Metadata command error: {e}")
         await message.reply_text("❌ Failed to load metadata settings")
 
-@Client.on_callback_query(filters.regex(r'^(enable|disable)_metadata$'))
+@Client.on_callback_query(filters.regex(r'^toggle_metadata$'))
 async def toggle_metadata_callback(client: Client, query: CallbackQuery):
     """Handle metadata toggle callback"""
     user_id = query.from_user.id
     try:
-        enable = query.data.startswith('enable')
-        await hyoshcoder.set_metadata(user_id, enable)
+        current_status = await hyoshcoder.get_metadata(user_id)
+        new_status = not current_status
+        await hyoshcoder.set_metadata(user_id, new_status)
         
         meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
         text = (
             "📝 <b>Metadata Settings</b>\n\n"
-            f"• Status: {'Enabled ✅' if enable else 'Disabled ❌'}\n"
-            f"• Current Code: <code>{meta_code}</code>"
+            f"• Status: {'Enabled ✅' if new_status else 'Disabled ❌'}\n"
+            f"• Current Code:\n<code>{meta_code}</code>"
         )
         
         await safe_edit_message(
             query.message,
             text,
-            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[enable])
+            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[new_status]),
+            disable_web_page_preview=True
         )
-        await query.answer(f"Metadata {'enabled' if enable else 'disabled'}")
+        await query.answer(f"Metadata {'enabled' if new_status else 'disabled'}")
     except Exception as e:
         logger.error(f"Toggle metadata error: {e}")
         await query.answer("❌ Failed to update metadata", show_alert=True)
@@ -115,11 +119,13 @@ async def set_metadata_callback(client: Client, query: CallbackQuery):
             'timestamp': time.time()
         }
         
+        current_meta = await hyoshcoder.get_metadata_code(user_id) or "None"
         prompt_text = (
-            "✏️ <b>Set Custom Metadata</b>\n\n"
-            "Please send your new metadata text (or /cancel to abort):\n\n"
-            f"Current: <code>{await hyoshcoder.get_metadata_code(user_id) or 'None'}</code>\n"
-            "You have 2 minutes to respond."
+            "✏️ <b>Set Custom Metadata Code</b>\n\n"
+            "Please send your new metadata code (FFmpeg format):\n\n"
+            f"Current: <code>{current_meta}</code>\n\n"
+            "⚠️ You have 2 minutes to respond\n"
+            "Type /cancel to abort"
         )
         
         if not await safe_edit_message(
@@ -127,7 +133,8 @@ async def set_metadata_callback(client: Client, query: CallbackQuery):
             prompt_text,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_metadata")]]
-            )
+            ),
+            disable_web_page_preview=True
         ):
             await query.answer("❌ Failed to update message", show_alert=True)
     except Exception as e:
@@ -151,14 +158,15 @@ async def handle_metadata_text(client: Client, message: Message):
         bool_meta = await hyoshcoder.get_metadata(user_id)
         
         text = (
-            "✅ <b>Metadata Updated</b>\n\n"
-            f"New metadata: <code>{message.text}</code>\n\n"
+            "✅ <b>Metadata Updated Successfully</b>\n\n"
+            f"New code:\n<code>{message.text}</code>\n\n"
             f"Status: {'Enabled ✅' if bool_meta else 'Disabled ❌'}"
         )
         
         await message.reply_text(
             text,
-            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[bool_meta])
+            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[bool_meta]),
+            disable_web_page_preview=True
         )
         
         # Cleanup
@@ -181,13 +189,14 @@ async def cancel_metadata_callback(client: Client, query: CallbackQuery):
         text = (
             "📝 <b>Metadata Settings</b>\n\n"
             f"• Status: {'Enabled ✅' if bool_meta else 'Disabled ❌'}\n"
-            f"• Current Code: <code>{meta_code}</code>"
+            f"• Current Code:\n<code>{meta_code}</code>"
         )
         
         await safe_edit_message(
             query.message,
             text,
-            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[bool_meta])
+            reply_markup=InlineKeyboardMarkup(METADATA_BUTTONS[bool_meta]),
+            disable_web_page_preview=True
         )
         await query.answer("Metadata update cancelled")
     except Exception as e:
@@ -209,6 +218,5 @@ async def cleanup_metadata_states():
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
 
-# Start cleanup task when bot starts
-async def startup():
-    asyncio.create_task(cleanup_metadata_states())
+# Start cleanup task when module loads
+asyncio.create_task(cleanup_metadata_states())
