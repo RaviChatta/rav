@@ -1470,6 +1470,8 @@ class Database:
             return default
 
 # Initialize database instance with retry logic
+hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
+
 async def initialize_database():
     """Initialize database connection with retry logic."""
     max_retries = 3
