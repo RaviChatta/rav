@@ -524,74 +524,18 @@ async def handle_leaderboard(client: Client, message: Message):
         period = await hyoshcoder.get_leaderboard_period(user_id)
         lb_type = await hyoshcoder.get_leaderboard_type(user_id)
 
-        leaders = []
-        if lb_type == "referrals":
-            raw = await hyoshcoder.get_referral_leaderboard(period, limit=10)
-            leaders = []
-            for idx, user in enumerate(raw):
-                try:
-                    user_info = await client.get_users(user['_id'])
-                    username = f"@{user_info.username}" if user_info.username else user_info.first_name
-                    leaders.append({
-                        '_id': str(user['_id']),
-                        'username': username,
-                        'value': user.get('total_referrals', 0),
-                        'rank': idx + 1,
-                        'is_premium': user.get('is_premium', False)
-                    })
-                except Exception:
-                    leaders.append({
-                        '_id': str(user['_id']),
-                        'username': f"User {user['_id']}",
-                        'value': user.get('total_referrals', 0),
-                        'rank': idx + 1,
-                        'is_premium': user.get('is_premium', False)
-                    })
+        # Get leaderboard data
+        if lb_type == "points":
+            leaders = await hyoshcoder.get_leaderboard(period, limit=10)
+            value_key = "points"
         elif lb_type == "renames":
-            raw = await hyoshcoder.get_renames_leaderboard(period, limit=10)
-            leaders = []
-            for idx, user in enumerate(raw):
-                try:
-                    user_info = await client.get_users(user['_id'])
-                    username = f"@{user_info.username}" if user_info.username else user_info.first_name
-                    leaders.append({
-                        '_id': str(user['_id']),
-                        'username': username,
-                        'value': user.get('value', 0),
-                        'rank': idx + 1,
-                        'is_premium': user.get('is_premium', False)
-                    })
-                except Exception:
-                    leaders.append({
-                        '_id': str(user['_id']),
-                        'username': f"User {user['_id']}",
-                        'value': user.get('value', 0),
-                        'rank': idx + 1,
-                        'is_premium': user.get('is_premium', False)
-                    })
-        else:
-            raw = await hyoshcoder.get_leaderboard(period, limit=10)
-            leaders = []
-            for idx, user in enumerate(raw):
-                try:
-                    user_info = await client.get_users(user['_id'])
-                    username = f"@{user_info.username}" if user_info.username else user_info.first_name
-                    leaders.append({
-                        '_id': str(user['_id']),
-                        'username': username,
-                        'value': user.get('points', 0),
-                        'rank': idx + 1,
-                        'is_premium': user.get('is_premium', False)
-                    })
-                except Exception:
-                    leaders.append({
-                        '_id': str(user['_id']),
-                        'username': f"User {user['_id']}",
-                        'value': user.get('points', 0),
-                        'rank': idx + 1,
-                        'is_premium': user.get('is_premium', False)
-                    })
+            leaders = await hyoshcoder.get_renames_leaderboard(period, limit=10)
+            value_key = "total_renames"
+        else:  # referrals
+            leaders = await hyoshcoder.get_referral_leaderboard(period, limit=10)
+            value_key = "total_referrals"
 
+        # Prepare leaderboard display
         emoji = {
             "points": "⭐",
             "renames": "📁",
@@ -611,10 +555,19 @@ async def handle_leaderboard(client: Client, message: Message):
             body = "No data yet. Start using the bot to enter the leaderboard!"
         else:
             body = ""
-            for user in leaders:
-                premium_tag = " 💎" if user.get('is_premium') else ""
-                body += f"**{user['rank']}.** {user['username']} — `{user['value']}` {emoji}{premium_tag}\n"
+            for idx, user in enumerate(leaders, 1):
+                try:
+                    # Try to get user info from Telegram
+                    user_info = await client.get_users(int(user["_id"]))
+                    username = f"@{user_info.username}" if user_info.username else user_info.first_name
+                except Exception:
+                    # Fallback to stored username or user ID
+                    username = user.get("username", f"User {user['_id']}")
+                
+                premium_tag = " 💎" if user.get("is_premium", False) else ""
+                body += f"**{idx}.** {username} — `{user.get(value_key, 0)}` {emoji}{premium_tag}\n"
 
+        # Create inline keyboard
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data="lb_period_daily"),
@@ -632,6 +585,7 @@ async def handle_leaderboard(client: Client, message: Message):
             [InlineKeyboardButton("🔙 Back", callback_data="help")]
         ])
 
+        # Try to send with photo, fallback to text
         img = await get_random_photo()
         if img:
             await message.reply_photo(
@@ -646,5 +600,5 @@ async def handle_leaderboard(client: Client, message: Message):
             )
 
     except Exception as e:
-        logger.error(f"Error in leaderboard command: {e}")
+        logger.error(f"Error in leaderboard command: {e}", exc_info=True)
         await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
