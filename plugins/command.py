@@ -609,3 +609,27 @@ async def handle_leaderboard(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Error in leaderboard command: {e}", exc_info=True)
         await message.reply_text("⚠️ Error loading leaderboard. Please try again.")
+# Add these callback handlers
+
+async def handle_leaderboard_callback(client: Client, callback_query: CallbackQuery):
+    try:
+        user_id = callback_query.from_user.id
+        data = callback_query.data
+        
+        if data.startswith("lb_period_"):
+            period = data.split("_")[-1]
+            await hyoshcoder.set_leaderboard_period(user_id, period)
+        elif data.startswith("lb_type_"):
+            lb_type = data.split("_")[-1]
+            await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+        
+        # Edit the message with updated leaderboard
+        try:
+            await handle_leaderboard(client, callback_query.message)
+            await callback_query.answer()
+        except Exception as e:
+            logger.error(f"Error updating leaderboard: {e}")
+            await callback_query.answer("Error updating leaderboard", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in leaderboard callback: {e}")
+        await callback_query.answer("Error processing request", show_alert=True)
