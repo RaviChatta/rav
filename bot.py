@@ -9,6 +9,7 @@ from pyrogram.types import Message
 from aiohttp import web
 from route import web_server
 from config import settings
+from callback import start_cleanup
 from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
