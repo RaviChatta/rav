@@ -57,6 +57,21 @@ metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
 dump_states = defaultdict(dict)
 
+    METADATA_ON = [
+        [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
+         InlineKeyboardButton('✅', callback_data='metadata_1')],
+        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+         InlineKeyboardButton('Back', callback_data='help')]
+    ]
+
+    METADATA_OFF = [
+        [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
+         InlineKeyboardButton('❌', callback_data='metadata_0')],
+        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+         InlineKeyboardButton('Back', callback_data='help')]
+    ]
+
+
 def create_button(text, data, style='medium', emoji=None, is_url=False):
     """Create button with consistent styling, supporting both callback and URL buttons"""
     if emoji:
@@ -120,24 +135,8 @@ async def edit_or_resend(client, query, response):
         )
 
 
-def get_metadata_keyboard(is_enabled: bool):
-    """Return metadata toggle keyboard based on current state"""
 
-    METADATA_ON = [
-        [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
-         InlineKeyboardButton('✅', callback_data='metadata_1')],
-        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
-         InlineKeyboardButton('Back', callback_data='help')]
-    ]
 
-    METADATA_OFF = [
-        [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
-         InlineKeyboardButton('❌', callback_data='metadata_0')],
-        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
-         InlineKeyboardButton('Back', callback_data='help')]
-    ]
-
-    return InlineKeyboardMarkup(METADATA_ON if is_enabled else METADATA_OFF)
 
 
 async def cleanup_states():
