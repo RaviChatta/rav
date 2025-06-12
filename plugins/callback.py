@@ -22,6 +22,7 @@ from config import settings
 from datetime import datetime
 from collections import defaultdict
 from pyrogram.errors import QueryIdInvalid, FloodWait, ChatWriteForbidden
+from asyncio import create_task, sleep
 
 logger = logging.getLogger(__name__)
 ADMIN_USER_ID = settings.ADMIN
@@ -56,14 +57,19 @@ metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
 dump_states = defaultdict(dict)
 
-def create_button(text, callback_data, style='medium', emoji=None):
-    """Create button with consistent styling"""
+def create_button(text, data, style='medium', emoji=None, is_url=False):
+    """Create button with consistent styling, supporting both callback and URL buttons"""
     if emoji:
         text = f"{emoji} {text}"
     max_chars = BTN_STYLE[style]['max_chars']
     if len(text) > max_chars:
         text = text[:max_chars-1] + "…"
-    return InlineKeyboardButton(text, callback_data=callback_data)
+    
+    if is_url:
+        return InlineKeyboardButton(text, url=data)
+    else:
+        return InlineKeyboardButton(text, callback_data=data)
+
 
 def create_keyboard(buttons, style='medium'):
     """Create mobile-friendly keyboard layout"""
@@ -337,7 +343,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 logger.error(f"Error in leaderboard handler: {e}")
                 await query.answer("⚠️ Error loading leaderboard", show_alert=True)
 
-        # Free Points
+        
+        # ...
+        
         elif data == "freepoints":
             me = await client.get_me()
             user = await hyoshcoder.read_user(user_id)
@@ -366,11 +374,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
             
             # Save the points link
             await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-
+        
             # Create buttons
             btn = create_keyboard([
-                create_button("Share Referral", f"share_referral:{refer_link}", emoji=EMOJI['link']),
-                create_button("Earn Points", f"open_points:{short_url}", emoji=EMOJI['money']),
+                create_button("Share Referral", refer_link, emoji=EMOJI['link'], is_url=True),
+                create_button("Earn Points", short_url, emoji=EMOJI['money'], is_url=True),
                 create_button("Back", "help")
             ])
             
@@ -384,73 +392,79 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 f"• Get {settings.SHORTENER_POINT_REWARD} points instantly\n\n"
                 "Your points will be added automatically when someone uses your links."
             )
-            
-            await edit_or_resend(client, query, {
+        
+            # Send message
+            sent = await edit_or_resend(client, query, {
                 'caption': caption,
                 'reply_markup': btn,
                 'photo': img
             })
+        
+            # Auto delete in 2 minutes (120 seconds)
+            async def auto_delete():
+                await sleep(30)
+                try:
+                    await client.delete_messages(chat_id=query.message.chat.id, message_ids=sent.id)
+                except Exception as e:
+                    logger.warning(f"Failed to auto-delete message: {e}")
+        
+            create_task(auto_delete())
 
         # Metadata Handling
         elif data in ["meta", "metadata_0", "metadata_1"]:
             if data.startswith("metadata_"):
-                new_state = data.endswith("_1")
-                await hyoshcoder.set_metadata(user_id, new_state)
-                await query.answer(f"Metadata {'enabled' if new_state else 'disabled'}")
+                await hyoshcoder.set_metadata(user_id, data.endswith("_1"))
             
             bool_meta = await hyoshcoder.get_metadata(user_id)
             meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
-            
-            await edit_or_resend(client, query, {
-                'caption': f"<b>Metadata Settings</b>\n\nCurrent status: {'Enabled ✅' if bool_meta else 'Disabled ❌'}\n\n"
-                          f"<b>Current Metadata:</b>\n<code>{meta_code}</code>",
-                'reply_markup': get_metadata_keyboard(bool_meta)
-            })
+            await query.message.edit_text(
+                f"<b>Current Metadata:</b>\n\n➜ {meta_code}",
+                reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
+            )
+            return
 
-        # Set Metadata Text
         elif data == "set_metadata":
             metadata_states[user_id] = {
-                'timestamp': time.time(),
-                'message_id': query.message.id
+                "waiting": True,
+                "timestamp": time.time(),
+                "original_msg": query.message.id
             }
-            
-            current_meta = await hyoshcoder.get_metadata_code(user_id) or "None"
-            
-            btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancel", callback_data="meta")]
-            ])
-            
-            await edit_or_resend(client, query, {
-                'caption': "📝 <b>Send new metadata text</b>\n\n"
-                          "Example: <code>-map 0 -c:s copy -c:a copy -c:v copy -metadata title=\"My Video\"</code>\n\n"
-                          f"Current: <code>{current_meta}</code>\n\n"
-                          "Reply with your new metadata or /cancel",
-                'reply_markup': btn
-            })
-
+            prompt = await query.message.edit_text(
+                "📝 <b>Send new metadata text</b>\n\n"
+                "Example: <code> CulturedTeluguweeb</code>\n"
+                f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
+                "Reply with text or /cancel",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
+                )
+            )
+            metadata_states[user_id]["prompt_id"] = prompt.id
+            return
         # Sequential Toggle
         elif data == "sequential":
             try:
+                user = await hyoshcoder.read_user(user_id)
+                sequential_status = user.get("sequential_mode", False)
                 new_status = not sequential_status
                 await hyoshcoder.set_sequential_mode(user_id, new_status)
-                await query.answer(f"Sequential mode {'enabled' if new_status else 'disabled'}")
-                # Refresh help menu
-                await cb_handler(client, query)
+                await query.answer(f"Sequential mode {'✅ enabled' if new_status else '❌ disabled'}")
+                await cb_handler(client, query)  # Refresh help menu
             except Exception as e:
                 logger.error(f"Error toggling sequential mode: {e}")
                 await query.answer("⚠️ Failed to update setting", show_alert=True)
-
-        # Source Toggle
+        
         elif data == "toggle_src":
             try:
+                user = await hyoshcoder.read_user(user_id)
+                src_info = user.get("src_info", "file_name")
                 new_src = "file_caption" if src_info == "file_name" else "file_name"
                 await hyoshcoder.set_src_info(user_id, new_src)
-                await query.answer(f"Source set to {new_src.replace('_', ' ')}")
-                # Refresh help menu
-                await cb_handler(client, query)
+                await query.answer(f"Source set to `{new_src.replace('_', ' ')}`", show_alert=False)
+                await cb_handler(client, query)  # Refresh help menu
             except Exception as e:
                 logger.error(f"Error toggling source: {e}")
                 await query.answer("⚠️ Failed to update source", show_alert=True)
+
 
         # Dump Channel Handling
         elif data == "setdump":
