@@ -363,84 +363,78 @@ async def command_handler(client: Client, message: Message):
                 await message.reply_text("No dump channel is currently set.")
                 
       # In command.py - Replace the freepoints section with this:
-       # In command.py - Update the freepoints section
-        elif cmd == "freepoints":
-            me = await client.get_me()
-            me_username = me.username
-            
-            # Create share message
-            share_msg = (
-                "I just discovered this amazing bot! 🚀\n"
-                "Automatically rename files with this bot!\n"
-                f"Join me using this link: {refer_link}\n\n"
-                "FEATURES:\n"
-                "- Auto-rename files\n"
-                "- Add custom metadata\n"
-                "- Custom thumbnails\n"
-                "- Premium features available\n"
+       
+@Client.on_message(filters.command("freepoints") & filters.private)
+async def freepoints(client: Client, message: Message):
+    try:
+        user_id = message.from_user.id
+        user = await hyoshcoder.users.find_one({"_id": user_id})
+        
+        # Generate referral link if not exists
+        if not user or not user.get("referral_code"):
+            referral_code = secrets.token_hex(4)
+            await hyoshcoder.users.update_one(
+                {"_id": user_id},
+                {"$set": {"referral_code": referral_code}},
+                upsert=True
             )
-            
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Share Bot", url=refer_link)],
-                [InlineKeyboardButton("💰 Watch Ad", url=short_url )],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ])
-            
-            caption = (
-                "**Free Points**\n\n"
-                "Earn points by:\n"
-                "1. **Sharing** our bot with friends\n"
-                "2. **Watching** short ads\n\n"
-                f"🔗 Your referral link: `{refer_link}`\n"
-                f"📌 Your ad link: `{short_url }`\n\n"
-                f"🎁 You'll earn 100 points for each successful action!\n\n"
-                "Your points will be added automatically when someone uses your links."
-            )
-            
-            if img:
-                await message.reply_photo(photo=img, caption=caption, reply_markup=buttons)
-            else:
-                await message.reply_text(text=caption, reply_markup=buttons)
-        elif cmd == "help":
-            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-            src_info = await hyoshcoder.get_src_info(user_id)
-            
-            btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
-            src_txt = "File name" if src_info == "file_name" else "File caption"
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("ᴀᴜᴛᴏʀᴇɴᴀᴍᴇ", callback_data='file_names'),
-                 InlineKeyboardButton('ᴛʜᴜᴍʙ', callback_data='thumbnail'),
-                 InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', callback_data='caption')],
-                [InlineKeyboardButton('ᴍᴇᴛᴀᴅᴀᴛᴀ', callback_data='meta'),
-                 InlineKeyboardButton('ᴍᴇᴅɪᴀ', callback_data='setmedia'),
-                 InlineKeyboardButton('ᴅᴜᴍᴘ', callback_data='setdump')],
-                [InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
-                 InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ', callback_data='premiumx'),
-                 InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')],
-                [InlineKeyboardButton('ʜᴏᴍᴇ', callback_data='home')]
-            ])
-            
-            if img:
-                await message.reply_photo(
-                    photo=img,
-                    caption=Txt.HELP_TXT.format(client.mention),
-                    reply_markup=buttons
-                )
-            else:
-                await message.reply_text(
-                    text=Txt.HELP_TXT.format(client.mention),
-                    reply_markup=buttons
-                )
+        else:
+            referral_code = user["referral_code"]
+        
+        refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
+        
+        # Generate a points link
+        point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
+        deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
+        short_url = await get_shortlink(
+            url=settings.SHORTED_LINK,
+            api=settings.SHORTED_LINK_API,
+            link=deep_link
+        )
+        
+        # Save the points link
+        await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
 
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
+        # Create buttons
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔗 Share Referral", url=f"https://t.me/share/url?url={quote(refer_link)}&text=Join%20this%20awesome%20bot!"),
+                InlineKeyboardButton("💰 Earn Points", url=short_url)
+            ],
+            [InlineKeyboardButton("🔙 Back", callback_data="help")]
+        ])
+        
+        caption = (
+            "**🎁 Free Points Menu**\n\n"
+            "**1. Referral Program**\n"
+            f"🔗 Your link: `{refer_link}`\n"
+            "• Earn 100 points for each successful referral\n\n"
+            "**2. Earn Points**\n"
+            f"🔗 Click here: {short_url}\n"
+            f"• Get {settings.SHORTENER_POINT_REWARD} points instantly\n\n"
+            "**3. Watch Ads**\n"
+            "• Coming soon!\n\n"
+            "Your points will be added automatically when someone uses your links."
+        )
+        
+        img = await get_random_photo()
+        if img:
+            await message.reply_photo(
+                photo=img,
+                caption=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True
+            )
+        else:
+            await message.reply_text(
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True
+            )
+            
     except Exception as e:
-        logger.error(f"Command error: {e}")
-        await message.reply_text("⚠️ An error occurred. Please try again.")
-
-
+        logger.error(f"Error in freepoints command: {e}")
+        await message.reply_text("⚠️ An error occurred. Please try again later.")
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client, message):
     """Handle thumbnail setting"""
@@ -489,31 +483,71 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         leaders = []
         if lb_type == "referrals":
             raw = await hyoshcoder.get_referral_leaderboard(period, limit=10)
-            leaders = [{
-                '_id': str(user['_id']),
-                'username': user.get('username'),
-                'value': user.get('total_referrals', 0),
-                'rank': idx + 1,
-                'is_premium': user.get('is_premium', False)
-            } for idx, user in enumerate(raw)]
+            leaders = []
+            for idx, user in enumerate(raw):
+                try:
+                    # Try to get user info to display proper name
+                    user_info = await client.get_users(user['_id'])
+                    username = user_info.username or user_info.first_name
+                    leaders.append({
+                        '_id': str(user['_id']),
+                        'username': f"@{username}" if user_info.username else user_info.first_name,
+                        'value': user.get('total_referrals', 0),
+                        'rank': idx + 1,
+                        'is_premium': user.get('is_premium', False)
+                    })
+                except Exception:
+                    leaders.append({
+                        '_id': str(user['_id']),
+                        'username': f"User {user['_id']}",
+                        'value': user.get('total_referrals', 0),
+                        'rank': idx + 1,
+                        'is_premium': user.get('is_premium', False)
+                    })
         elif lb_type == "renames":
             raw = await hyoshcoder.get_renames_leaderboard(period, limit=10)
-            leaders = [{
-                '_id': str(user['_id']),
-                'username': user.get('username'),
-                'value': user.get('value', 0),
-                'rank': user.get('rank', idx + 1),
-                'is_premium': user.get('is_premium', False)
-            } for idx, user in enumerate(raw)]
+            leaders = []
+            for idx, user in enumerate(raw):
+                try:
+                    user_info = await client.get_users(user['_id'])
+                    username = user_info.username or user_info.first_name
+                    leaders.append({
+                        '_id': str(user['_id']),
+                        'username': f"@{username}" if user_info.username else user_info.first_name,
+                        'value': user.get('value', 0),
+                        'rank': idx + 1,
+                        'is_premium': user.get('is_premium', False)
+                    })
+                except Exception:
+                    leaders.append({
+                        '_id': str(user['_id']),
+                        'username': f"User {user['_id']}",
+                        'value': user.get('value', 0),
+                        'rank': idx + 1,
+                        'is_premium': user.get('is_premium', False)
+                    })
         else:  # points
             raw = await hyoshcoder.get_leaderboard(period, limit=10)
-            leaders = [{
-                '_id': str(user['_id']),
-                'username': user.get('username'),
-                'value': user.get('points', 0),
-                'rank': idx + 1,
-                'is_premium': user.get('is_premium', False)
-            } for idx, user in enumerate(raw)]
+            leaders = []
+            for idx, user in enumerate(raw):
+                try:
+                    user_info = await client.get_users(user['_id'])
+                    username = user_info.username or user_info.first_name
+                    leaders.append({
+                        '_id': str(user['_id']),
+                        'username': f"@{username}" if user_info.username else user_info.first_name,
+                        'value': user.get('points', 0),
+                        'rank': idx + 1,
+                        'is_premium': user.get('is_premium', False)
+                    })
+                except Exception:
+                    leaders.append({
+                        '_id': str(user['_id']),
+                        'username': f"User {user['_id']}",
+                        'value': user.get('points', 0),
+                        'rank': idx + 1,
+                        'is_premium': user.get('is_premium', False)
+                    })
 
         emoji = {"points": "⭐", "renames": "📁", "referrals": "🎯"}.get(lb_type, "🏆")
         period_display = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "alltime": "All-Time"}.get(period, period.capitalize())
@@ -524,9 +558,7 @@ async def show_leaderboard_ui(client: Client, message: Union[Message, CallbackQu
         else:
             body = ""
             for user in leaders:
-                uname = f"@{user['username']}" if user.get('username') else f"User `{user['_id']}`"
-                value = user['value']
-                line = f"**{user['rank']}.** {uname} — `{value}` {emoji}"
+                line = f"**{user['rank']}.** {user['username']} — `{user['value']}` {emoji}"
                 if user.get('is_premium'):
                     line += " 💎"
                 body += line + "\n"
