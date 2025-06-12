@@ -51,98 +51,145 @@ BTN_STYLE = {
     'medium': {'width': 2, 'max_chars': 15},
     'large': {'width': 1, 'max_chars': 20}
 }
+import random
+import uuid
+import asyncio
+import time
+import logging
+from pyrogram import Client, filters, enums
+from pyrogram.types import (
+    CallbackQuery, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton, 
+    InputMediaPhoto,
+    InputMediaAnimation,
+    Message
+)
+from urllib.parse import quote
+from helpers.utils import get_random_photo, get_random_animation, get_shortlink
+from scripts import Txt
+from database.data import hyoshcoder
+from config import settings
+from collections import defaultdict
+from threading import Lock
+from datetime import datetime, timedelta
+from pyrogram.errors import QueryIdInvalid, FloodWait, ChatWriteForbidden
 
-# State trackers
+logger = logging.getLogger(__name__)
+ADMIN_USER_ID = settings.ADMIN
+
+# Emoji Constants
+EMOJI = {
+    'points': "✨",
+    'premium': "⭐",
+    'referral': "👥",
+    'rename': "📝",
+    'stats': "📊",
+    'leaderboard': "🏆",
+    'admin': "🛠️",
+    'success': "✅",
+    'error': "❌",
+    'clock': "⏳",
+    'link': "🔗",
+    'money': "💰",
+    'file': "📁",
+    'video': "🎥"
+}
+
+# Global state tracker
 metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
-dump_states = defaultdict(dict)
 
 METADATA_ON = [
-        [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
-         InlineKeyboardButton('✅', callback_data='metadata_1')],
-        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
-         InlineKeyboardButton('Back', callback_data='help')]
+    [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
+     InlineKeyboardButton('✅', callback_data='metadata_1')],
+    [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+     InlineKeyboardButton('Back', callback_data='help')]
 ]
 
 METADATA_OFF = [
-        [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
-         InlineKeyboardButton('❌', callback_data='metadata_0')],
-        [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
-         InlineKeyboardButton('Back', callback_data='help')]
+    [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
+     InlineKeyboardButton('❌', callback_data='metadata_0')],
+    [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
+     InlineKeyboardButton('Back', callback_data='help')]
 ]
 
+SHARE_MESSAGE = """
+🚀 *Discover This Amazing Bot!* 🚀
 
-def create_button(text, data, style='medium', emoji=None, is_url=False):
-    """Create button with consistent styling, supporting both callback and URL buttons"""
-    if emoji:
-        text = f"{emoji} {text}"
-    max_chars = BTN_STYLE[style]['max_chars']
-    if len(text) > max_chars:
-        text = text[:max_chars-1] + "…"
+I'm using this awesome file renaming bot with these features:
+- Automatic file renaming
+- Custom metadata editing
+- Thumbnail customization
+- Sequential file processing
+- And much more!
+
+Join me using this link: {invite_link}
+"""
+
+@Client.on_message(filters.private & filters.text & ~filters.command(['start']))
+async def process_text_states(client, message: Message):
+    user_id = message.from_user.id
     
-    if is_url:
-        return InlineKeyboardButton(text, url=data)
-    else:
-        return InlineKeyboardButton(text, callback_data=data)
-
-
-def create_keyboard(buttons, style='medium'):
-    """Create mobile-friendly keyboard layout"""
-    width = BTN_STYLE[style]['width']
-    return InlineKeyboardMarkup([buttons[i:i+width] for i in range(0, len(buttons), width)])
-
-async def edit_or_resend(client, query, response):
-    """Edit existing message or send new one if edit fails"""
-    try:
-        if 'photo' in response:
-            if query.message.photo:
-                await query.message.edit_media(
-                    media=InputMediaPhoto(
-                        media=response['photo'],
-                        caption=response['caption']
-                    ),
-                    reply_markup=response['reply_markup']
-                )
+    # Handle metadata state
+    if user_id in metadata_states and not message.text.startswith('/'):
+        try:
+            if message.text.lower() == "/cancel":
+                await message.reply("🚫 Metadata update cancelled", 
+                                reply_markup=InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton("Back to Metadata", callback_data="meta")]]
+                                ))
             else:
-                await query.message.delete()
-                await client.send_photo(
-                    chat_id=query.message.chat.id,
-                    photo=response['photo'],
-                    caption=response['caption'],
-                    reply_markup=response['reply_markup']
+                await hyoshcoder.set_metadata_code(user_id, message.text)
+                bool_meta = await hyoshcoder.get_metadata(user_id)
+                
+                await message.reply(
+                    f"✅ <b>Success!</b>\nMetadata set to:\n<code>{message.text}</code>",
+                    reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
                 )
-        elif 'animation' in response:
-            await query.message.edit_media(
-                media=InputMediaAnimation(
-                    media=response['animation'],
-                    caption=response['caption']
-                ),
-                reply_markup=response['reply_markup']
-            )
-        else:
-            await query.message.edit_text(
-                text=response['caption'],
-                reply_markup=response['reply_markup'],
-                disable_web_page_preview=True,
-                parse_mode=enums.ParseMode.HTML
-            )
-    except Exception as e:
-        logger.error(f"Error editing message: {e}")
-        await query.message.reply(
-            text=response['caption'],
-            reply_markup=response['reply_markup'],
-            disable_web_page_preview=True
-        )
-
-
-
-
-
+                
+            metadata_states.pop(user_id, None)
+            
+        except Exception as e:
+            await message.reply(f"❌ Error: {str(e)}")
+            metadata_states.pop(user_id, None)
+    
+    # Handle caption state
+    elif user_id in caption_states and not message.text.startswith('/'):
+        try:
+            if message.text.lower() == "/cancel":
+                await message.reply("🚫 Caption update cancelled", 
+                                reply_markup=InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton("Back to Caption", callback_data="caption")]]
+                                ))
+            else:
+                await hyoshcoder.set_caption(user_id, message.text)
+                current_caption = await hyoshcoder.get_caption(user_id)
+                
+                btn = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
+                    [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
+                    [InlineKeyboardButton("Close", callback_data="close"),
+                     InlineKeyboardButton("Back", callback_data="help")]
+                ])
+                
+                await message.reply(
+                    f"✅ <b>Caption Updated Successfully!</b>\n\n"
+                    f"📝 <b>Current Caption:</b>\n{current_caption}",
+                    reply_markup=btn
+                )
+                
+            caption_states.pop(user_id, None)
+            
+        except Exception as e:
+            await message.reply(f"❌ Error: {str(e)}")
+            caption_states.pop(user_id, None)
+    else:
+        message.continue_propagation()
 
 async def cleanup_states():
-    """Clean up expired states"""
     while True:
-        await asyncio.sleep(300)  # Clean every 5 minutes
+        await asyncio.sleep(300)
         current_time = time.time()
         
         # Clean metadata states
@@ -156,12 +203,42 @@ async def cleanup_states():
                           if current_time - state.get('timestamp', 0) > 300]
         for uid in expired_caption:
             caption_states.pop(uid, None)
-            
-        # Clean dump states
-        expired_dump = [uid for uid, state in dump_states.items()
-                       if current_time - state.get('timestamp', 0) > 300]
-        for uid in expired_dump:
-            dump_states.pop(uid, None)
+
+def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
+    periods = {
+        "daily": "⏰ Daily",
+        "weekly": "📆 Weekly",
+        "monthly": "🗓 Monthly",
+        "alltime": "🏅 All-Time"
+    }
+
+    types = {
+        "points": "⭐ Points",
+        "renames": "📁 Files",
+        "referrals": "🎁 Referrals"
+    }
+
+    period_buttons = [
+        InlineKeyboardButton(
+            f"• {text} •" if period == selected_period else text,
+            callback_data=f"lb_period_{period}"
+        ) for period, text in periods.items()
+    ]
+
+    type_buttons = [
+        InlineKeyboardButton(
+            f"• {text} •" if lb_type == selected_type else text,
+            callback_data=f"lb_type_{lb_type}"
+        ) for lb_type, text in types.items()
+    ]
+
+    return InlineKeyboardMarkup([
+        period_buttons[:2],
+        period_buttons[2:],
+        type_buttons,
+        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+    ])
+
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -176,46 +253,43 @@ async def cb_handler(client: Client, query: CallbackQuery):
         sequential_status = await hyoshcoder.get_sequential_mode(user_id)
         src_info = await hyoshcoder.get_src_info(user_id)
         src_txt = "File name" if src_info == "file_name" else "File caption"
-        
-        # Home Menu
+        btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
+        response = None
+
         if data == "home":
-            btn = create_keyboard([
-                create_button("MY COMMANDS", 'help'),
-                create_button("My Stats", 'mystats', emoji=EMOJI['stats']),
-                create_button("Leaderboard", 'leaderboard', emoji=EMOJI['leaderboard']),
-                create_button("Earn Points", 'freepoints', emoji=EMOJI['points']),
-                create_button("Close", 'close', emoji='❌')
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
+                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
+                 InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
+                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints')],
+                [InlineKeyboardButton("❌ Close", callback_data='close')]
             ])
-            
-            await edit_or_resend(client, query, {
+
+            response = {
                 'caption': Txt.START_TXT.format(query.from_user.mention),
                 'reply_markup': btn,
                 'animation': anim
-            })
+            }
 
-        # Help Menu
         elif data == "help":
-            btn_sec_text = f"Sequential {'✅' if sequential_status else '❌'}"
-            btn = create_keyboard([
-                create_button("AUTORENAME", 'file_names'),
-                create_button("THUMB", 'thumbnail'),
-                create_button("CAPTION", 'caption'),
-                create_button("METADATA", 'meta'),
-                create_button("MEDIA", 'setmedia'),
-                create_button("DUMP", 'setdump'),
-                create_button(btn_sec_text, 'sequential'),
-                create_button("PREMIUM", 'premiumx'),
-                create_button(f"Source: {src_txt}", 'toggle_src'),
-                create_button("HOME", 'home')
-            ], style='small')
-            
-            await edit_or_resend(client, query, {
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("ᴀᴜᴛᴏʀᴇɴᴀᴍᴇ", callback_data='file_names'),
+                 InlineKeyboardButton('ᴛʜᴜᴍʙ', callback_data='thumbnail'),
+                 InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', callback_data='caption')],
+                [InlineKeyboardButton('ᴍᴇᴛᴀᴅᴀᴛᴀ', callback_data='meta'),
+                 InlineKeyboardButton('ᴍᴇᴅɪᴀ', callback_data='setmedia'),
+                 InlineKeyboardButton('ᴅᴜᴍᴘ', callback_data='setdump')],
+                [InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
+                 InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ', callback_data='premiumx'),
+                 InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')],
+                [InlineKeyboardButton('ʜᴏᴍᴇ', callback_data='home')]
+            ])
+            response = {
                 'caption': Txt.HELP_TXT.format(client.mention),
                 'reply_markup': btn,
                 'photo': img
-            })
+            }
 
-        # My Stats
         elif data == "mystats":
             stats = await hyoshcoder.get_user_file_stats(user_id)
             points = await hyoshcoder.get_points(user_id)
@@ -236,28 +310,27 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 f"• This Month: {stats.get('this_month', 0)}\n"
             )
             
-            btn = create_keyboard([
-               
-                
-                create_button("Back", "help")
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data="leaderboard")],
+                [InlineKeyboardButton(f"{EMOJI['referral']} Invite Friends", callback_data="invite")],
+                [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
             
-            await edit_or_resend(client, query, {
+            response = {
                 'caption': text,
                 'reply_markup': btn,
                 'photo': img
-            })
+            }
 
-        # Leaderboard
         elif data == "leaderboard":
             try:
                 period = await hyoshcoder.get_leaderboard_period(user_id)
                 lb_type = await hyoshcoder.get_leaderboard_type(user_id)
         
                 emoji_map = {
-                    "points": EMOJI['points'],
-                    "renames": EMOJI['file'],
-                    "referrals": EMOJI['referral']
+                    "points": "⭐",
+                    "renames": "📁",
+                    "referrals": "🎁"
                 }
                 title_map = {
                     "points": "Points",
@@ -265,33 +338,26 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     "referrals": "Referrals"
                 }
         
-                emoji = emoji_map.get(lb_type, EMOJI['points'])
+                emoji = emoji_map.get(lb_type, "⭐")
                 title = title_map.get(lb_type, "Points")
         
                 if lb_type == "referrals":
-                    leaders = await hyoshcoder.get_referrals_leaderboard(period, limit=10)
+                    leaders = await hyoshcoder.get_referrals_leaderboard(period, limit=20)
                 elif lb_type == "renames":
-                    leaders = await hyoshcoder.get_renames_leaderboard(period, limit=10)
+                    leaders = await hyoshcoder.get_renames_leaderboard(period, limit=20)
                 else:
-                    leaders_raw = await hyoshcoder.get_leaderboard(period, limit=10)
-                    leaders = []
-                    for user in leaders_raw:
-                        try:
-                            user_info = await client.get_users(user['_id'])
-                            username = f"@{user_info.username}" if user_info.username else user_info.first_name
-                        except:
-                            username = f"User {user['_id']}"
-                        leaders.append({
-                            'username': username,
-                            'value': user.get('points', 0),
-                            'is_premium': user.get('is_premium', False)
-                        })
+                    leaders_raw = await hyoshcoder.get_leaderboard(period, limit=20)
+                    leaders = [{
+                        'username': user.get('username', f"User {user['_id']}"),
+                        'value': user.get('points', 0),
+                        'is_premium': user.get('is_premium', False)
+                    } for user in leaders_raw]
         
                 if not leaders:
                     response = {
                         'caption': "📭 No leaderboard data available yet",
-                        'reply_markup': create_keyboard([
-                            create_button("Back", "help")
+                        'reply_markup': InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔙 Back", callback_data="help")]
                         ]),
                         'photo': img
                     }
@@ -308,108 +374,67 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         premium_tag = " 💎" if user.get("is_premium") else ""
                         text += f"**{i}.** {user['username']} — `{user['value']}` {emoji}{premium_tag}\n"
         
-                    # Period buttons
-                    period_btns = [
-                        create_button("• Daily •" if period == "daily" else "Daily", "lb_period_daily"),
-                        create_button("• Weekly •" if period == "weekly" else "Weekly", "lb_period_weekly"),
-                        create_button("• Monthly •" if period == "monthly" else "Monthly", "lb_period_monthly"),
-                        create_button("• All-Time •" if period == "alltime" else "All-Time", "lb_period_alltime")
-                    ]
-                    
-                    # Type buttons
-                    type_btns = [
-                        create_button("• Points •" if lb_type == "points" else "Points", "lb_type_points"),
-                        create_button("• Files •" if lb_type == "renames" else "Files", "lb_type_renames"),
-                        create_button("• Referrals •" if lb_type == "referrals" else "Referrals", "lb_type_referrals")
-                    ]
-                    
-                    btn = InlineKeyboardMarkup([
-                        period_btns[:2],
-                        period_btns[2:],
-                        type_btns,
-                        [create_button("Back", "help")]
-                    ])
-        
                     response = {
                         'caption': text,
-                        'reply_markup': btn,
+                        'reply_markup': get_leaderboard_keyboard(period, lb_type),
                         'photo': img
                     }
-                
-                await edit_or_resend(client, query, response)
         
             except Exception as e:
                 logger.error(f"Error in leaderboard handler: {e}")
-                await query.answer("⚠️ Error loading leaderboard", show_alert=True)
+                response = {
+                    'caption': "⚠️ Error loading leaderboard data",
+                    'reply_markup': InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                    ]),
+                    'photo': img
+                }
 
-        
-        # ...
-        
+
+        # In callback.py - Update the freepoints section
         elif data == "freepoints":
-            me = await client.get_me()
-            user = await hyoshcoder.read_user(user_id)
-            
-            # Generate referral code if not exists
-            if not user or not user.get("referral_code"):
-                referral_code = secrets.token_hex(4)
-                await hyoshcoder.users.update_one(
-                    {"_id": user_id},
-                    {"$set": {"referral_code": referral_code}},
-                    upsert=True
-                )
-            else:
-                referral_code = user["referral_code"]
-            
-            refer_link = f"https://t.me/{me.username}?start=ref_{referral_code}"
-            
-            # Generate points link
-            point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
-            deep_link = f"https://t.me/{me.username}?start={point_id}"
-            short_url = await get_shortlink(
-                url=settings.SHORTED_LINK,
-                api=settings.SHORTED_LINK_API,
-                link=deep_link
-            )
-            
-            # Save the points link
-            await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-        
-            # Create buttons
-            btn = create_keyboard([
-                create_button("Share Referral", refer_link, emoji=EMOJI['link'], is_url=True),
-                create_button("Earn Points", short_url, emoji=EMOJI['money'], is_url=True),
-                create_button("Back", "help")
-            ])
             
             caption = (
-                "**🎁 Free Points Menu**\n\n"
-                "**1. Referral Program**\n"
-                f"🔗 Your link: `{refer_link}`\n"
-                f"• Earn {settings.REFER_POINT_REWARD} points per referral\n\n"
-                "**2. Earn Points**\n"
-                f"🔗 Click here: {short_url}\n"
-                f"• Get {settings.SHORTENER_POINT_REWARD} points instantly\n\n"
-                "Your points will be added automatically when someone uses your links."
+                "**Free Points**\n\n"
+                "You can earn points by:\n"
+                f"2. Watching ads - Earn {points} points now!\n\n"
+                f" use /genpoints to get morepoints "
+                "Premium users get 2x points!"
             )
-        
-            # Send message
-            sent = await edit_or_resend(client, query, {
-                'caption': caption,
-                'reply_markup': btn,
-                'photo': img
-            })
-        
-            # Auto delete in 2 minutes (120 seconds)
-            async def auto_delete():
-                await sleep(30)
-                try:
-                    await client.delete_messages(chat_id=query.message.chat.id, message_ids=sent.id)
-                except Exception as e:
-                    logger.warning(f"Failed to auto-delete message: {e}")
-        
-            create_task(auto_delete())
-
-        # Metadata Handling
+            
+            # Edit the existing message instead of sending new one
+            try:
+                if query.message.animation:
+                    await query.message.edit_media(
+                        media=InputMediaAnimation(
+                            media=await get_random_animation(),
+                            caption=caption
+                        ),
+                        reply_markup=btn
+                    )
+                elif query.message.photo:
+                    await query.message.edit_media(
+                        media=InputMediaPhoto(
+                            media=await get_random_photo(),
+                            caption=caption
+                        ),
+                        reply_markup=btn
+                    )
+                else:
+                    await query.message.edit_text(
+                        text=caption,
+                        reply_markup=btn,
+                        disable_web_page_preview=True
+                    )
+            except Exception as e:
+                logger.error(f"Error editing freepoints message: {e}")
+                # Fallback to sending new message if edit fails
+                await client.send_message(
+                    chat_id=query.message.chat.id,
+                    text=caption,
+                    reply_markup=btn,
+                    disable_web_page_preview=True
+                )
         elif data in ["meta", "metadata_0", "metadata_1"]:
             if data.startswith("metadata_"):
                 await hyoshcoder.set_metadata(user_id, data.endswith("_1"))
@@ -439,91 +464,239 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
             metadata_states[user_id]["prompt_id"] = prompt.id
             return
-        # Sequential Toggle
-        elif data == "sequential":
-            try:
-                user = await hyoshcoder.read_user(user_id)
-                sequential_status = user.get("sequential_mode", False)
-                new_status = not sequential_status
-                await hyoshcoder.set_sequential_mode(user_id, new_status)
-                await query.answer(f"Sequential mode {'✅ enabled' if new_status else '❌ disabled'}")
-                await cb_handler(client, query)  # Refresh help menu
-            except Exception as e:
-                logger.error(f"Error toggling sequential mode: {e}")
-                await query.answer("⚠️ Failed to update setting", show_alert=True)
-        
-        elif data == "toggle_src":
-            try:
-                user = await hyoshcoder.read_user(user_id)
-                src_info = user.get("src_info", "file_name")
-                new_src = "file_caption" if src_info == "file_name" else "file_name"
-                await hyoshcoder.set_src_info(user_id, new_src)
-                await query.answer(f"Source set to `{new_src.replace('_', ' ')}`", show_alert=False)
-                await cb_handler(client, query)  # Refresh help menu
-            except Exception as e:
-                logger.error(f"Error toggling source: {e}")
-                await query.answer("⚠️ Failed to update source", show_alert=True)
 
+        elif data == "file_names":
+            format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Close", callback_data="close"), 
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': Txt.FILE_NAME_TXT.format(format_template=format_template),
+                'reply_markup': btn,
+                'photo': img
+            }
 
-        # Dump Channel Handling
+        elif data == "caption":
+            current_caption = await hyoshcoder.get_caption(user_id) or "Not set"
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
+                [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
+                [InlineKeyboardButton("Close", callback_data="close"),
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': f"📝 <b>Current Caption:</b>\n{current_caption}\n\n"
+                          "You can set a custom caption that will be added to all your renamed files.",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "set_caption":
+            caption_states[user_id] = {
+                "waiting": True,
+                "timestamp": time.time(),
+                "original_msg": query.message.id
+            }
+            prompt = await query.message.edit_text(
+                "📝 <b>Send new caption text</b>\n\n"
+                "Example: <code>📕Name ➠ : {filename}\n🔗 Size ➠ : {filesize}\n⏰ Duration ➠ : {duration}</code>\n\n"
+                f"Current: {await hyoshcoder.get_caption(user_id) or 'None'}\n\n"
+                "Reply with text or /cancel",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="caption")]]
+                )
+            )
+            caption_states[user_id]["prompt_id"] = prompt.id
+            return
+
+        elif data == "remove_caption":
+            await hyoshcoder.set_caption(user_id, None)
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Close", callback_data="close"), 
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': "✅ Caption removed successfully!",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data == "setmedia":
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Video", callback_data='setmedia_video'),
+                 InlineKeyboardButton("Document", callback_data='setmedia_document')],
+                [InlineKeyboardButton("Back", callback_data='help')]
+            ])
+            current_media = await hyoshcoder.get_media_preference(user_id)
+            response = {
+                'caption': f"🎥 <b>Current Media Preference:</b> {current_media or 'Not set'}\n\n"
+                          "Select the type of media you want to receive:",
+                'reply_markup': btn,
+                'photo': img
+            }
+
+        elif data.startswith("setmedia_"):
+            media_type = data.split("_")[1]
+            if media_type not in ['video', 'document']:
+                await query.answer("Invalid media type selected", show_alert=True)
+                return
+                
+            await hyoshcoder.set_media_preference(user_id, media_type)
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='setmedia')]])
+            response = {
+                'caption': f"✅ <b>Media preference set to:</b> {media_type.capitalize()}",
+                'reply_markup': btn,
+                'photo': img
+            }
+
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
-            btn = create_keyboard([
-                create_button("Set Dump Channel", "setdump_instructions"),
-                create_button("Remove Dump Channel", "remove_dump"),
-                create_button("Back", "help")
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Set Dump Channel", callback_data="setdump_instructions")],
+                [InlineKeyboardButton("Remove Dump Channel", callback_data="remove_dump")],
+                [InlineKeyboardButton("Back", callback_data="help")]
             ])
-            
-            await edit_or_resend(client, query, {
+            response = {
                 'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
                           "You can set a channel where renamed files will be automatically forwarded.",
                 'reply_markup': btn,
                 'photo': img
-            })
+            }
 
         elif data == "setdump_instructions":
             await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
+            return
 
         elif data == "remove_dump":
             await hyoshcoder.set_user_channel(user_id, None)
-            btn = create_keyboard([
-                create_button("Back", "setdump")
-            ])
-            
-            await edit_or_resend(client, query, {
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='setdump')]])
+            response = {
                 'caption': "✅ Dump channel removed successfully",
                 'reply_markup': btn,
                 'photo': img
-            })
+            }
+        elif data in ["sequential", "toggle_src"]:
+            try:
+                if data == "sequential":
+                    await hyoshcoder.toggle_sequential_mode(user_id)
+                elif data == "toggle_src":
+                    await hyoshcoder.toggle_src_info(user_id)
+        
+                # Refresh the help menu (assuming cb_handler shows help)
+                await cb_handler(client, query)
+            except Exception as e:
+                logger.error(f"Error toggling setting for '{data}': {e}")
+                await query.message.edit_caption(
+                    "⚠️ Failed to update setting. Please try again later.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                    ])
+                )
+        elif data == "premiumx":
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
+                [InlineKeyboardButton("Premium Features", callback_data="premium_features")],
+                [InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': "🌟 <b>Premium Membership</b>\n\n"
+                          "Get access to exclusive features:\n"
+                          "• 2x Points Multiplier\n"
+                          "• Priority Processing\n"
+                          "• No Ads\n"
+                          "• Extended File Size Limits\n\n"
+                          "Click below to learn more!",
+                'reply_markup': btn,
+                'photo': img
+            }
 
-        # Close Button
+        elif data == "thumbnail":
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("View Thumbnail", callback_data="showThumb")],
+                [InlineKeyboardButton("Close", callback_data="close"), 
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': Txt.THUMBNAIL_TXT,
+                'reply_markup': btn,
+                'photo': thumb if thumb else img
+            }
+
+        elif data == "showThumb":
+            caption = "Here is your current thumbnail" if thumb else "No thumbnail set"
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Close", callback_data="close"), 
+                 InlineKeyboardButton("Back", callback_data="help")]
+            ])
+            response = {
+                'caption': caption,
+                'reply_markup': btn,
+                'photo': thumb if thumb else img
+            }
+
         elif data == "close":
             try:
                 await query.message.delete()
+                if query.message.reply_to_message:
+                    await query.message.reply_to_message.delete()
             except:
                 pass
+            return
 
-        # Answer the callback query
-        await query.answer()
+        # Send response
+        if response:
+            try:
+                if 'photo' in response:
+                    if query.message.photo:
+                        await query.message.edit_media(
+                            media=InputMediaPhoto(
+                                media=response['photo'] or await get_random_photo(),
+                                caption=response['caption']
+                            ),
+                            reply_markup=response['reply_markup']
+                        )
+                    else:
+                        await query.message.delete()
+                        await client.send_photo(
+                            chat_id=query.message.chat.id,
+                            photo=response['photo'] or await get_random_photo(),
+                            caption=response['caption'],
+                            reply_markup=response['reply_markup']
+                        )
+                elif 'animation' in response:
+                    await query.message.edit_media(
+                        media=InputMediaAnimation(
+                            media=response['animation'],
+                            caption=response['caption']
+                        ),
+                        reply_markup=response['reply_markup']
+                    )
+                else:
+                    await query.message.edit_text(
+                        text=response.get('caption', response.get('text', '')),
+                        reply_markup=response['reply_markup'],
+                        disable_web_page_preview=True,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                await cb_handler(client, query)
+            except ChatWriteForbidden:
+                logger.warning(f"Can't write in chat with {user_id}")
+            except Exception as e:
+                logger.error(f"Error updating message: {e}")
+
+        # Answer the callback query at the end
+        try:
+            await query.answer()
+        except QueryIdInvalid:
+            logger.warning("Query ID was invalid or expired")
+        except Exception as e:
+            logger.error(f"Error answering callback: {e}")
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
-    except QueryIdInvalid:
-        logger.warning("Query ID was invalid or expired")
+        await cb_handler(client, query)
     except Exception as e:
         logger.error(f"Callback handler error: {e}", exc_info=True)
-        try:
-            await query.answer("⚠️ An error occurred", show_alert=True)
-        except:
-            pass
-
-# Start the cleanup task when the bot starts
-async def start_cleanup():
-    asyncio.create_task(cleanup_states())
-
-# Call this function when your bot starts
-# Example: 
-# from callback import start_cleanup
-# async def main():
-#     await start_cleanup()
-#     # rest of your startup code
