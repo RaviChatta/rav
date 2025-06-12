@@ -57,19 +57,19 @@ metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
 dump_states = defaultdict(dict)
 
-    METADATA_ON = [
+METADATA_ON = [
         [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
          InlineKeyboardButton('✅', callback_data='metadata_1')],
         [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
          InlineKeyboardButton('Back', callback_data='help')]
-    ]
+]
 
-    METADATA_OFF = [
+METADATA_OFF = [
         [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
          InlineKeyboardButton('❌', callback_data='metadata_0')],
         [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
          InlineKeyboardButton('Back', callback_data='help')]
-    ]
+]
 
 
 def create_button(text, data, style='medium', emoji=None, is_url=False):
