@@ -11,7 +11,8 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     InputMediaPhoto,
     InputMediaAnimation,
-    Message 
+    Message,
+    User
 )
 from pyrogram.errors import FloodWait
 from config import settings
