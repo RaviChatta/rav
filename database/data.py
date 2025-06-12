@@ -980,46 +980,49 @@ class Database:
             logger.error(f"Error updating {period} points leaderboard: {e}")
 
     async def get_leaderboard(self, period: str, limit: int = 10) -> List[Dict]:
-        try:
-            if period == "alltime":
-                pipeline = [
-                    {"$match": {"ban_status.is_banned": False}},
-                    {"$sort": {"points.balance": -1}},
-                    {"$limit": limit},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "points": "$points.balance",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ]
-            else:
-                days = 1 if period == "daily" else 7 if period == "weekly" else 30
-                start_date = datetime.utcnow() - timedelta(days=days)
-                pipeline = [
-                    {"$match": {
-                        "activity.last_active": {"$gte": start_date},
-                        "ban_status.is_banned": False
-                    }},
-                    {"$sort": {"points.balance": -1}},
-                    {"$limit": limit},
-                    {"$project": {
-                        "_id": 1,
-                        "username": 1,
-                        "points": "$points.balance",
-                        "is_premium": "$premium.is_premium"
-                    }}
-                ]
-            return await self.users.aggregate(pipeline).to_list(length=limit)
-        except Exception as e:
-            logger.error(f"Error getting {period} points leaderboard: {e}")
-            return []
-
+    """Get points leaderboard for a specific period."""
+    try:
+        if period == "alltime":
+            pipeline = [
+                {"$match": {"ban_status.is_banned": False}},
+                {"$sort": {"points.balance": -1}},
+                {"$limit": limit},
+                {"$project": {
+                    "_id": 1,
+                    "username": 1,
+                    "points": "$points.balance",
+                    "is_premium": "$premium.is_premium"
+                }}
+            ]
+        else:
+            days = 1 if period == "daily" else 7 if period == "weekly" else 30
+            start_date = datetime.utcnow() - timedelta(days=days)
+            pipeline = [
+                {"$match": {
+                    "activity.last_active": {"$gte": start_date},
+                    "ban_status.is_banned": False
+                }},
+                {"$sort": {"points.balance": -1}},
+                {"$limit": limit},
+                {"$project": {
+                    "_id": 1,
+                    "username": 1,
+                    "points": "$points.balance",
+                    "is_premium": "$premium.is_premium"
+                }}
+            ]
+        return await self.users.aggregate(pipeline).to_list(length=limit)
+    except Exception as e:
+        logger.error(f"Error getting {period} points leaderboard: {e}")
+        return []
+    
     async def get_renames_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
+        """Get renames leaderboard for a specific period."""
         try:
             now = datetime.utcnow()
             days = 1 if period == "daily" else 7 if period == "weekly" else 30
             start_date = now - timedelta(days=days)
+            
             pipeline = [
                 {"$match": {"timestamp": {"$gte": start_date}}},
                 {"$group": {
@@ -1036,12 +1039,13 @@ class Database:
                 }},
                 {"$unwind": "$user"},
                 {"$project": {
-                    "_id": 1,
+                    "_id": "$_id",
                     "username": "$user.username",
-                    "value": "$total_renames",
+                    "total_renames": 1,
                     "is_premium": "$user.premium.is_premium"
                 }}
             ]
+            
             results = await self.file_stats.aggregate(pipeline).to_list(length=limit)
             for i, user in enumerate(results, 1):
                 user["rank"] = i
@@ -1051,23 +1055,24 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting {period} renames leaderboard: {e}")
             return []
-
+    
     async def get_referral_leaderboard(self, period: str = "weekly", limit: int = 10) -> List[Dict]:
+        """Get referral leaderboard for a specific period."""
         try:
             days = 1 if period == "daily" else 7 if period == "weekly" else 30
             start_date = datetime.utcnow() - timedelta(days=days) if period != "alltime" else None
-
-            match_stage = {}
+    
+            match_stage = {"referral.referrer_id": {"$ne": None}}
             if start_date:
-                match_stage["joined_at"] = {"$gte": start_date}
-
+                match_stage["join_date"] = {"$gte": start_date}
+    
             pipeline = [
-                {"$match": match_stage} if match_stage else {"$match": {}},
+                {"$match": match_stage},
                 {"$group": {
-                    "_id": "$referrer_id",
-                    "referrals": {"$sum": 1}
+                    "_id": "$referral.referrer_id",
+                    "total_referrals": {"$sum": 1}
                 }},
-                {"$sort": {"referrals": -1}},
+                {"$sort": {"total_referrals": -1}},
                 {"$limit": limit},
                 {"$lookup": {
                     "from": "users",
@@ -1077,13 +1082,14 @@ class Database:
                 }},
                 {"$unwind": "$user"},
                 {"$project": {
-                    "_id": 1,
+                    "_id": "$_id",
                     "username": "$user.username",
-                    "referrals": 1,
+                    "total_referrals": 1,
                     "is_premium": "$user.premium.is_premium"
                 }}
             ]
-            results = await self.referrals.aggregate(pipeline).to_list(length=limit)
+            
+            results = await self.users.aggregate(pipeline).to_list(length=limit)
             for i, user in enumerate(results, 1):
                 user["rank"] = i
                 if not user.get("username"):
