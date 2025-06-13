@@ -216,35 +216,60 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
 
         elif data == "mystats":
-            stats = await hyoshcoder.get_user_file_stats(user_id)
-            points = await hyoshcoder.get_points(user_id)
-            premium_status = await hyoshcoder.check_premium_status(user_id)
-            user_data = await hyoshcoder.read_user(user_id)
-            referral_stats = user_data.get('referral', {})
+            try:
+                # Get user stats with proper date handling
+                stats = await hyoshcoder.get_user_file_stats(user_id)
+                points = await hyoshcoder.get_points(user_id)
+                premium_status = await hyoshcoder.check_premium_status(user_id)
+                user_data = await hyoshcoder.read_user(user_id)
+                referral_stats = user_data.get('referral', {})
+                
+                # Ensure we have default values if stats are None
+                if stats is None:
+                    stats = {
+                        'total_renamed': 0,
+                        'today': 0,
+                        'this_week': 0,
+                        'this_month': 0
+                    }
+                else:
+                    # Convert any integer timestamps to proper datetime objects
+                    if isinstance(stats.get('last_updated'), int):
+                        stats['last_updated'] = datetime.fromtimestamp(stats['last_updated'])
+                
+                text = (
+                    f"📊 <b>Your Statistics</b>\n\n"
+                    f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
+                    f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
+                    f"{EMOJI['referral']} <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
+                    f"(Earned {referral_stats.get('referral_earnings', 0)} {EMOJI['points']})\n\n"
+                    f"{EMOJI['rename']} <b>Files Renamed</b>\n"
+                    f"• Total: {stats.get('total_renamed', 0)}\n"
+                    f"• Today: {stats.get('today', 0)}\n"
+                    f"• This Week: {stats.get('this_week', 0)}\n"
+                    f"• This Month: {stats.get('this_month', 0)}\n"
+                )
+                
+                btn = InlineKeyboardMarkup([
+                    
+                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                ])
+                
+                response = {
+                    'caption': text,
+                    'reply_markup': btn,
+                    'photo': img
+                }
             
-            text = (
-                f"📊 <b>Your Statistics</b>\n\n"
-                f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
-                f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
-                f"{EMOJI['referral']} <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
-                f"(Earned {referral_stats.get('referral_earnings', 0)} {EMOJI['points']})\n\n"
-                f"{EMOJI['rename']} <b>Files Renamed</b>\n"
-                f"• Total: {stats.get('total_renamed', 0)}\n"
-                f"• Today: {stats.get('today', 0)}\n"
-                f"• This Week: {stats.get('this_week', 0)}\n"
-                f"• This Month: {stats.get('this_month', 0)}\n"
-            )
-            
-            btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI['referral']} Invite Friends", callback_data="invite")],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
-            ])
-            
-            response = {
-                'caption': text,
-                'reply_markup': btn,
-                'photo': img
-            }
+            except Exception as e:
+                logger.error(f"Error in mystats handler: {e}")
+                response = {
+                    'caption': "⚠️ Error loading statistics. Please try again later.",
+                    'reply_markup': InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                    ]),
+                    'photo': img
+                }
 
         elif data in ["meta", "metadata_0", "metadata_1"]:
             if data.startswith("metadata_"):
