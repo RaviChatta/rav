@@ -51,11 +51,6 @@ class Scripts:
 • Send image to set thumbnail
 • <code>/del_thumb</code> - Remove
 • <code>/view_thumb</code> - Preview
-
-<b>Premium Features:</b>
-• Auto-cropping
-• Smart enhancement
-• Batch processing
 </blockquote>
 """
 
@@ -84,21 +79,27 @@ class Scripts:
 </blockquote>
 """
 
-    PREMIUM_TXT = """
-💎 <b>PREMIUM FEATURES</b> 💎
+PREMIUM_TXT = """
+💎 <b>PREMIUM FEATURES - NOT AVAILABLE YET</b> 💎
 <blockquote>
-• Unlimited processing  
-• Advanced metadata  
-• AI renaming  
-• Priority access
+Premium is not available at the moment.
 
-<b>Activate with:</b> /plan
+Use your points to unlock benefits by generating more points:
+/genpoints or /freepoints
+
+<b>Activate with:</b> /plan (Coming Soon)
 </blockquote>
 """
 
-    PREMIUM_BENEFITS_TXT = """
-✨ <b>Premium Benefits</b> ✨
+PREMIUM_BENEFITS_TXT = """
+✨ <b>Premium Benefits (Coming Soon)</b> ✨
 
+Premium membership is currently unavailable.
+
+Meanwhile, generate points with:
+/genpoints or /freepoints
+
+Some upcoming benefits include:
 ✅ No advertisements  
 ✅ Priority file processing  
 ✅ Higher file size limits (up to 4GB)  
@@ -108,20 +109,25 @@ class Scripts:
 ✅ Early access to new features  
 ✅ Dedicated support  
 
-Upgrade now to enjoy these benefits!
+Stay tuned and keep collecting points!
 """
+
 
     HELP_TXT = """
 🛠️ <b>COMMAND LIST</b> 🛠️
 <blockquote>
-<b>Core:</b>  
-• /autorename  
-• /metadata  
-• /profile
+ᴀᴡᴇsᴏᴍᴇ ғᴇᴀᴛᴜʀᴇs🫧
 
-<b>Settings:</b>  
-• /thumbnail  
-• /caption
+ʀᴇɴᴀᴍᴇ ʙᴏᴛ ɪꜱ ᴀ ʜᴀɴᴅʏ ᴛᴏᴏʟ ᴛʜᴀᴛ ʜᴇʟᴘꜱ ʏᴏᴜ ʀᴇɴᴀᴍᴇ ᴀɴᴅ ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ꜰɪʟᴇꜱ ᴇꜰꜰᴏʀᴛʟᴇꜱꜱʟʏ.
+
+➲ /start: ꜱᴇɴᴅ ᴀɴʏ ᴘʜᴏᴛᴏ ᴛᴏ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ꜱᴇᴛ ɪᴛ ᴀꜱ ᴀ ᴛʜᴜᴍʙɴᴀɪʟ.
+➲ /autorename: ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ ʏᴏᴜʀ ꜰɪʟᴇꜱ.
+➲ /del_thumb: ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴏʟᴅ ᴛʜᴜᴍʙɴᴀɪʟ.
+➲ /view_thumb: ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜʀʀᴇɴᴛ ᴛʜᴜᴍʙɴᴀɪʟ.
+➲ /set_caption: ᴛᴏ ꜱᴇᴛ ᴀ ᴄᴜꜱᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ.
+➲ /see_caption: ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜꜱᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ.
+➲ /del_caption: ᴛᴏ ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴄᴜꜱᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ.
+
 </blockquote>
 """
 
