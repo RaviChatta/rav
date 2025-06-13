@@ -235,7 +235,6 @@ async def freepoints(client: Client, message: Message):
         await message.reply_text("❌ Failed to generate free points. Try again.")
 
 
-
 @Client.on_message(filters.command(["view_dump", "viewdump"]) & filters.private)
 async def view_dump_channel(client: Client, message: Message):
     try:
@@ -243,13 +242,21 @@ async def view_dump_channel(client: Client, message: Message):
         channel_id = await hyoshcoder.get_user_channel(user_id)
         if channel_id:
             await message.reply_text(
-                f"**Current Dump Channel:** {channel_id}"
+                f"**Current Dump Channel:** `{channel_id}`",
+                quote=True
             )
         else:
-            await message.reply_text("No dump channel is currently set.")
+            await message.reply_text(
+                "No dump channel is currently set.",
+                quote=True
+            )
     except Exception as e:
         logger.error(f"Error viewing dump channel: {e}")
-        await message.reply_text("❌ Failed to retrieve dump channel info.")
+        await message.reply_text(
+            "❌ Failed to retrieve dump channel info.",
+            quote=True
+        )
+
 
 @Client.on_message(filters.command(["del_dump", "deldump"]) & filters.private)
 async def delete_dump_channel(client: Client, message: Message):
@@ -257,15 +264,29 @@ async def delete_dump_channel(client: Client, message: Message):
         user_id = message.from_user.id
         channel_id = await hyoshcoder.get_user_channel(user_id)
         if channel_id:
-            await hyoshcoder.set_user_channel(user_id, None)
-            await message.reply_text(
-                f"**Channel {channel_id} has been removed from dump list.**"
-            )
+            # Assuming hyoshcoder.set_user_channel(user_id, None) clears it properly
+            success = await hyoshcoder.set_user_channel(user_id, None)
+            if success:
+                await message.reply_text(
+                    f"✅ Channel `{channel_id}` has been removed from your dump list.",
+                    quote=True
+                )
+            else:
+                await message.reply_text(
+                    "❌ Failed to remove dump channel. Please try again.",
+                    quote=True
+                )
         else:
-            await message.reply_text("No dump channel is currently set.")
+            await message.reply_text(
+                "No dump channel is currently set.",
+                quote=True
+            )
     except Exception as e:
         logger.error(f"Error deleting dump channel: {e}")
-        await message.reply_text("❌ Failed to remove dump channel. Please try again.")
+        await message.reply_text(
+            "❌ Failed to remove dump channel. Please try again.",
+            quote=True
+        )
 
 async def handle_point_redemption(client: Client, message: Message, point_id: str):
     try:
@@ -540,28 +561,56 @@ async def handle_help(client: Client, message: Message):
             reply_markup=buttons
         )
 
+from pyrogram.errors import ChatAdminRequired, PeerIdInvalid
+
 async def handle_set_dump(client: Client, message: Message, args: list):
     if len(args) == 0:
-        await message.reply_text(
-            "Please enter the dump channel ID after the command.\n"
-            "Example: `/set_dump -1001234567890`"
+        return await message.reply_text(
+            "❗️ Please provide the dump channel ID after the command.\n"
+            "Example: `/set_dump -1001234567890`",
+            quote=True
         )
-        return
 
     channel_id = args[0]
+
     try:
-        channel_info = await client.get_chat(channel_id)
-        if channel_info:
-            await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
-            await message.reply_text(
-                f"**Channel {channel_id} has been set as the dump channel.**"
+        # Try getting chat info
+        chat = await client.get_chat(channel_id)
+
+        # Check if bot is a member
+        member = await client.get_chat_member(channel_id, client.me.id)
+        if not member or not member.can_post_messages:
+            return await message.reply_text(
+                "❌ I need to be **admin with posting permissions** in that channel.\n"
+                "Please make me admin and try again."
             )
+
+        # Save to database
+        await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
+        await message.reply_text(
+            f"✅ Channel `{channel_id}` has been successfully set as your dump channel.",
+            quote=True
+        )
+
+    except PeerIdInvalid:
+        await message.reply_text(
+            "❌ Invalid channel ID format.\n"
+            "Make sure to use full ID like: `-1001234567890`",
+            quote=True
+        )
+    except ChatAdminRequired:
+        await message.reply_text(
+            "❌ I'm not an admin in that channel.\n"
+            "Please promote me and try again.",
+            quote=True
+        )
     except Exception as e:
         await message.reply_text(
-            f"Error: {e}\n"
-            "Please enter a valid channel ID.\n"
-            "Example: `/set_dump -1001234567890`"
+            f"❌ Error: `{str(e)}`\n\n"
+            "Ensure the channel exists, and I'm a member with proper rights.",
+            quote=True
         )
+
 @Client.on_message((filters.group | filters.private) & filters.command("leaderboard"))
 async def leaderboard_handler(bot: Client, message: Message):
     try:
