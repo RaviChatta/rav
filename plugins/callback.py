@@ -82,12 +82,18 @@ I'm using this awesome file renaming bot with these features:
 Join me using this link: {invite_link}
 """
 
-async def auto_delete_message(chat_id, message_id, delay=30):
-    await asyncio.sleep(delay)
+async def auto_delete_message(chat_id: int, message_id: int, delay: int = 30):
+    """Automatically delete a message after a specified delay."""
     try:
+        await asyncio.sleep(delay)
         await client.delete_messages(chat_id, message_id)
+        logger.info(f"Successfully auto-deleted message {message_id} in chat {chat_id}")
+    except FloodWait as e:
+        logger.warning(f"FloodWait in auto_delete_message: waiting {e.value} seconds")
+        await asyncio.sleep(e.value)
+        await auto_delete_message(chat_id, message_id, delay)
     except Exception as e:
-        logger.error(f"Error deleting message: {e}")
+        logger.error(f"Error auto-deleting message {message_id} in chat {chat_id}: {e}")
 
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
 async def process_text_states(client, message: Message):
@@ -232,7 +238,74 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 "reply_markup": btn,
                 "photo": img
             }
-
+        elif data == "sequential":
+            # Toggle sequential mode
+            current_status = await hyoshcoder.get_sequential_mode(user_id)
+            new_status = not current_status
+            await hyoshcoder.set_sequential_mode(user_id, new_status)
+            
+            # Update the button text in the help menu
+            btn_seq_text = "ˢᵉᑫ✅" if new_status else "ˢᵉᑫ❌"
+            src_txt = "File name" if await hyoshcoder.get_src_info(user_id) == "file_name" else "File caption"
+            
+            btn = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
+                    InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
+                    InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
+                ],
+                [
+                    InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
+                    InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
+                    InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
+                ],
+                [
+                    InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
+                    InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
+                    InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
+                ],
+                [
+                    InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
+                ]
+            ])
+            
+            await query.message.edit_reply_markup(reply_markup=btn)
+            await query.answer(f"Sequential mode {'enabled' if new_status else 'disabled'}")
+        
+        elif data == "toggle_src":
+            # Toggle between file name and file caption as source
+            current_src = await hyoshcoder.get_src_info(user_id)
+            new_src = "file_caption" if current_src == "file_name" else "file_name"
+            await hyoshcoder.set_src_info(user_id, new_src)
+            
+            # Update the button text in the help menu
+            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+            btn_seq_text = "ˢᵉᑫ✅" if sequential_status else "ˢᵉᑫ❌"
+            src_txt = "File name" if new_src == "file_name" else "File caption"
+            
+            btn = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
+                    InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
+                    InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
+                ],
+                [
+                    InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
+                    InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
+                    InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
+                ],
+                [
+                    InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
+                    InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
+                    InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
+                ],
+                [
+                    InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
+                ]
+            ])
+            
+            await query.message.edit_reply_markup(reply_markup=btn)
+            await query.answer(f"Source changed to {src_txt}")
         elif data == "mystats":
             try:
                 # Get user stats with proper date handling
@@ -325,7 +398,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "freepoints":
             try:
                 user = await hyoshcoder.users.find_one({"_id": user_id})
-
+        
                 # Generate referral code if not present
                 if not user or not user.get("referral_code"):
                     referral_code = secrets.token_hex(4)
@@ -336,13 +409,13 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     )
                 else:
                     referral_code = user["referral_code"]
-
+        
                 refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-
+        
                 # Generate new point ID and deep link
                 point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
                 deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-
+        
                 # Pick random shortener
                 shortener = settings.get_random_shortener()
                 short_url = await get_shortlink(
@@ -350,14 +423,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     api=shortener["api"],
                     link=deep_link
                 )
-
+        
                 # Fallback to deep link if shortening failed
                 if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
                     short_url = deep_link
-
+        
                 # Save points link to DB
                 await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-
+        
                 # Caption
                 caption = (
                     "**🎁 Free Points Menu**\n\n"
@@ -367,38 +440,56 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     f"2. **Watching sponsored links** –\n"
                     f"   ➤ {settings.SHORTENER_POINT_REWARD} points\n\n"
                     f"🎯 Your points link:\n`{short_url}`\n\n"
-                    "⏱ Points are added automatically!"
+                    "⏱ Points are added automatically!\n\n"
+                    f"⌛ This message will be deleted in {settings.AUTO_DELETE_TIME} seconds."
                 )
-
+        
                 # Buttons
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
-
-                # Optional image support
+        
+                # Send message with auto-delete
                 try:
                     img = await get_random_photo()
                     if img:
-                        await query.message.edit_media(
+                        sent_msg = await query.message.edit_media(
                             media=InputMediaPhoto(media=img, caption=caption),
                             reply_markup=buttons
                         )
                     else:
-                        raise ValueError("No image")
-                except Exception:
-                    await query.message.edit_text(
+                        sent_msg = await query.message.edit_text(
+                            text=caption,
+                            reply_markup=buttons,
+                            disable_web_page_preview=True
+                        )
+                    
+                    # Schedule auto-deletion
+                    asyncio.create_task(auto_delete_message(
+                        chat_id=query.message.chat.id,
+                        message_id=sent_msg.id,
+                        delay=settings.AUTO_DELETE_TIME
+                    ))
+        
+                except Exception as e:
+                    logger.error(f"Error sending free points message: {e}")
+                    sent_msg = await query.message.edit_text(
                         text=caption,
                         reply_markup=buttons,
                         disable_web_page_preview=True
                     )
-
+                    asyncio.create_task(auto_delete_message(
+                        chat_id=query.message.chat.id,
+                        message_id=sent_msg.id,
+                        delay=settings.AUTO_DELETE_TIME
+                    ))
+        
             except Exception as e:
                 logger.error(f"Callback freepoints error: {e}", exc_info=True)
                 try:
                     await query.answer("❌ Error loading free points. Try again.", show_alert=True)
                 except Exception:
                     pass
-
 
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
@@ -420,12 +511,18 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("Close", callback_data="close"),
                  InlineKeyboardButton("Back", callback_data="help")]
             ])
-            response = {
-                'caption': f"📝 <b>Current Caption:</b>\n{current_caption}\n\n"
-                          "You can set a custom caption that will be added to all your renamed files.",
-                'reply_markup': btn,
-                'photo': img
-            }
+            
+            try:
+                await query.message.edit_media(
+                    media=InputMediaPhoto(media=img, caption=f"📝 <b>Current Caption:</b>\n{current_caption}"),
+                    reply_markup=btn
+                )
+            except Exception as e:
+                logger.error(f"Error updating caption menu: {e}")
+                await query.message.edit_text(
+                    text=f"📝 <b>Current Caption:</b>\n{current_caption}",
+                    reply_markup=btn
+                )
 
         elif data == "set_caption":
             caption_states[user_id] = {
@@ -463,26 +560,30 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
         
         elif data == "setmedia":
+            current_media = await hyoshcoder.get_media_preference(user_id)
+            current_media_text = current_media.capitalize() if current_media else "Not set"
             btn = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
                     InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 Back", callback_data='help')]
+                [InlineKeyboardButton("🔙 Back", callback_data='help")]
             ])
-            current_media = await hyoshcoder.get_media_preference(user_id)
-            current_media_text = current_media.capitalize() if current_media else "Not set"
-            response = {
-                'caption': f"🎥 <b>Current Media Preference:</b> {current_media_text}\n\n"
-                           "Select the type of media you want to receive:",
-                'reply_markup': btn,
-                'photo': img
-            }
-            await query.message.edit_media(
-                media=InputMediaPhoto(response['photo']),
-                caption=response['caption'],
-                reply_markup=response['reply_markup']
-            )
+            
+            try:
+                await query.message.edit_media(
+                    media=InputMediaPhoto(
+                        media=img,
+                        caption=f"🎥 <b>Current Media Preference:</b> {current_media_text}"
+                    ),
+                    reply_markup=btn
+                )
+            except Exception as e:
+                logger.error(f"Error updating media settings menu: {e}")
+                await query.message.edit_text(
+                    text=f"🎥 <b>Current Media Preference:</b> {current_media_text}",
+                    reply_markup=btn
+                )
         
         elif data.startswith("setmedia_"):
             media_type = data.split("_")[1]
@@ -490,26 +591,35 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 await query.answer("Invalid media type selected", show_alert=True)
                 return
         
-            success = await hyoshcoder.set_media_preference(user_id, media_type)
-            if success:
-                btn = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data='setmedia')]
-                ])
-                response = {
-                    'caption': f"✅ <b>Media preference set to:</b> {media_type.capitalize()}",
-                    'reply_markup': btn,
-                    'photo': img
-                }
-            else:
-                await query.answer("Failed to update media preference ❌", show_alert=True)
-                return
-        
-            await query.message.edit_media(
-                media=InputMediaPhoto(response['photo']),
-                caption=response['caption'],
-                reply_markup=response['reply_markup']
-            )
-        
+            await hyoshcoder.set_media_preference(user_id, media_type)
+            await query.answer(f"Media preference set to {media_type}", show_alert=True)
+            
+            # Return to media menu
+            current_media = media_type
+            current_media_text = current_media.capitalize()
+            btn = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
+                    InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data='help")]
+            ])
+            
+            try:
+                await query.message.edit_media(
+                    media=InputMediaPhoto(
+                        media=img,
+                        caption=f"🎥 <b>Current Media Preference:</b> {current_media_text}"
+                    ),
+                    reply_markup=btn
+                )
+            except Exception as e:
+                logger.error(f"Error updating media settings after change: {e}")
+                await query.message.edit_text(
+                    text=f"🎥 <b>Current Media Preference:</b> {current_media_text}",
+                    reply_markup=btn
+                )
+                
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
             btn = InlineKeyboardMarkup([
@@ -517,20 +627,21 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("🗑️ Remove Dump Channel", callback_data="remove_dump")],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
-            response = {
-                'caption': (
-                    f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>\n\n"
-                    "All renamed files will be automatically forwarded to this channel if set.\n\n"
-                    "To set the channel, make sure the bot is an **admin** in it."
-                ),
-                'reply_markup': btn,
-                'photo': img
-            }
-            await query.message.edit_media(
-                media=InputMediaPhoto(response['photo']),
-                caption=response['caption'],
-                reply_markup=response['reply_markup']
-            )
+            
+            try:
+                await query.message.edit_media(
+                    media=InputMediaPhoto(
+                        media=img,
+                        caption=f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>"
+                    ),
+                    reply_markup=btn
+                )
+            except Exception as e:
+                logger.error(f"Error updating dump channel menu: {e}")
+                await query.message.edit_text(
+                    text=f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>",
+                    reply_markup=btn
+                )
         
         elif data == "setdump_instructions":
             await query.answer("ℹ️ Use /set_dump <channel_id> to configure dump channel.", show_alert=True)
