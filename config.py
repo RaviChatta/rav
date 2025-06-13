@@ -1,5 +1,6 @@
 import re, os, time
 from dotenv import load_dotenv
+import random
 import logging
 logger = logging.getLogger(__name__)
 load_dotenv()  # Charge les variables d'environnement depuis un fichier .env si présent
