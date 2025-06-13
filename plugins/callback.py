@@ -34,7 +34,6 @@ EMOJI = {
     'referral': "👥",
     'rename': "📝",
     'stats': "📊",
-    'leaderboard': "🏆",
     'admin': "🛠️",
     'success': "✅",
     'error': "❌",
@@ -51,65 +50,21 @@ BTN_STYLE = {
     'medium': {'width': 2, 'max_chars': 15},
     'large': {'width': 1, 'max_chars': 20}
 }
-import random
-import uuid
-import asyncio
-import time
-import logging
-from pyrogram import Client, filters, enums
-from pyrogram.types import (
-    CallbackQuery, 
-    InlineKeyboardMarkup, 
-    InlineKeyboardButton, 
-    InputMediaPhoto,
-    InputMediaAnimation,
-    Message
-)
-from urllib.parse import quote
-from helpers.utils import get_random_photo, get_random_animation, get_shortlink
-from scripts import Txt
-from database.data import hyoshcoder
-from config import settings
-from collections import defaultdict
-from threading import Lock
-from datetime import datetime, timedelta
-from pyrogram.errors import QueryIdInvalid, FloodWait, ChatWriteForbidden
-
-logger = logging.getLogger(__name__)
-ADMIN_USER_ID = settings.ADMIN
-
-# Emoji Constants
-EMOJI = {
-    'points': "✨",
-    'premium': "⭐",
-    'referral': "👥",
-    'rename': "📝",
-    'stats': "📊",
-    'leaderboard': "🏆",
-    'admin': "🛠️",
-    'success': "✅",
-    'error': "❌",
-    'clock': "⏳",
-    'link': "🔗",
-    'money': "💰",
-    'file': "📁",
-    'video': "🎥"
-}
 
 # Global state tracker
 metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
 
 METADATA_ON = [
-    [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_1'),
-     InlineKeyboardButton('✅', callback_data='metadata_1')],
+    [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_0'),
+     InlineKeyboardButton('✅', callback_data='metadata_0')],
     [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
      InlineKeyboardButton('Back', callback_data='help')]
 ]
 
 METADATA_OFF = [
-    [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_0'),
-     InlineKeyboardButton('❌', callback_data='metadata_0')],
+    [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_1'),
+     InlineKeyboardButton('❌', callback_data='metadata_1')],
     [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
      InlineKeyboardButton('Back', callback_data='help')]
 ]
@@ -126,6 +81,13 @@ I'm using this awesome file renaming bot with these features:
 
 Join me using this link: {invite_link}
 """
+
+async def auto_delete_message(chat_id, message_id, delay=30):
+    await asyncio.sleep(delay)
+    try:
+        await client.delete_messages(chat_id, message_id)
+    except Exception as e:
+        logger.error(f"Error deleting message: {e}")
 
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
 async def process_text_states(client, message: Message):
@@ -204,42 +166,6 @@ async def cleanup_states():
         for uid in expired_caption:
             caption_states.pop(uid, None)
 
-def get_leaderboard_keyboard(selected_period="weekly", selected_type="points"):
-    periods = {
-        "daily": "⏰ Daily",
-        "weekly": "📆 Weekly",
-        "monthly": "🗓 Monthly",
-        "alltime": "🏅 All-Time"
-    }
-
-    types = {
-        "points": "⭐ Points",
-        "renames": "📁 Files",
-        "referrals": "🎁 Referrals"
-    }
-
-    period_buttons = [
-        InlineKeyboardButton(
-            f"• {text} •" if period == selected_period else text,
-            callback_data=f"lb_period_{period}"
-        ) for period, text in periods.items()
-    ]
-
-    type_buttons = [
-        InlineKeyboardButton(
-            f"• {text} •" if lb_type == selected_type else text,
-            callback_data=f"lb_type_{lb_type}"
-        ) for lb_type, text in types.items()
-    ]
-
-    return InlineKeyboardMarkup([
-        period_buttons[:2],
-        period_buttons[2:],
-        type_buttons,
-        [InlineKeyboardButton("🔙 Back", callback_data="help")]
-    ])
-
-
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     data = query.data
@@ -259,8 +185,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         if data == "home":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
-                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats'),
-                 InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data='leaderboard')],
+                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats')],
                 [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints')],
                 [InlineKeyboardButton("❌ Close", callback_data='close')]
             ])
@@ -311,7 +236,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
             
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"{EMOJI['leaderboard']} Leaderboard", callback_data="leaderboard")],
                 [InlineKeyboardButton(f"{EMOJI['referral']} Invite Friends", callback_data="invite")],
                 [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
@@ -322,75 +246,38 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': img
             }
 
-        elif data == "leaderboard":
-            try:
-                period = await hyoshcoder.get_leaderboard_period(user_id)
-                lb_type = await hyoshcoder.get_leaderboard_type(user_id)
-        
-                emoji_map = {
-                    "points": "⭐",
-                    "renames": "📁",
-                    "referrals": "🎁"
-                }
-                title_map = {
-                    "points": "Points",
-                    "renames": "Files Renamed",
-                    "referrals": "Referrals"
-                }
-        
-                emoji = emoji_map.get(lb_type, "⭐")
-                title = title_map.get(lb_type, "Points")
-        
-                if lb_type == "referrals":
-                    leaders = await hyoshcoder.get_referrals_leaderboard(period, limit=20)
-                elif lb_type == "renames":
-                    leaders = await hyoshcoder.get_renames_leaderboard(period, limit=20)
-                else:
-                    leaders_raw = await hyoshcoder.get_leaderboard(period, limit=20)
-                    leaders = [{
-                        'username': user.get('username', f"User {user['_id']}"),
-                        'value': user.get('points', 0),
-                        'is_premium': user.get('is_premium', False)
-                    } for user in leaders_raw]
-        
-                if not leaders:
-                    response = {
-                        'caption': "📭 No leaderboard data available yet",
-                        'reply_markup': InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                        ]),
-                        'photo': img
-                    }
-                else:
-                    period_name = {
-                        "daily": "Daily",
-                        "weekly": "Weekly",
-                        "monthly": "Monthly",
-                        "alltime": "All-Time"
-                    }.get(period, period.capitalize())
-        
-                    text = f"🏆 **{period_name} Leaderboard - {emoji} {title}**\n\n"
-                    for i, user in enumerate(leaders, 1):
-                        premium_tag = " 💎" if user.get("is_premium") else ""
-                        text += f"**{i}.** {user['username']} — `{user['value']}` {emoji}{premium_tag}\n"
-        
-                    response = {
-                        'caption': text,
-                        'reply_markup': get_leaderboard_keyboard(period, lb_type),
-                        'photo': img
-                    }
-        
-            except Exception as e:
-                logger.error(f"Error in leaderboard handler: {e}")
-                response = {
-                    'caption': "⚠️ Error loading leaderboard data",
-                    'reply_markup': InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                    ]),
-                    'photo': img
-                }
+        elif data in ["meta", "metadata_0", "metadata_1"]:
+            if data.startswith("metadata_"):
+                # Toggle the metadata status
+                new_status = data == "metadata_1"
+                await hyoshcoder.set_metadata(user_id, new_status)
+            
+            bool_meta = await hyoshcoder.get_metadata(user_id)
+            meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
+            
+            response = {
+                'caption': f"<b>Current Metadata:</b>\n\n➜ {meta_code}",
+                'reply_markup': InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF),
+                'photo': img
+            }
 
-
+        elif data == "set_metadata":
+            metadata_states[user_id] = {
+                "waiting": True,
+                "timestamp": time.time(),
+                "original_msg": query.message.id
+            }
+            prompt = await query.message.edit_text(
+                "📝 <b>Send new metadata text</b>\n\n"
+                "Example: <code>@CulturedTeluguweeb</code>\n"
+                f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
+                "Reply with text or /cancel",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
+                )
+            )
+            metadata_states[user_id]["prompt_id"] = prompt.id
+            return
         # In callback.py - Update the freepoints section
         elif data == "freepoints":
             
@@ -435,36 +322,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     reply_markup=btn,
                     disable_web_page_preview=True
                 )
-        elif data in ["meta", "metadata_0", "metadata_1"]:
-            if data.startswith("metadata_"):
-                await hyoshcoder.set_metadata(user_id, data.endswith("_1"))
-            
-            bool_meta = await hyoshcoder.get_metadata(user_id)
-            meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
-            await query.message.edit_text(
-                f"<b>Current Metadata:</b>\n\n➜ {meta_code}",
-                reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
-            )
-            return
-
-        elif data == "set_metadata":
-            metadata_states[user_id] = {
-                "waiting": True,
-                "timestamp": time.time(),
-                "original_msg": query.message.id
-            }
-            prompt = await query.message.edit_text(
-                "📝 <b>Send new metadata text</b>\n\n"
-                "Example: <code> CulturedTeluguweeb</code>\n"
-                f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
-                "Reply with text or /cancel",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
-                )
-            )
-            metadata_states[user_id]["prompt_id"] = prompt.id
-            return
-
+       
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
             btn = InlineKeyboardMarkup([
