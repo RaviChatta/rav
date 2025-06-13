@@ -79,7 +79,7 @@ class Scripts:
 </blockquote>
 """
 
-PREMIUM_TXT = """
+    PREMIUM_TXT = """
 💎 <b>PREMIUM FEATURES - NOT AVAILABLE YET</b> 💎
 <blockquote>
 Premium is not available at the moment.
@@ -91,7 +91,7 @@ Use your points to unlock benefits by generating more points:
 </blockquote>
 """
 
-PREMIUM_BENEFITS_TXT = """
+    PREMIUM_BENEFITS_TXT = """
 ✨ <b>Premium Benefits (Coming Soon)</b> ✨
 
 Premium membership is currently unavailable.
