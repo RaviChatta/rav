@@ -609,6 +609,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
         
         # Send response
+# Send response
         if response:
             try:
                 if 'photo' in response:
@@ -643,13 +644,22 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         disable_web_page_preview=True,
                         parse_mode=enums.ParseMode.HTML
                     )
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                await cb_handler(client, query)
+            except ChatWriteForbidden:
+                logger.warning(f"Can't write in chat with {user_id}")
+            except Exception as e:
+                logger.error(f"Error updating message: {e}")
+        
+        # Answer the callback query
         try:
             await query.answer()
         except QueryIdInvalid:
             logger.warning("Query ID was invalid or expired")
         except Exception as e:
             logger.error(f"Error answering callback: {e}")
-        
+
     except FloodWait as e:
         await asyncio.sleep(e.value)
         await cb_handler(client, query)
@@ -657,5 +667,5 @@ async def cb_handler(client: Client, query: CallbackQuery):
         logger.error(f"Callback handler error: {e}", exc_info=True)
         try:
             await query.answer("❌ An error occurred. Please try again.", show_alert=True)
-        except:
+        except Exception:
             pass
