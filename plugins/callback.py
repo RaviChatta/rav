@@ -198,21 +198,30 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         elif data == "help":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("ᴀᴜᴛᴏʀᴇɴᴀᴍᴇ", callback_data='file_names'),
-                 InlineKeyboardButton('ᴛʜᴜᴍʙ', callback_data='thumbnail'),
-                 InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', callback_data='caption')],
-                [InlineKeyboardButton('ᴍᴇᴛᴀᴅᴀᴛᴀ', callback_data='meta'),
-                 InlineKeyboardButton('ᴍᴇᴅɪᴀ', callback_data='setmedia'),
-                 InlineKeyboardButton('ᴅᴜᴍᴘ', callback_data='setdump')],
-                [InlineKeyboardButton(btn_sec_text, callback_data='sequential'),
-                 InlineKeyboardButton('ᴘʀᴇᴍɪᴜᴍ', callback_data='premiumx'),
-                 InlineKeyboardButton(f'Source: {src_txt}', callback_data='toggle_src')],
-                [InlineKeyboardButton('ʜᴏᴍᴇ', callback_data='home')]
+                [
+                    InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
+                    InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
+                    InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
+                ],
+                [
+                    InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
+                    InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
+                    InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
+                ],
+                [
+                    InlineKeyboardButton("ˢᵉᑫ✅", callback_data='sequential'),
+                    InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
+                    InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
+                ],
+                [
+                    InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
+                ]
             ])
+        
             response = {
-                'caption': Txt.HELP_TXT.format(client.mention),
-                'reply_markup': btn,
-                'photo': img
+                "caption": Txt.HELP_TXT.format(client.mention),
+                "reply_markup": btn,
+                "photo": img
             }
 
         elif data == "mystats":
