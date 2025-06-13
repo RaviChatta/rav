@@ -757,45 +757,54 @@ class Database:
             logger.error(f"Error resetting daily usage: {e}")
             return False
 
-    async def get_user_file_stats(self, user_id: int) -> Dict:
-        """Get user's file rename statistics."""
-        stats = {
-            "total_renamed": 0,
-            "today": 0,
-            "this_week": 0,
-            "this_month": 0
-        }
-
+    async def get_user_file_stats(self, user_id):
         try:
-            user = await self.users.find_one({"_id": user_id})
-            if not user:
-                return stats
-
-            stats["total_renamed"] = user["activity"].get("total_files_renamed", 0)
-
-            today = datetime.utcnow().date()
-            start_of_week = today - timedelta(days=today.weekday())
-            start_of_month = datetime.date(today.year, today.month, 1)
-
-            stats["today"] = await self.file_stats.count_documents({
-                "user_id": user_id,
-                "date": today.isoformat()
-            })
-
-            stats["this_week"] = await self.file_stats.count_documents({
-                "user_id": user_id,
-                "date": {"$gte": start_of_week.isoformat()}
-            })
-
-            stats["this_month"] = await self.file_stats.count_documents({
-                "user_id": user_id,
-                "date": {"$gte": start_of_month.isoformat()}
-            })
-
-            return stats
+            user_data = await self.read_user(user_id)
+            if not user_data:
+                return {
+                    'total_renamed': 0,
+                    'today': 0,
+                    'this_week': 0,
+                    'this_month': 0
+                }
+    
+            renamed_files = user_data.get('renamed_files', [])
+            now = datetime.now()
+            
+            # Ensure all timestamps are datetime objects
+            processed_files = []
+            for file in renamed_files:
+                if isinstance(file.get('timestamp'), int):
+                    file['timestamp'] = datetime.fromtimestamp(file['timestamp'])
+                processed_files.append(file)
+            
+            today_count = 0
+            week_count = 0
+            month_count = 0
+            
+            for file in processed_files:
+                file_date = file.get('timestamp', now)
+                if not isinstance(file_date, datetime):
+                    continue
+                    
+                if file_date.date() == now.date():
+                    today_count += 1
+                if file_date.isocalendar()[1] == now.isocalendar()[1]:
+                    week_count += 1
+                if file_date.month == now.month and file_date.year == now.year:
+                    month_count += 1
+            
+            return {
+                'total_renamed': len(renamed_files),
+                'today': today_count,
+                'this_week': week_count,
+                'this_month': month_count,
+                'last_updated': now
+            }
+        
         except Exception as e:
             logger.error(f"Error getting file stats for {user_id}: {e}")
-            return stats
+            return None
 
     async def add_points(self, user_id: int, points: int, source: str = "system", 
                         description: str = None) -> bool:
