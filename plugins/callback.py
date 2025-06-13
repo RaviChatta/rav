@@ -444,7 +444,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
             caption_states[user_id]["prompt_id"] = prompt.id
             return
-
+        
         elif data == "remove_caption":
             await hyoshcoder.set_caption(user_id, None)
             btn = InlineKeyboardMarkup([
@@ -456,7 +456,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
-
+            await query.message.edit_media(
+                media=InputMediaPhoto(response['photo']),
+                caption=response['caption'],
+                reply_markup=response['reply_markup']
+            )
+        
         elif data == "setmedia":
             btn = InlineKeyboardMarkup([
                 [
@@ -473,6 +478,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
+            await query.message.edit_media(
+                media=InputMediaPhoto(response['photo']),
+                caption=response['caption'],
+                reply_markup=response['reply_markup']
+            )
         
         elif data.startswith("setmedia_"):
             media_type = data.split("_")[1]
@@ -494,14 +504,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 await query.answer("Failed to update media preference ❌", show_alert=True)
                 return
         
-        # Then send/edit message with the response, for example:
-        await query.message.edit_media(
-            media=InputMediaPhoto(response['photo']),
-            caption=response['caption'],
-            reply_markup=response['reply_markup']
-        )
-
-
+            await query.message.edit_media(
+                media=InputMediaPhoto(response['photo']),
+                caption=response['caption'],
+                reply_markup=response['reply_markup']
+            )
+        
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
             btn = InlineKeyboardMarkup([
@@ -518,6 +526,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
+            await query.message.edit_media(
+                media=InputMediaPhoto(response['photo']),
+                caption=response['caption'],
+                reply_markup=response['reply_markup']
+            )
         
         elif data == "setdump_instructions":
             await query.answer("ℹ️ Use /set_dump <channel_id> to configure dump channel.", show_alert=True)
@@ -533,8 +546,15 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
+            await query.message.edit_media(
+                media=InputMediaPhoto(response['photo']),
+                caption=response['caption'],
+                reply_markup=response['reply_markup']
+            )
         
-
+        else:
+            await query.answer("Unknown action.", show_alert=True)
+        
 
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
