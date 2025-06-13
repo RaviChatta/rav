@@ -66,6 +66,8 @@ async def addthumbs(client, message):
             delete_after=15
         )
 
+from config import settings  # make sure you're importing the instance, not the class
+
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
     try:
@@ -76,19 +78,28 @@ async def generate_point_link(client: Client, message: Message):
             logger.error("Missing required settings")
             return await message.reply("⚠️ Configuration error. Please contact admin.")
 
+        # Generate a deep link token
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
         deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-        
+
+        # 🔁 Use a new random shortener each time
+        shortener = settings.get_random_shortener()
+        shorted_link = shortener["domain"]
+        shorted_api = shortener["api"]
+
+        # Attempt to shorten the link
         short_url = await get_shortlink(
-            url=settings.SHORTED_LINK,
-            api=settings.SHORTED_LINK_API,
+            url=shorted_link,
+            api=shorted_api,
             link=deep_link
         )
 
+        # Fallback if shortening failed
         if not isinstance(short_url, str) or not short_url.startswith(('http://', 'https://')):
             logger.warning(f"Invalid short URL format: {short_url}")
             short_url = deep_link
 
+        # Save to DB
         try:
             await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
             logger.info(f"Point link saved to DB for user {user_id}")
@@ -96,13 +107,15 @@ async def generate_point_link(client: Client, message: Message):
             logger.error(f"Database error: {db_error}")
             return await message.reply("❌ Failed to save point link. Please try again.")
 
+        # Send reply
         bot_reply = await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
             f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
-            "**🕒 Link valid  30 seconds | 🧬 verify more links to get more points**",
+            "**🕒 Link valid 30 seconds | 🧬 verify more links to get more points**",
             disable_web_page_preview=True
         )
 
+        # Auto-delete after 30s
         await asyncio.sleep(30)
         await message.delete()
         await bot_reply.delete()
@@ -110,6 +123,7 @@ async def generate_point_link(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Unexpected error in generate_point_link: {str(e)}", exc_info=True)
         await message.reply("❌ An unexpected error occurred. Please try again later.")
+
 
 
 @Client.on_message(filters.command("refer") & filters.private)
