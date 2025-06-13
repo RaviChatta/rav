@@ -305,48 +305,66 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
         # In callback.py - Update the freepoints section
         elif data == "freepoints":
-            
-            caption = (
-                "**Free Points**\n\n"
-                "You can earn points by:\n"
-                f"2. Watching ads - Earn {settings.SHORTENER_POINT_REWARD}  points now!\n\n"
-                f" use /genpoints to get morepoints "
-                
-            )
-            
-            # Edit the existing message instead of sending new one
             try:
-                if query.message.animation:
-                    await query.message.edit_media(
-                        media=InputMediaAnimation(
-                            media=await get_random_animation(),
-                            caption=caption
-                        ),
-                        reply_markup=btn
-                    )
-                elif query.message.photo:
-                    await query.message.edit_media(
-                        media=InputMediaPhoto(
-                            media=await get_random_photo(),
-                            caption=caption
-                        ),
-                        reply_markup=btn
+                user_id = callback_query.from_user.id
+                user = await hyoshcoder.users.find_one({"_id": user_id})
+                
+                # Generate referral code if not exists
+                if not user or not user.get("referral_code"):
+                    referral_code = secrets.token_hex(4)
+                    await hyoshcoder.users.update_one(
+                        {"_id": user_id},
+                        {"$set": {"referral_code": referral_code}},
+                        upsert=True
                     )
                 else:
-                    await query.message.edit_text(
+                    referral_code = user["referral_code"]
+                
+                refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
+        
+                # Generate points link
+                point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
+                deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
+                short_url = await get_shortlink(
+                    url=settings.SHORTED_LINK,
+                    api=settings.SHORTED_LINK_API,
+                    link=deep_link
+                )
+        
+                # Save the points link
+                await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
+        
+                caption = (
+                    "**🎁 Free Points Menu**\n\n"
+                    "Earn points by:\n"
+                    f"1. **Sharing** our bot - Earn {settings.REFER_POINT_REWARD} points per referral\n"
+                    f"2. **Watching ads** - Earn {settings.SHORTENER_POINT_REWARD} points instantly\n\n"
+                    f"🔗 Your referral link: `{refer_link}`\n"
+                    f"💰 Your points link: `{short_url}`\n\n"
+                    "Your points will be added automatically!"
+                )
+        
+                buttons = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                ])
+        
+                img = await get_random_photo()
+                if img:
+                    await callback_query.message.edit_media(
+                        media=InputMediaPhoto(media=img, caption=caption),
+                        reply_markup=buttons
+                    )
+                else:
+                    await callback_query.message.edit_text(
                         text=caption,
-                        reply_markup=btn,
+                        reply_markup=buttons,
                         disable_web_page_preview=True
                     )
+        
             except Exception as e:
-                logger.error(f"Error editing freepoints message: {e}")
-                # Fallback to sending new message if edit fails
-                await client.send_message(
-                    chat_id=query.message.chat.id,
-                    text=caption,
-                    reply_markup=btn,
-                    disable_web_page_preview=True
-                )
+                logger.error(f"Callback freepoints error: {e}")
+                await callback_query.answer("❌ Error loading free points", show_alert=True)
+
        
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
