@@ -1,9 +1,13 @@
-import string
 import random
 import asyncio
 import secrets
 import uuid
+import string
+import logging
 from urllib.parse import quote
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
+
 from pyrogram import Client, filters
 from pyrogram.types import (
     CallbackQuery, 
@@ -14,100 +18,132 @@ from pyrogram.types import (
     Message,
     User
 )
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, ChatAdminRequired, PeerIdInvalid, QueryIdInvalid
+from pyrogram.enums import ChatMemberStatus, ParseMode
+
 from config import settings
 from scripts import Txt
-from PIL import Image, ImageEnhance
-from io import BytesIO
-from datetime import datetime, timedelta
-import pytz
-from pyrogram.errors import PeerIdInvalid
-from pyrogram.enums import ChatMemberStatus
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
-from shortzy import Shortzy
 from database.data import hyoshcoder
-from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
-import logging
 
 logger = logging.getLogger(__name__)
 
 EMOJI = {
     'error': '❌',
     'success': '✅',
-    'warning': '⚠️'
+    'warning': '⚠️',
+    'points': '✨',
+    'premium': '⭐',
+    'referral': '👥',
+    'rename': '📝',
+    'stats': '📊',
+    'admin': '🛠️',
+    'clock': '⏳',
+    'link': '🔗',
+    'money': '💰',
+    'file': '📁',
+    'video': '🎥'
 }
 
-async def send_response(client, chat_id, text, delete_after=None):
-    msg = await client.send_message(chat_id, text)
-    if delete_after:
-        asyncio.create_task(auto_delete_message(msg, delete_after))
+async def auto_delete_message(message: Message, delay: int = 30):
+    """Automatically delete a message after a specified delay."""
+    try:
+        await asyncio.sleep(delay)
+        await message.delete()
+        logger.info(f"Auto-deleted message {message.id} in chat {message.chat.id}")
+    except Exception as e:
+        logger.error(f"Error auto-deleting message {message.id}: {str(e)}")
+
+async def send_auto_delete_message(
+    client: Client,
+    chat_id: int,
+    text: str,
+    delete_after: int = 30,
+    **kwargs
+) -> Message:
+    """Send a message that will auto-delete after specified time."""
+    msg = await client.send_message(chat_id, text, **kwargs)
+    asyncio.create_task(auto_delete_message(msg, delete_after))
     return msg
 
-async def auto_delete_message(message, delay):
-    await asyncio.sleep(delay)
-    try:
-        await message.delete()
-    except Exception:
-        pass
 @Client.on_message(filters.private & filters.photo)
-async def addthumbs(client, message):
-    """Handle thumbnail setting"""
+async def addthumbs(client: Client, message: Message):
+    """Handle thumbnail setting."""
     try:
-        mkn = await send_response(client, message.chat.id, "Please wait...")
+        mkn = await send_auto_delete_message(client, message.chat.id, "Please wait...")
         await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
-        await mkn.edit("**Thumbnail saved successfully ✅️**")
-        asyncio.create_task(auto_delete_message(mkn, delay=30))
+        await mkn.edit("**Thumbnail saved successfully ✅**")
     except Exception as e:
         logger.error(f"Error setting thumbnail: {e}")
-        await send_response(
+        await send_auto_delete_message(
             client,
             message.chat.id,
             f"{EMOJI['error']} Failed to save thumbnail",
             delete_after=15
         )
 
-from config import settings  # make sure you're importing the instance, not the class
-
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
+    """Generate a points earning link for users."""
     try:
         user_id = message.from_user.id
         db = hyoshcoder
 
+        # Validate required settings
         if not all([settings.BOT_USERNAME, settings.TOKEN_ID_LENGTH, settings.SHORTENER_POINT_REWARD]):
-            logger.error("Missing required settings")
-            return await message.reply("⚠️ Configuration error. Please contact admin.")
+            logger.error("Missing required settings for genpoints")
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "⚠️ Configuration error. Please contact admin.",
+                delete_after=30
+            )
 
-        # Generate a deep link token
+        # Generate point ID and deep link
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
         deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
 
-        # 🔁 Use a new random shortener each time
+        # Get random shortener
         shortener = settings.get_random_shortener()
-        shorted_link = shortener["domain"]
-        shorted_api = shortener["api"]
+        if not shortener:
+            logger.error("No shortener configured")
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "⚠️ No URL shortener configured. Please contact admin.",
+                delete_after=30
+            )
 
-        # Attempt to shorten the link
-        short_url = await get_shortlink(
-            url=shorted_link,
-            api=shorted_api,
-            link=deep_link
-        )
-
-        # Fallback if shortening failed
-        if not isinstance(short_url, str) or not short_url.startswith(('http://', 'https://')):
-            logger.warning(f"Invalid short URL format: {short_url}")
+        # Shorten the link
+        try:
+            short_url = await get_shortlink(
+                url=shortener["domain"],
+                api=shortener["api"],
+                link=deep_link
+            )
+            
+            # Fallback if shortening fails
+            if not isinstance(short_url, str) or not short_url.startswith(('http://', 'https://')):
+                logger.warning(f"Invalid short URL format: {short_url}")
+                short_url = deep_link
+        except Exception as e:
+            logger.error(f"Error shortening URL: {e}")
             short_url = deep_link
 
-        # Save to DB
+        # Save to database
         try:
             await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-            logger.info(f"Point link saved to DB for user {user_id}")
+            logger.info(f"Point link saved for user {user_id}")
         except Exception as db_error:
             logger.error(f"Database error: {db_error}")
-            return await message.reply("❌ Failed to save point link. Please try again.")
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "❌ Failed to save point link. Please try again.",
+                delete_after=30
+            )
 
-        # Send reply
+        # Send the points link
         bot_reply = await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
             f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
@@ -115,23 +151,27 @@ async def generate_point_link(client: Client, message: Message):
             disable_web_page_preview=True
         )
 
-        # Auto-delete after 30s
-        await asyncio.sleep(30)
-        await message.delete()
-        await bot_reply.delete()
+        # Auto-delete both messages after 30 seconds
+        asyncio.create_task(auto_delete_message(message, 30))
+        asyncio.create_task(auto_delete_message(bot_reply, 30))
 
     except Exception as e:
         logger.error(f"Unexpected error in generate_point_link: {str(e)}", exc_info=True)
-        await message.reply("❌ An unexpected error occurred. Please try again later.")
-
-
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❌ An unexpected error occurred. Please try again later.",
+            delete_after=30
+        )
 
 @Client.on_message(filters.command("refer") & filters.private)
-async def refer(client, message):
+async def refer(client: Client, message: Message):
+    """Generate referral link for users."""
     try:
         user_id = message.from_user.id
         user = await hyoshcoder.users.find_one({"_id": user_id})
         
+        # Generate or get referral code
         if not user or not user.get("referral_code"):
             referral_code = secrets.token_hex(4)
             await hyoshcoder.users.update_one(
@@ -142,28 +182,39 @@ async def refer(client, message):
         else:
             referral_code = user["referral_code"]
 
+        # Get referral count
         referrals = user.get("referrals", []) if user else []
         count = len(referrals)
 
+        # Create referral link
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-        await message.reply_text(
+        
+        # Send message with auto-delete
+        msg = await message.reply_text(
             f"**Your Referral Link:**\n{refer_link}\n\n"
             f"**Total Referrals:** {count}\n"
             f"**You get {settings.REFER_POINT_REWARD} points for every successful referral!**"
         )
+        
+        asyncio.create_task(auto_delete_message(msg, 60))
+
     except Exception as e:
         logger.error(f"Error in refer command: {e}")
-        await message.reply_text("❌ Failed to generate referral link. Please try again.")
-
-
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❌ Failed to generate referral link. Please try again.",
+            delete_after=30
+        )
 
 @Client.on_message(filters.command("freepoints") & filters.private)
 async def freepoints(client: Client, message: Message):
+    """Handle free points generation."""
     try:
         user_id = message.from_user.id
         user = await hyoshcoder.users.find_one({"_id": user_id})
 
-        # Generate referral code if not exists
+        # Generate or get referral code
         if not user or not user.get("referral_code"):
             referral_code = secrets.token_hex(4)
             await hyoshcoder.users.update_one(
@@ -176,25 +227,38 @@ async def freepoints(client: Client, message: Message):
 
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
 
-        # Generate points link
+        # Generate point ID and deep link
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
         deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
 
-        # ✅ Use a new random shortener for each user
+        # Get random shortener
         shortener = settings.get_random_shortener()
-        shorted_link = shortener["domain"]
-        shorted_api = shortener["api"]
+        if not shortener:
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "⚠️ No URL shortener configured. Please contact admin.",
+                delete_after=30
+            )
 
-        # Attempt to shorten the deep link
-        short_url = await get_shortlink(url=shorted_link, api=shorted_api, link=deep_link)
-
-        if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
+        # Shorten the link
+        try:
+            short_url = await get_shortlink(
+                url=shortener["domain"],
+                api=shortener["api"],
+                link=deep_link
+            )
+            
+            if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
+                short_url = deep_link
+        except Exception as e:
+            logger.error(f"Error shortening URL: {e}")
             short_url = deep_link
 
-        # Save the generated point link
+        # Save point link
         await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
 
-        # Prepare buttons and caption
+        # Prepare response
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Back", callback_data="help")]
         ])
@@ -207,149 +271,249 @@ async def freepoints(client: Client, message: Message):
             f"2. **Watching sponsored content** –\n"
             f"   ➤ {settings.SHORTENER_POINT_REWARD} points\n\n"
             f"🎯 Your points link:\n`{short_url}`\n\n"
-            "⏱ Points are added automatically!"
+            "⏱ Points are added automatically!\n\n"
+            f"⌛ This message will be deleted in {settings.AUTO_DELETE_TIME} seconds."
         )
 
-        # Optional image (if you use `get_random_photo`)
+        # Send response with auto-delete
         try:
             img = await get_random_photo()
-            await message.reply_photo(
-                photo=img,
-                caption=caption,
-                reply_markup=buttons,
-                disable_web_page_preview=True
-            )
-        except:
-            await message.reply_text(
+            if img:
+                msg = await message.reply_photo(
+                    photo=img,
+                    caption=caption,
+                    reply_markup=buttons,
+                    disable_web_page_preview=True
+                )
+            else:
+                msg = await message.reply_text(
+                    text=caption,
+                    reply_markup=buttons,
+                    disable_web_page_preview=True
+                )
+        except Exception as e:
+            logger.error(f"Error sending freepoints message: {e}")
+            msg = await message.reply_text(
                 text=caption,
                 reply_markup=buttons,
                 disable_web_page_preview=True
             )
 
-        # Delete both after 30 seconds
-        await asyncio.sleep(30)
-        await message.delete()
+        # Auto-delete
+        asyncio.create_task(auto_delete_message(msg, settings.AUTO_DELETE_TIME))
+        asyncio.create_task(auto_delete_message(message, settings.AUTO_DELETE_TIME))
 
     except Exception as e:
         logger.error(f"Error in /freepoints: {e}", exc_info=True)
-        await message.reply_text("❌ Failed to generate free points. Try again.")
-
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❌ Failed to generate free points. Try again.",
+            delete_after=30
+        )
 
 @Client.on_message(filters.command(["view_dump", "viewdump"]) & filters.private)
 async def view_dump_channel(client: Client, message: Message):
+    """View current dump channel setting."""
     try:
         user_id = message.from_user.id
         channel_id = await hyoshcoder.get_user_channel(user_id)
+        
         if channel_id:
-            await message.reply_text(
+            msg = await message.reply_text(
                 f"**Current Dump Channel:** `{channel_id}`",
                 quote=True
             )
         else:
-            await message.reply_text(
+            msg = await message.reply_text(
                 "No dump channel is currently set.",
                 quote=True
             )
+        
+        asyncio.create_task(auto_delete_message(msg, 30))
+        asyncio.create_task(auto_delete_message(message, 30))
+
     except Exception as e:
         logger.error(f"Error viewing dump channel: {e}")
-        await message.reply_text(
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
             "❌ Failed to retrieve dump channel info.",
-            quote=True
+            delete_after=30
         )
-
 
 @Client.on_message(filters.command(["del_dump", "deldump"]) & filters.private)
 async def delete_dump_channel(client: Client, message: Message):
+    """Remove dump channel setting."""
     try:
         user_id = message.from_user.id
         channel_id = await hyoshcoder.get_user_channel(user_id)
+        
         if channel_id:
-            # Assuming hyoshcoder.set_user_channel(user_id, None) clears it properly
             success = await hyoshcoder.set_user_channel(user_id, None)
             if success:
-                await message.reply_text(
+                msg = await message.reply_text(
                     f"✅ Channel `{channel_id}` has been removed from your dump list.",
                     quote=True
                 )
             else:
-                await message.reply_text(
+                msg = await message.reply_text(
                     "❌ Failed to remove dump channel. Please try again.",
                     quote=True
                 )
         else:
-            await message.reply_text(
+            msg = await message.reply_text(
                 "No dump channel is currently set.",
                 quote=True
             )
+        
+        asyncio.create_task(auto_delete_message(msg, 30))
+        asyncio.create_task(auto_delete_message(message, 30))
+
     except Exception as e:
         logger.error(f"Error deleting dump channel: {e}")
-        await message.reply_text(
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
             "❌ Failed to remove dump channel. Please try again.",
+            delete_after=30
+        )
+
+async def handle_set_dump(client: Client, message: Message, args: List[str]):
+    """Handle setting dump channel with proper validation."""
+    if len(args) == 0:
+        return await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❗️ Please provide the dump channel ID after the command.\n"
+            "Example: `/set_dump -1001234567890`",
+            delete_after=30
+        )
+
+    channel_id = args[0]
+    user_id = message.from_user.id
+
+    try:
+        # Validate channel ID format
+        if not channel_id.startswith('-100') or not channel_id[4:].isdigit():
+            raise ValueError("Invalid channel ID format. Must be like -1001234567890")
+
+        # Check if bot has admin rights in the channel
+        try:
+            member = await client.get_chat_member(int(channel_id), client.me.id)
+            if not member or not member.privileges or not member.privileges.can_post_messages:
+                raise ValueError("I need admin rights with post permissions in that channel")
+        except PeerIdInvalid:
+            raise ValueError("Channel not found or I'm not a member")
+        except ChatAdminRequired:
+            raise ValueError("I don't have admin rights in that channel")
+
+        # Save to database
+        await hyoshcoder.set_user_channel(user_id, channel_id)
+        
+        msg = await message.reply_text(
+            f"✅ Channel `{channel_id}` has been successfully set as your dump channel.",
             quote=True
         )
+        
+        asyncio.create_task(auto_delete_message(msg, 30))
+        asyncio.create_task(auto_delete_message(message, 30))
 
-async def handle_point_redemption(client: Client, message: Message, point_id: str):
-    try:
-        user_id = message.from_user.id
-        point_data = await hyoshcoder.get_point_link(point_id)
-
-        if not point_data:
-            return await message.reply("**Invalid or expired link...**")
-
-        if point_data['used']:
-            return await message.reply("**This link has already been used...**")
-
-        expiry_utc = point_data['expiry'].replace(tzinfo=pytz.UTC)
-
-        if datetime.now(pytz.UTC) > expiry_utc:
-            return await message.reply("**Point link expired...**")
-
-        if point_data['user_id'] != user_id:
-            return await message.reply("**This link belongs to another user...**")
-
-        await hyoshcoder.users.update_one(
-            {"_id": user_id},
-            {
-                "$inc": {
-                    "points.balance": point_data['points'],
-                    "points.total_earned": point_data['points']
-                }
-            }
+    except ValueError as e:
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            f"❌ Error: {str(e)}\n\n"
+            "Ensure the channel exists, and I'm an admin with posting rights.",
+            delete_after=30
+        )
+    except Exception as e:
+        logger.error(f"Error setting dump channel: {e}")
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            f"❌ Error: {str(e)}\n\n"
+            "Failed to set dump channel. Please try again.",
+            delete_after=30
         )
 
-        await hyoshcoder.mark_point_used(point_id)
-        await message.reply(f"✅ Success! {point_data['points']} points added to your account!")
+@Client.on_message(filters.command("setmedia") & filters.private)
+async def handle_setmedia(client: Client, message: Message):
+    """Handle media preference setting."""
+    try:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📁 Document", callback_data="setmedia_document")],
+            [InlineKeyboardButton("🎥 Video", callback_data="setmedia_video")]
+        ])
+        
+        msg = await message.reply_text(
+            "**Please select the type of media you want to set:**",
+            reply_markup=keyboard
+        )
+        
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
 
     except Exception as e:
-        logging.error(f"Error during point redemption: {e}")
-        await message.reply("**An error occurred. Please try again.**")
+        logger.error(f"Error in setmedia command: {e}")
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❌ Failed to set media preference. Please try again.",
+            delete_after=30
+        )
+
 @Client.on_callback_query(filters.regex(r"^setmedia_(document|video)$"))
 async def set_media_preference_handler(client: Client, callback_query: CallbackQuery):
-    media_type = callback_query.data.split("_")[1]  # 'document' or 'video'
-    user_id = callback_query.from_user.id
-
-    success = await hyoshcoder.set_media_preference(user_id, media_type)
-    if success:
-        await callback_query.answer(f"Media type set to {media_type.capitalize()} ✅", show_alert=True)
-        await callback_query.message.edit_text(f"✅ Your media preference has been set to: **{media_type.capitalize()}**")
-    else:
-        await callback_query.answer("Failed to update media preference ❌", show_alert=True)
-@Client.on_message(filters.command(["start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
-    "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
-    "donate", "premium", "plan", "bought", "help", "set_dump", "freepoints", "genpoints",
-    "leaderboard", "lb"]) & filters.private)
-async def command_handler(client: Client, message: Message):
+    """Handle media preference selection from callback."""
     try:
-        user_id = message.from_user.id
+        media_type = callback_query.data.split("_")[1]
+        user_id = callback_query.from_user.id
+
+        success = await hyoshcoder.set_media_preference(user_id, media_type)
+        if success:
+            await callback_query.answer(
+                f"Media type set to {media_type.capitalize()} ✅",
+                show_alert=True
+            )
+            
+            # Edit original message to confirm
+            await callback_query.message.edit_text(
+                f"✅ Your media preference has been set to: **{media_type.capitalize()}**"
+            )
+            
+            # Auto-delete after confirmation
+            asyncio.create_task(auto_delete_message(callback_query.message, 30))
+        else:
+            await callback_query.answer(
+                "Failed to update media preference ❌",
+                show_alert=True
+            )
+
+    except Exception as e:
+        logger.error(f"Error setting media preference: {e}")
+        await callback_query.answer(
+            "An error occurred. Please try again.",
+            show_alert=True
+        )
+
+@Client.on_message(filters.command(["start", "help", "set_caption", "del_caption", 
+                                  "view_caption", "viewthumb", "delthumb", "metadata",
+                                  "donate", "premium", "plan", "bought"]) & filters.private)
+async def command_handler(client: Client, message: Message):
+    """Main command handler with auto-delete for all commands except start."""
+    try:
         cmd = message.command[0].lower()
         args = message.command[1:]
 
+        # Handle start command separately (no auto-delete)
         if cmd == 'start':
             await handle_start_command(client, message, args)
-        elif cmd == "autorename":
-            await handle_autorename(client, message, args)
-        elif cmd == "setmedia":
-            await handle_setmedia(client, message)
+            return
+
+        # Process other commands
+        if cmd == "help":
+            await handle_help(client, message)
         elif cmd == "set_caption":
             await handle_set_caption(client, message, args)
         elif cmd in ["del_caption", "delcaption"]:
@@ -362,28 +526,31 @@ async def command_handler(client: Client, message: Message):
             await handle_del_thumb(client, message)
         elif cmd in ["donate", "premium", "plan", "bought"]:
             await handle_premium(client, message)
-        elif cmd == "help":
-            await handle_help(client, message)
-        elif cmd == "set_dump":
-            await handle_set_dump(client, message, args)
-        elif cmd in ["leaderboard", "lb"]:
-            await handle_leaderboard(client, message)
-        elif cmd == "freepoints":
-            await freepoints(client, message)
-        elif cmd == "genpoints":
-            await generate_point_link(client, message)
+
+        # Auto-delete the command message and response
+        if cmd != "start":  # Don't auto-delete start commands
+            asyncio.create_task(auto_delete_message(message, settings.AUTO_DELETE_TIME))
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
     except Exception as e:
         logger.error(f"Command error: {e}")
-        await message.reply_text("⚠️ An error occurred. Please try again.")
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "⚠️ An error occurred. Please try again.",
+            delete_after=30
+        )
 
-async def handle_start_command(client: Client, message: Message, args: list):
+async def handle_start_command(client: Client, message: Message, args: List[str]):
+    """Handle start command with referral and point redemption."""
     user = message.from_user
     user_id = user.id
+    
+    # Add user to database
     await hyoshcoder.add_user(user_id)
     
+    # Handle referral or point redemption if args exist
     if args:
         arg = args[0]
         if arg.startswith("ref_"):
@@ -392,52 +559,62 @@ async def handle_start_command(client: Client, message: Message, args: list):
             await handle_point_redemption(client, message, arg)
         return
 
+    # Send welcome message
     m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
     await asyncio.sleep(3)
     await m.delete()
 
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
+    # Prepare buttons
+    buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
         [InlineKeyboardButton("My Stats", callback_data='mystats')],
-        [InlineKeyboardButton("Earn Points", callback_data='freepoints'),
-         InlineKeyboardButton("Go Premium", callback_data='premiumx')],
+        [InlineKeyboardButton("Earn Points", callback_data='freepoints')],
         [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
          InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
     ])
-    anim = await get_random_animation()
-    img = await get_random_photo()
-    caption = Txt.START_TXT.format(user.mention)
 
-    if anim:
-        await message.reply_animation(
-            animation=anim,
-            caption=caption,
-            reply_markup=buttons
-        )
-    elif img:
-        await message.reply_photo(
-            photo=img,
-            caption=caption,
-            reply_markup=buttons
-        )
-    else:
-        await message.reply_text(
-            text=caption,
-            reply_markup=buttons
-        )
+    # Send welcome message with media
+    try:
+        anim = await get_random_animation()
+        if anim:
+            await message.reply_animation(
+                animation=anim,
+                caption=Txt.START_TXT.format(user.mention),
+                reply_markup=buttons
+            )
+            return
+        
+        img = await get_random_photo()
+        if img:
+            await message.reply_photo(
+                photo=img,
+                caption=Txt.START_TXT.format(user.mention),
+                reply_markup=buttons
+            )
+            return
+    except Exception as e:
+        logger.error(f"Error sending welcome media: {e}")
+
+    # Fallback to text if media fails
+    await message.reply_text(
+        text=Txt.START_TXT.format(user.mention),
+        reply_markup=buttons
+    )
 
 async def handle_referral(client: Client, user: User, referral_code: str):
-    referrer = await hyoshcoder.col.find_one({"referral_code": referral_code})
+    """Handle referral registration."""
+    referrer = await hyoshcoder.users.find_one({"referral_code": referral_code})
     if referrer and referrer["_id"] != user.id:
-        updated = await hyoshcoder.col.update_one(
+        # Update referrer's stats
+        updated = await hyoshcoder.users.update_one(
             {"_id": referrer["_id"]},
-            {"$addToSet": {"referrals": user.id}}
+            {
+                "$addToSet": {"referrals": user.id},
+                "$inc": {"points.balance": settings.REFER_POINT_REWARD}
+            }
         )
+        
         if updated.modified_count > 0:
-            await hyoshcoder.col.update_one(
-                {"_id": referrer["_id"]},
-                {"$inc": {"points": settings.REFER_POINT_REWARD}}
-            )
             try:
                 await client.send_message(
                     referrer["_id"],
@@ -446,42 +623,106 @@ async def handle_referral(client: Client, user: User, referral_code: str):
             except Exception:
                 pass
 
-async def handle_autorename(client: Client, message: Message, args: list):
-    if len(args) == 0:
-        await message.reply_text(
+async def handle_point_redemption(client: Client, message: Message, point_id: str):
+    """Handle point link redemption."""
+    try:
+        user_id = message.from_user.id
+        point_data = await hyoshcoder.get_point_link(point_id)
+
+        if not point_data:
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "**Invalid or expired link...**",
+                delete_after=30
+            )
+
+        if point_data['used']:
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "**This link has already been used...**",
+                delete_after=30
+            )
+
+        if datetime.utcnow() > point_data['expires_at']:
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "**Point link expired...**",
+                delete_after=30
+            )
+
+        if point_data['user_id'] != user_id:
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "**This link belongs to another user...**",
+                delete_after=30
+            )
+
+        # Add points to user's account
+        await hyoshcoder.users.update_one(
+            {"_id": user_id},
+            {
+                "$inc": {
+                    "points.balance": point_data['points'],
+                    "points.total_earned": point_data['points']
+                }
+            }
+        )
+
+        # Mark link as used
+        await hyoshcoder.mark_point_used(point_id)
+        
+        msg = await message.reply(f"✅ Success! {point_data['points']} points added to your account!")
+        asyncio.create_task(auto_delete_message(msg, 30))
+        asyncio.create_task(auto_delete_message(message, 30))
+
+    except Exception as e:
+        logger.error(f"Error during point redemption: {e}")
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "**An error occurred. Please try again.**",
+            delete_after=30
+        )
+
+
+async def handle_autorename(client: Client, message: Message, args: List[str]):
+    """Handle the /autorename command to set rename template."""
+    if not args:
+        msg = await message.reply_text(
             "**Please provide a rename template**\n\n"
             "Example:\n"
             "`/autorename MyFile_[episode]_[quality]`\n\n"
             "Available placeholders:\n"
             "[filename], [size], [duration], [date], [time]"
         )
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
         return
 
     format_template = ' '.join(args)
     await hyoshcoder.set_format_template(message.from_user.id, format_template)
-    await message.reply_text(
+    
+    msg = await message.reply_text(
         f"✅ <b>Auto-rename template set!</b>\n\n"
         f"📝 <b>Your template:</b> <code>{format_template}</code>\n\n"
         "Now send me files to rename automatically!"
     )
+    asyncio.create_task(auto_delete_message(msg, 60))
+    asyncio.create_task(auto_delete_message(message, 60))
 
-async def handle_setmedia(client: Client, message: Message):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📁 Document", callback_data="setmedia_document")],
-        [InlineKeyboardButton("🎥 Video", callback_data="setmedia_video")]
-    ])
-    await message.reply_text(
-        "**Please select the type of media you want to set:**",
-        reply_markup=keyboard
-    )
-
-
-async def handle_set_caption(client: Client, message: Message, args: list):
-    if len(args) == 0:
-        caption = (
-            "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
+async def handle_set_caption(client: Client, message: Message, args: List[str]):
+    """Handle /set_caption command to set custom caption."""
+    if not args:
+        msg = await message.reply_text(
+            "**Provide the caption\n\nExample : `/set_caption 📕Name ➠ : {filename} \n\n"
+            "🔗 Size ➠ : {filesize} \n\n⏰ Duration ➠ : {duration}`**"
         )
-        await message.reply_text(caption)
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
         return
     
     new_caption = message.text.split(" ", 1)[1]
@@ -491,33 +732,47 @@ async def handle_set_caption(client: Client, message: Message, args: list):
     caption = "**Your caption has been saved successfully ✅**"
     
     if img:
-        await message.reply_photo(photo=img, caption=caption)
+        msg = await message.reply_photo(photo=img, caption=caption)
     else:
-        await message.reply_text(text=caption)
+        msg = await message.reply_text(text=caption)
+    
+    asyncio.create_task(auto_delete_message(msg, 60))
+    asyncio.create_task(auto_delete_message(message, 60))
 
 async def handle_del_caption(client: Client, message: Message):
+    """Handle /del_caption command to remove caption."""
     await hyoshcoder.set_caption(message.from_user.id, None)
-    await message.reply_text("✅ Caption removed successfully!")
+    msg = await message.reply_text("✅ Caption removed successfully!")
+    asyncio.create_task(auto_delete_message(msg, 30))
+    asyncio.create_task(auto_delete_message(message, 30))
 
 async def handle_view_caption(client: Client, message: Message):
+    """Handle /view_caption command to show current caption."""
     current_caption = await hyoshcoder.get_caption(message.from_user.id) or "No caption set"
-    await message.reply_text(
-        f"📝 <b>Current Caption:</b>\n{current_caption}"
-    )
+    msg = await message.reply_text(f"📝 <b>Current Caption:</b>\n{current_caption}")
+    asyncio.create_task(auto_delete_message(msg, 60))
+    asyncio.create_task(auto_delete_message(message, 60))
 
 async def handle_view_thumb(client: Client, message: Message):
+    """Handle /viewthumb command to show current thumbnail."""
     thumb = await hyoshcoder.get_thumbnail(message.from_user.id)
     if thumb:
-        await message.reply_photo(thumb, caption="Your current thumbnail")
+        msg = await message.reply_photo(thumb, caption="Your current thumbnail")
     else:
-        await message.reply_text("No thumbnail set")
+        msg = await message.reply_text("No thumbnail set")
+    asyncio.create_task(auto_delete_message(msg, 60))
+    asyncio.create_task(auto_delete_message(message, 60))
 
 async def handle_del_thumb(client: Client, message: Message):
+    """Handle /delthumb command to remove thumbnail."""
     await hyoshcoder.set_thumbnail(message.from_user.id, None)
-    await message.reply_text("✅ Thumbnail removed successfully!")
+    msg = await message.reply_text("✅ Thumbnail removed successfully!")
+    asyncio.create_task(auto_delete_message(msg, 30))
+    asyncio.create_task(auto_delete_message(message, 30))
 
 async def handle_premium(client: Client, message: Message):
-    await message.reply_text(
+    """Handle premium-related commands."""
+    msg = await message.reply_text(
         "🌟 <b>Premium Membership Not Available</b>\n\n"
         "Premium is not available at the moment. Meanwhile, use your points to unlock benefits!\n\n"
         "Generate more points with:\n"
@@ -529,10 +784,11 @@ async def handle_premium(client: Client, message: Message):
         "• Extended File Size Limits\n\n"
         "Start earning points now!"
     )
-
-
+    asyncio.create_task(auto_delete_message(msg, 60))
+    asyncio.create_task(auto_delete_message(message, 60))
 
 async def handle_help(client: Client, message: Message):
+    """Handle /help command to show help menu."""
     user_id = message.from_user.id
     img = await get_random_photo()
     sequential_status = await hyoshcoder.get_sequential_mode(user_id)
@@ -562,277 +818,278 @@ async def handle_help(client: Client, message: Message):
         ]
     ])
 
-
-    
     if img:
-        await message.reply_photo(
+        msg = await message.reply_photo(
             photo=img,
             caption=Txt.HELP_TXT.format(client.mention),
             reply_markup=buttons
         )
     else:
-        await message.reply_text(
+        msg = await message.reply_text(
             text=Txt.HELP_TXT.format(client.mention),
             reply_markup=buttons
         )
+    asyncio.create_task(auto_delete_message(msg, 120))
+    asyncio.create_task(auto_delete_message(message, 120))
 
-from pyrogram.errors import ChatAdminRequired, PeerIdInvalid
-
-async def handle_set_dump(client: Client, message: Message, args: list):
-    if len(args) == 0:
-        return await message.reply_text(
+async def handle_set_dump(client: Client, message: Message, args: List[str]):
+    """Handle /set_dump command to configure dump channel."""
+    if not args:
+        msg = await message.reply_text(
             "❗️ Please provide the dump channel ID after the command.\n"
             "Example: `/set_dump -1001234567890`",
             quote=True
         )
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
+        return
 
     channel_id = args[0]
+    user_id = message.from_user.id
 
     try:
-        # Try getting chat info
-        chat = await client.get_chat(channel_id)
+        # Validate channel ID format
+        if not channel_id.startswith('-100') or not channel_id[4:].isdigit():
+            raise ValueError("Invalid channel ID format. Must be like -1001234567890")
 
-        # Check if bot is a member
-        member = await client.get_chat_member(channel_id, client.me.id)
-        if not member or not member.can_post_messages:
-            return await message.reply_text(
-                "❌ I need to be **admin with posting permissions** in that channel.\n"
-                "Please make me admin and try again."
-            )
+        # Check bot's permissions in the channel
+        try:
+            member = await client.get_chat_member(int(channel_id), client.me.id)
+            if not member or not member.privileges or not member.privileges.can_post_messages:
+                raise ValueError("I need admin rights with post permissions in that channel")
+        except PeerIdInvalid:
+            raise ValueError("Channel not found or I'm not a member")
+        except ChatAdminRequired:
+            raise ValueError("I don't have admin rights in that channel")
 
         # Save to database
-        await hyoshcoder.set_user_channel(message.from_user.id, channel_id)
-        await message.reply_text(
+        await hyoshcoder.set_user_channel(user_id, channel_id)
+        
+        msg = await message.reply_text(
             f"✅ Channel `{channel_id}` has been successfully set as your dump channel.",
             quote=True
         )
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
 
-    except PeerIdInvalid:
-        await message.reply_text(
-            "❌ Invalid channel ID format.\n"
-            "Make sure to use full ID like: `-1001234567890`",
+    except ValueError as e:
+        msg = await message.reply_text(
+            f"❌ Error: {str(e)}\n\n"
+            "Ensure the channel exists, and I'm an admin with posting rights.",
             quote=True
         )
-    except ChatAdminRequired:
-        await message.reply_text(
-            "❌ I'm not an admin in that channel.\n"
-            "Please promote me and try again.",
-            quote=True
-        )
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
     except Exception as e:
-        await message.reply_text(
-            f"❌ Error: `{str(e)}`\n\n"
-            "Ensure the channel exists, and I'm a member with proper rights.",
+        logger.error(f"Error setting dump channel: {e}")
+        msg = await message.reply_text(
+            f"❌ Error: {str(e)}\n\n"
+            "Failed to set dump channel. Please try again.",
             quote=True
         )
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
 
-@Client.on_message((filters.group | filters.private) & filters.command("leaderboard"))
-async def leaderboard_handler(bot: Client, message: Message):
+@Client.on_message(filters.command("leaderboard") & filters.private)
+async def handle_leaderboard(client: Client, message: Message):
+    """Handle /leaderboard command to show points leaderboard."""
     try:
-        user_id = message.from_user.id if message.from_user else None
+        user_id = message.from_user.id
         period = await hyoshcoder.get_leaderboard_period(user_id) if user_id else "weekly"
         lb_type = await hyoshcoder.get_leaderboard_type(user_id) if user_id else "points"
 
-        async def generate_leaderboard(period_filter, lb_type_filter):
-            # Get leaderboard data based on type
-            if lb_type_filter == "points":
-                leaders = await hyoshcoder.get_leaderboard(period_filter, limit=10)
-                value_key = "points"
-                emoji = "⭐"
-            elif lb_type_filter == "renames":
-                leaders = await hyoshcoder.get_renames_leaderboard(period_filter, limit=10)
-                value_key = "total_renames"
-                emoji = "📁"
-            else:  # referrals
-                leaders = await hyoshcoder.get_referral_leaderboard(period_filter, limit=10)
-                value_key = "total_referrals"
-                emoji = "🎁"
-
-            # Prepare leaderboard display
-            period_name = {
-                "daily": "Today's",
-                "weekly": "This Week's",
-                "monthly": "This Month's",
-                "alltime": "All-Time"
-            }.get(period_filter, period_filter.capitalize())
-            
-            title = f"🏆 <b>{period_name} Leaderboard - {emoji} {lb_type_filter.capitalize()}</b>\n\n"
-            
-            if not leaders:
-                return None
-            
-            leaderboard = [title]
-            
-            # Get user's rank if available
-            user_rank = None
-            user_value = 0
-            
-            if user_id:
-                if lb_type_filter == "points":
-                    user_data = await hyoshcoder.get_user(user_id)
-                    if user_data:
-                        user_value = user_data["points"]["balance"]
-                        user_rank = await hyoshcoder.users.count_documents({
-                            "points.balance": {"$gt": user_value},
-                            "ban_status.is_banned": False
-                        }) + 1
-                elif lb_type_filter == "renames":
-                    user_stats = await hyoshcoder.file_stats.aggregate([
-                        {"$match": {"user_id": user_id}},
-                        {"$group": {"_id": None, "total": {"$sum": 1}}}
-                    ]).to_list(1)
-                    if user_stats:
-                        user_value = user_stats[0]["total"]
-                        user_rank = await hyoshcoder.file_stats.aggregate([
-                            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
-                            {"$match": {"total": {"$gt": user_value}}},
-                            {"$count": "total"}
-                        ]).to_list(1)
-                        user_rank = (user_rank[0]["total"] + 1) if user_rank else 1
-                else:  # referrals
-                    user_data = await hyoshcoder.get_user(user_id)
-                    if user_data:
-                        user_value = user_data["referral"]["referred_count"]
-                        user_rank = await hyoshcoder.users.count_documents({
-                            "referral.referred_count": {"$gt": user_value},
-                            "ban_status.is_banned": False
-                        }) + 1
-            
-            # Format leaderboard entries
-            for idx, user in enumerate(leaders, 1):
-                try:
-                    # Try to get fresh user info from Telegram
-                    tg_user = await bot.get_users(int(user["_id"]))
-                    name = html.escape(tg_user.first_name or "Anonymous")
-                    username = f"@{tg_user.username}" if tg_user.username else "No UN"
-                except Exception:
-                    # Fallback to stored username or user ID
-                    name = html.escape(user.get("username", f"User {user['_id']}"))
-                    username = f"@{user['username']}" if user.get("username") else "No UN"
-                
-                premium_tag = " 💎" if user.get("is_premium", False) else ""
-                leaderboard.append(
-                    f"{idx}. <b>{name}</b> "
-                    f"(<code>{username}</code>) ➜ "
-                    f"<i>{user.get(value_key, 0)} {lb_type_filter} {emoji}{premium_tag}</i>"
-                )
-            
-            # Add user's rank if available
-            if user_rank is not None:
-                leaderboard.append(f"\n<b>Your Rank:</b> {user_rank} with {user_value} {lb_type_filter}")
-            
-            leaderboard.append(f"\nLast updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-            leaderboard.append(f"\n<i>**This message will auto-delete in {settings.LEADERBOARD_DELETE_TIMER} seconds**</i>")
-            
-            return "\n".join(leaderboard)
+        # Get leaderboard data
+        leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=10)
         
-        # Generate initial leaderboard
-        leaderboard_text = await generate_leaderboard(period, lb_type)
-        
-        if not leaderboard_text:
-            no_data_msg = await message.reply_text("<blockquote>No leaderboard data available yet!</blockquote>")
-            await asyncio.sleep(10)
-            await no_data_msg.delete()
+        if not leaders:
+            msg = await message.reply_text("No leaderboard data available yet!")
+            asyncio.create_task(auto_delete_message(msg, 30))
+            asyncio.create_task(auto_delete_message(message, 30))
             return
+
+        # Format leaderboard text
+        leaderboard_text = [
+            f"🏆 <b>Leaderboard - {lb_type.capitalize()}</b>",
+            f"⏳ Period: {period.capitalize()}",
+            ""
+        ]
         
-        # Create inline keyboard
-        keyboard = InlineKeyboardMarkup([
+        for idx, user in enumerate(leaders, 1):
+            try:
+                user_info = await client.get_users(user['_id'])
+                name = user_info.first_name
+                username = f"@{user_info.username}" if user_info.username else "No UN"
+            except:
+                name = f"User {user['_id']}"
+                username = "No UN"
+            
+            points = user['points'] if lb_type == "points" else user['count']
+            leaderboard_text.append(
+                f"{idx}. {name} ({username}) - {points} {lb_type}"
+            )
+
+        leaderboard_text.extend([
+            "",
+            f"⌛ This message will auto-delete in {settings.AUTO_DELETE_TIME} seconds"
+        ])
+
+        # Create period selection buttons
+        buttons = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data=f"lb_period_daily_{lb_type}"),
-                InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data=f"lb_period_weekly_{lb_type}"),
-                InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data=f"lb_period_monthly_{lb_type}")
+                InlineKeyboardButton("Daily", callback_data=f"lb_daily_{lb_type}"),
+                InlineKeyboardButton("Weekly", callback_data=f"lb_weekly_{lb_type}"),
+                InlineKeyboardButton("Monthly", callback_data=f"lb_monthly_{lb_type}")
             ],
             [
-                InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data=f"lb_period_alltime_{lb_type}"),
+                InlineKeyboardButton("All Time", callback_data=f"lb_alltime_{lb_type}"),
             ],
             [
-                InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data=f"lb_type_points_{period}"),
-                InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data=f"lb_type_renames_{period}"),
-                InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data=f"lb_type_referrals_{period}")
+                InlineKeyboardButton("Points", callback_data=f"lb_{period}_points"),
+                InlineKeyboardButton("Renames", callback_data=f"lb_{period}_renames"),
+                InlineKeyboardButton("Refs", callback_data=f"lb_{period}_refs")
             ]
         ])
-        
-        sent_msg = await message.reply_text(
-            leaderboard_text,
-            reply_markup=keyboard
+
+        msg = await message.reply_text(
+            "\n".join(leaderboard_text),
+            reply_markup=buttons
         )
-        
-        # Callback handler for leaderboard updates
-        @Client.on_callback_query(filters.regex(r"^lb_(period|type)_"))
-        async def leaderboard_callback(client: Client, callback_query: CallbackQuery):
-            if callback_query.from_user.id != user_id:
-                await callback_query.answer("This is not your leaderboard!", show_alert=True)
-                return
-            
-            data_parts = callback_query.data.split("_")
-            filter_type = data_parts[1]  # "period" or "type"
-            selected_value = data_parts[2]  # "daily", "points", etc.
-            
-            # Update user preferences
-            if filter_type == "period":
-                if user_id:
-                    await hyoshcoder.set_leaderboard_period(user_id, selected_value)
-                period = selected_value
-            else:  # type
-                if user_id:
-                    await hyoshcoder.set_leaderboard_type(user_id, selected_value)
-                lb_type = selected_value
-            
-            # Generate updated leaderboard
-            new_leaderboard = await generate_leaderboard(period, lb_type)
-            
-            if not new_leaderboard:
-                await callback_query.answer("No data available for this filter", show_alert=True)
-                return
-            
-            # Update keyboard with current selections
-            new_keyboard = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("DAILY" if period != "daily" else "• DAILY •", callback_data=f"lb_period_daily_{lb_type}"),
-                    InlineKeyboardButton("WEEKLY" if period != "weekly" else "• WEEKLY •", callback_data=f"lb_period_weekly_{lb_type}"),
-                    InlineKeyboardButton("MONTHLY" if period != "monthly" else "• MONTHLY •", callback_data=f"lb_period_monthly_{lb_type}")
-                ],
-                [
-                    InlineKeyboardButton("ALLTIME" if period != "alltime" else "• ALLTIME •", callback_data=f"lb_period_alltime_{lb_type}"),
-                ],
-                [
-                    InlineKeyboardButton("POINTS" if lb_type != "points" else "• POINTS •", callback_data=f"lb_type_points_{period}"),
-                    InlineKeyboardButton("RENAMES" if lb_type != "renames" else "• RENAMES •", callback_data=f"lb_type_renames_{period}"),
-                    InlineKeyboardButton("REFERRALS" if lb_type != "referrals" else "• REFERRALS •", callback_data=f"lb_type_referrals_{period}")
-                ]
-            ])
-            
-            try:
-                await callback_query.message.edit_text(
-                    new_leaderboard,
-                    reply_markup=new_keyboard
-                )
-                await callback_query.answer()
-            except Exception as e:
-                logger.error(f"Error updating leaderboard: {e}")
-                await callback_query.answer("Error updating leaderboard", show_alert=True)
-        
-        # Auto-delete messages
-        async def delete_messages():
-            await asyncio.sleep(settings.LEADERBOARD_DELETE_TIMER)
-            try:
-                await sent_msg.delete()
-            except:
-                pass
-            try:
-                await message.delete()
-            except:
-                pass
-        
-        asyncio.create_task(delete_messages())
-        
+        asyncio.create_task(auto_delete_message(msg, settings.AUTO_DELETE_TIME))
+        asyncio.create_task(auto_delete_message(message, settings.AUTO_DELETE_TIME))
+
     except Exception as e:
-        error_msg = await message.reply_text(
-            "<b>Error generating leaderboard!</b>\n"
-            f"<code>{str(e)}</code>\n\n"
-            f"**This message will self-destruct in {settings.LEADERBOARD_DELETE_TIMER} seconds.**"
+        logger.error(f"Error in leaderboard command: {e}")
+        msg = await message.reply_text("❌ Failed to load leaderboard. Please try again.")
+        asyncio.create_task(auto_delete_message(msg, 30))
+        asyncio.create_task(auto_delete_message(message, 30))
+
+@Client.on_callback_query(filters.regex(r"^lb_"))
+async def leaderboard_callback_handler(client: Client, callback_query: CallbackQuery):
+    """Handle leaderboard period/type changes."""
+    try:
+        data = callback_query.data.split('_')
+        period = data[1]
+        lb_type = data[2]
+        user_id = callback_query.from_user.id
+
+        # Update user preferences
+        if user_id:
+            await hyoshcoder.set_leaderboard_period(user_id, period)
+            await hyoshcoder.set_leaderboard_type(user_id, lb_type)
+
+        # Regenerate leaderboard
+        leaders = await hyoshcoder.get_leaderboard(period, lb_type, limit=10)
+        
+        if not leaders:
+            await callback_query.answer("No data for this period/type", show_alert=True)
+            return
+
+        # Format leaderboard text
+        leaderboard_text = [
+            f"🏆 <b>Leaderboard - {lb_type.capitalize()}</b>",
+            f"⏳ Period: {period.capitalize()}",
+            ""
+        ]
+        
+        for idx, user in enumerate(leaders, 1):
+            try:
+                user_info = await client.get_users(user['_id'])
+                name = user_info.first_name
+                username = f"@{user_info.username}" if user_info.username else "No UN"
+            except:
+                name = f"User {user['_id']}"
+                username = "No UN"
+            
+            points = user['points'] if lb_type == "points" else user['count']
+            leaderboard_text.append(
+                f"{idx}. {name} ({username}) - {points} {lb_type}"
+            )
+
+        # Update buttons
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Daily", callback_data=f"lb_daily_{lb_type}"),
+                InlineKeyboardButton("Weekly", callback_data=f"lb_weekly_{lb_type}"),
+                InlineKeyboardButton("Monthly", callback_data=f"lb_monthly_{lb_type}")
+            ],
+            [
+                InlineKeyboardButton("All Time", callback_data=f"lb_alltime_{lb_type}"),
+            ],
+            [
+                InlineKeyboardButton("Points", callback_data=f"lb_{period}_points"),
+                InlineKeyboardButton("Renames", callback_data=f"lb_{period}_renames"),
+                InlineKeyboardButton("Refs", callback_data=f"lb_{period}_refs")
+            ]
+        ])
+
+        # Update message
+        await callback_query.message.edit_text(
+            "\n".join(leaderboard_text),
+            reply_markup=buttons
         )
-        await asyncio.sleep(settings.LEADERBOARD_DELETE_TIMER)
-        await error_msg.delete()
+        await callback_query.answer()
 
+    except Exception as e:
+        logger.error(f"Error in leaderboard callback: {e}")
+        await callback_query.answer("❌ Error updating leaderboard", show_alert=True)
 
+# Register all commands
+@Client.on_message(filters.command([
+    "start", "help", "autorename", "set_caption", "del_caption", 
+    "view_caption", "viewthumb", "delthumb", "set_dump",
+    "view_dump", "del_dump", "freepoints", "genpoints",
+    "leaderboard", "lb", "refer", "premium", "donate"
+]) & filters.private)
+async def command_dispatcher(client: Client, message: Message):
+    """Dispatch commands to appropriate handlers."""
+    try:
+        cmd = message.command[0].lower()
+        args = message.command[1:]
+
+        # Special case for start command (no auto-delete)
+        if cmd == 'start':
+            await handle_start_command(client, message, args)
+            return
+
+        # Dispatch other commands
+        if cmd == "help":
+            await handle_help(client, message)
+        elif cmd == "autorename":
+            await handle_autorename(client, message, args)
+        elif cmd == "set_caption":
+            await handle_set_caption(client, message, args)
+        elif cmd in ["del_caption", "delcaption"]:
+            await handle_del_caption(client, message)
+        elif cmd in ["see_caption", "view_caption"]:
+            await handle_view_caption(client, message)
+        elif cmd in ["viewthumb", "view_thumb"]:
+            await handle_view_thumb(client, message)
+        elif cmd in ["del_thumb", "delthumb"]:
+            await handle_del_thumb(client, message)
+        elif cmd == "set_dump":
+            await handle_set_dump(client, message, args)
+        elif cmd in ["view_dump", "viewdump"]:
+            await view_dump_channel(client, message)
+        elif cmd in ["del_dump", "deldump"]:
+            await delete_dump_channel(client, message)
+        elif cmd == "freepoints":
+            await freepoints(client, message)
+        elif cmd == "genpoints":
+            await generate_point_link(client, message)
+        elif cmd in ["leaderboard", "lb"]:
+            await handle_leaderboard(client, message)
+        elif cmd == "refer":
+            await refer(client, message)
+        elif cmd in ["premium", "donate"]:
+            await handle_premium(client, message)
+
+        # Auto-delete the command message
+        asyncio.create_task(auto_delete_message(message, settings.AUTO_DELETE_TIME))
+
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+    except Exception as e:
+        logger.error(f"Command dispatcher error: {e}")
+        msg = await message.reply_text("⚠️ An error occurred. Please try again.")
+        asyncio.create_task(auto_delete_message(msg, 30))
+        asyncio.create_task(auto_delete_message(message, 30))
