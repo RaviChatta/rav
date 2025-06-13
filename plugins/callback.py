@@ -552,8 +552,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 reply_markup=response['reply_markup']
             )
         
-        else:
-            await query.answer("Unknown action.", show_alert=True)
         
 
         elif data == "premiumx":
