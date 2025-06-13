@@ -518,14 +518,18 @@ async def handle_del_thumb(client: Client, message: Message):
 
 async def handle_premium(client: Client, message: Message):
     await message.reply_text(
-        "🌟 <b>Premium Membership</b>\n\n"
-        "Get access to exclusive features:\n"
+        "🌟 <b>Premium Membership Not Available</b>\n\n"
+        "Premium is not available at the moment. Meanwhile, use your points to unlock benefits!\n\n"
+        "Generate more points with:\n"
+        "/genpoints or /freepoints\n\n"
+        "Keep collecting points and stay tuned for Premium features like:\n"
         "• 2x Points Multiplier\n"
         "• Priority Processing\n"
         "• No Ads\n"
         "• Extended File Size Limits\n\n"
-        "Contact @Raaaaavi for premium access!"
+        "Start earning points now!"
     )
+
 
 
 async def handle_help(client: Client, message: Message):
