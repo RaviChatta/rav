@@ -436,38 +436,47 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Set Dump Channel", callback_data="setdump_instructions")],
-                [InlineKeyboardButton("Remove Dump Channel", callback_data="remove_dump")],
-                [InlineKeyboardButton("Back", callback_data="help")]
+                [InlineKeyboardButton("📥 Set Dump Channel", callback_data="setdump_instructions")],
+                [InlineKeyboardButton("🗑️ Remove Dump Channel", callback_data="remove_dump")],
+                [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
             response = {
-                'caption': f"📤 <b>Current Dump Channel</b>: {current_dump or 'Not set'}\n\n"
-                          "You can set a channel where renamed files will be automatically forwarded.",
+                'caption': (
+                    f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>\n\n"
+                    "All renamed files will be automatically forwarded to this channel if set.\n\n"
+                    "To set the channel, make sure the bot is an **admin** in it."
+                ),
                 'reply_markup': btn,
                 'photo': img
             }
-
+        
         elif data == "setdump_instructions":
-            await query.answer("Please use /set_dump command followed by channel ID", show_alert=True)
+            await query.answer("ℹ️ Use /set_dump <channel_id> to configure dump channel.", show_alert=True)
             return
-
+        
         elif data == "remove_dump":
             await hyoshcoder.set_user_channel(user_id, None)
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='setdump')]])
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="setdump")]
+            ])
             response = {
-                'caption': "✅ Dump channel removed successfully",
+                'caption': "✅ Dump channel removed successfully.",
                 'reply_markup': btn,
                 'photo': img
             }
+        
         elif data in ["sequential", "toggle_src"]:
             try:
                 if data == "sequential":
                     await hyoshcoder.toggle_sequential_mode(user_id)
+                    await query.answer("🔁 Sequential mode toggled.", show_alert=False)
                 elif data == "toggle_src":
                     await hyoshcoder.toggle_src_info(user_id)
+                    await query.answer("🎛️ Source info toggled.", show_alert=False)
         
-                # Refresh the help menu (assuming cb_handler shows help)
+                # Refresh the help or settings UI
                 await cb_handler(client, query)
+        
             except Exception as e:
                 logger.error(f"Error toggling setting for '{data}': {e}")
                 await query.message.edit_caption(
@@ -476,6 +485,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         [InlineKeyboardButton("🔙 Back", callback_data="help")]
                     ])
                 )
+            return
+
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
