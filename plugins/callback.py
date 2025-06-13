@@ -321,11 +321,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
             metadata_states[user_id]["prompt_id"] = prompt.id
             return
-       elif data == "freepoints":
+
+        elif data == "freepoints":
             try:
-                user_id = callback_query.from_user.id
                 user = await hyoshcoder.users.find_one({"_id": user_id})
-        
+
                 # Generate referral code if not present
                 if not user or not user.get("referral_code"):
                     referral_code = secrets.token_hex(4)
@@ -336,28 +336,29 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     )
                 else:
                     referral_code = user["referral_code"]
-        
+
                 refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-        
+
                 # Generate new point ID and deep link
                 point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
                 deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-        
-                # 🆕 Pick random shortener each time
+
+                # Pick random shortener
                 shortener = settings.get_random_shortener()
                 short_url = await get_shortlink(
                     url=shortener["domain"],
                     api=shortener["api"],
                     link=deep_link
                 )
-        
+
+                # Fallback to deep link if shortening failed
                 if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
                     short_url = deep_link
-        
-                # Save the new points link to DB
+
+                # Save points link to DB
                 await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-        
-                # Format the caption
+
+                # Caption
                 caption = (
                     "**🎁 Free Points Menu**\n\n"
                     "Earn points by:\n"
@@ -368,32 +369,36 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     f"🎯 Your points link:\n`{short_url}`\n\n"
                     "⏱ Points are added automatically!"
                 )
-        
+
                 # Buttons
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
-        
+
                 # Optional image support
                 try:
                     img = await get_random_photo()
                     if img:
-                        await callback_query.message.edit_media(
+                        await query.message.edit_media(
                             media=InputMediaPhoto(media=img, caption=caption),
                             reply_markup=buttons
                         )
                     else:
                         raise ValueError("No image")
                 except Exception:
-                    await callback_query.message.edit_text(
+                    await query.message.edit_text(
                         text=caption,
                         reply_markup=buttons,
                         disable_web_page_preview=True
                     )
-        
+
             except Exception as e:
                 logger.error(f"Callback freepoints error: {e}", exc_info=True)
-                await callback_query.answer("❌ Error loading free points. Try again.", show_alert=True)
+                try:
+                    await query.answer("❌ Error loading free points. Try again.", show_alert=True)
+                except Exception:
+                    pass
+
 
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
