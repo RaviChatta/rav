@@ -495,14 +495,17 @@ async def handle_premium(client: Client, message: Message):
         "Contact @Raaaaavi for premium access!"
     )
 
-async def handle_help(client: Client, message: Message):
-    img = await get_random_photo()
-    sequential_status = await hyoshcoder.get_sequential_mode(message.from_user.id)
-    src_info = await hyoshcoder.get_src_info(message.from_user.id)
-    src_txt = "File name" if src_info == "file_name" else "File caption"
-    btn_sec_text = f"Sequential {'✅' if sequential_status else '❌'}"
 
-    buttons =  InlineKeyboardMarkup([
+async def handle_help(client: Client, message: Message):
+    user_id = message.from_user.id
+    img = await get_random_photo()
+    sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+    src_info = await hyoshcoder.get_src_info(user_id)
+
+    btn_seq_text = "ˢᵉᑫ✅" if sequential_status else "ˢᵉᑫ❌"
+    src_txt = "File name" if src_info == "file_name" else "File caption"
+
+    buttons = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
             InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
@@ -514,7 +517,7 @@ async def handle_help(client: Client, message: Message):
             InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
         ],
         [
-            InlineKeyboardButton("ˢᵉᑫ✅", callback_data='sequential'),
+            InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
             InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
             InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
         ],
@@ -522,6 +525,7 @@ async def handle_help(client: Client, message: Message):
             InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
         ]
     ])
+
 
     
     if img:
