@@ -1,155 +1,147 @@
 class Scripts:
 
     PROGRESS_BAR = """
-⚡ <b>File Processing Progress</b> ⚡
+⚡ <b>ғɪʟᴇ ᴘʀᴏᴄᴇꜱꜱɪɴɢ ᴘʀᴏɢʀᴇꜱꜱ</b> ⚡
 <blockquote>
-<b>📊 Progress:</b> {0}%
-<b>📦 Size:</b> {1} / {2}
-<b>🚀 Speed:</b> {3}/s
-<b>⏳ Time Left:</b> {4}
+<b>📊 ᴘʀᴏɢʀᴇꜱꜱ:</b> {0}%
+<b>📦 ꜱɪᴢᴇ:</b> {1} / {2}
+<b>🚀 ꜱᴘᴇᴇᴅ:</b> {3}/s
+<b>⏳ ᴛɪᴍᴇ ʟᴇꜰᴛ:</b> {4}
 </blockquote>
 """
 
     START_TXT = """
-<b>👑 Hmph~ Hello {}, you're lucky to stand before me.</b>
+<b>👑 ʜᴍᴘʜ~ ʜᴇʟʟᴏ {}, ʏᴏᴜ'ʀᴇ ʟᴜᴄᴋʏ ᴛᴏ ꜱᴛᴀɴᴅ ʙᴇꜰᴏʀᴇ ᴍᴇ.</b>
 <blockquote>
-ᴬᵘᵗᵒ ʀᴇɴᴀᴍɪɴɢ, ᴅᴜᴍᴘɪɴɢ, ꜱᴇǫᴜᴇɴᴄɪɴɢ & ᴇᴠᴇɴ ᴍᴇᴛᴀᴅᴀᴛᴀ — ᴀʟʟ ꜱᴜʙᴍɪᴛ ᴛᴏ ᴍʏ ᴄʜᴀʀᴍ. ✨
-
+ᴬᵘᵗᵒʀᴇɴᴀᴍɪɴɢ, ᴅᴜᴍᴘɪɴɢ, ꜱᴇǫᴜᴇɴᴄɪɴɢ & ᴇᴠᴇɴ ᴍᴇᴛᴀᴅᴀᴛᴀ — ᴀʟʟ ꜱᴜʙᴍɪᴛ ᴛᴏ ᴍʏ ᴄʜᴀʀᴍ. ✨  
 ᴇᴠᴇʀʏ ᴛʜᴜᴍʙɴᴀɪʟ ᴀɴᴅ ᴄᴀᴘᴛɪᴏɴ ɪꜱ ᴍᴀᴅᴇ ᴛᴏ ʙᴇ ᴀᴅᴏʀᴇᴅ. 💋
 </blockquote>
 """
 
-    FILE_NAME_TXT = """<b>» <u>Configure Auto-Rename Format</u></b>
+    FILE_NAME_TXT = """
+<b>» ᴄᴏɴꜰɪɢᴜʀᴇ ᴀᴜᴛᴏ-ʀᴇɴᴀᴍᴇ ꜰᴏʀᴍᴀᴛ</b>
 
-<b>Variables:</b>
-➲ episode - To replace the episode number  
-➲ season - To replace the season number
-➲ quality - To replace the quality  
+<b>⟩ ᴠᴀʀɪᴀʙʟᴇꜱ:</b>
+➲ <b>ᴇᴘɪꜱᴏᴅᴇ</b> – ᴛᴏ ʀᴇᴘʟᴀᴄᴇ ᴇᴘɪꜱᴏᴅᴇ ɴᴜᴍʙᴇʀ  
+➲ <b>ꜱᴇᴀꜱᴏɴ</b> – ᴛᴏ ʀᴇᴘʟᴀᴄᴇ ꜱᴇᴀꜱᴏɴ ɴᴜᴍʙᴇʀ  
+➲ <b>ǫᴜᴀʟɪᴛʏ</b> – ᴛᴏ ʀᴇᴘʟᴀᴄᴇ ǫᴜᴀʟɪᴛʏ
 
-<b>‣ Example :- </b> <code>/autorename one punch man [Sseason - EPepisode - [Quality] [Dual]</code>
+<b>⟩ ᴇxᴀᴍᴘʟᴇ:</b>  
+<code>/autorename ᴏɴᴇ ᴘᴜɴᴄʜ ᴍᴀɴ [Sseason - EPepisode - [Quality] [Dual]</code>
 
-<b>‣ /autorename :</b> Rename your multimedia files using 'episode' and 'quality' placeholders from the original filename.
+<b>⟩ ᴄᴏᴍᴍᴀɴᴅ:</b>  
+<code>/autorename</code> – ᴜꜱᴇ ᴘʟᴀᴄᴇʜᴏʟᴅᴇʀꜱ ᴛᴏ ᴍᴀɴᴀɢᴇ ꜰɪʟᴇɴᴀᴍᴇꜱ.
 """
 
     ABOUT_TXT = """
-🌌 <b>ABOUT FILE RENAME PRO</b> 🌌
+🌌 <b>ᴀʙᴏᴜᴛ ꜰɪʟᴇ ʀᴇɴᴀᴍᴇ ᴘʀᴏ</b> 🌌
 <blockquote>
-<b>Core Technology:</b>
-• Python 3.11 + Pyrogram
-• Quantum Cloud Hosting
-• Version 7.1.3
+<b>ᴄᴏʀᴇ ᴛᴇᴄʜɴᴏʟᴏɢʏ:</b>  
+• ᴘʏᴛʜᴏɴ 3.11 + ᴘʏʀᴏɢʀᴀᴍ  
+• ǫᴜᴀɴᴛᴜᴍ ᴄʟᴏᴜᴅ ʜᴏꜱᴛɪɴɢ  
+• ᴠᴇʀꜱɪᴏɴ 7.1.3
 
-<b>Created by:</b> @altof2  
-<b>Last Updated:</b> Yesterday
+<b>ᴄʀᴇᴀᴛᴇᴅ ʙʏ:</b> @Raaaavi
+<b>ʟᴀꜱᴛ ᴜᴘᴅᴀᴛᴇᴅ:</b> ʏᴇꜱᴛᴇʀᴅᴀʏ
 </blockquote>
 """
 
     THUMBNAIL_TXT = """
-🎨 <b>THUMBNAIL MANAGER</b> 🎨
+🎨 <b>ᴛʜᴜᴍʙɴᴀɪʟ ᴍᴀɴᴀɢᴇʀ</b> 🎨
 <blockquote>
-<b>Commands:</b>
-• Send image to set thumbnail
-• <code>/del_thumb</code> - Remove
-• <code>/view_thumb</code> - Preview
+<b>ᴄᴏᴍᴍᴀɴᴅꜱ:</b>  
+• ꜱᴇɴᴅ ɪᴍᴀɢᴇ ᴛᴏ ꜱᴇᴛ ᴀꜱ ᴛʜᴜᴍʙ  
+• <code>/del_thumb</code> – ʀᴇᴍᴏᴠᴇ  
+• <code>/view_thumb</code> – ᴘʀᴇᴠɪᴇᴡ
 </blockquote>
 """
 
     CAPTION_TXT = """
-📝 <b>CAPTION EDITOR</b> 📝
+📝 <b>ᴄᴀᴘᴛɪᴏɴ ᴇᴅɪᴛᴏʀ</b> 📝
 <blockquote>
-<b>Available Tags:</b>
-<code>{filesize}</code> - File size  
-<code>{duration}</code> - Duration  
-<code>{filename}</code> - File name
+<b>ᴛᴀɢꜱ ᴀᴠᴀɪʟᴀʙʟᴇ:</b>  
+<code>{filesize}</code> – ꜰɪʟᴇ ꜱɪᴢᴇ  
+<code>{duration}</code> – ᴅᴜʀᴀᴛɪᴏɴ  
+<code>{filename}</code> – ꜰɪʟᴇ ɴᴀᴍᴇ
 
-<b>Example:</b>
+<b>ᴇxᴀᴍᴘʟᴇ:</b>  
 <code>/set_caption 🎬 {filename}</code>
 </blockquote>
 """
 
     DONATE_TXT = """
-💖 <b>SUPPORT DEVELOPMENT</b> 💖
+💖 <b>ꜱᴜᴘᴘᴏʀᴛ ᴅᴇᴠᴇʟᴏᴘᴍᴇɴᴛ</b> 💖
 <blockquote>
-<b>Tiers:</b>
-• Stellar: $10  
-• Galactic: $25  
-• Cosmic: $50+
+<b>ᴛɪᴇʀꜱ:</b>  
+• ꜱᴛᴇʟʟᴀʀ – $10  
+• ɢᴀʟᴀᴄᴛɪᴄ – $25  
+• ᴄᴏꜱᴍɪᴄ – $50+
 
-<b>Contact:</b> @REQUETE_ANIME_30sbot
+<b>ᴄᴏɴᴛᴀᴄᴛ:</b> in support group
 </blockquote>
 """
 
     PREMIUM_TXT = """
-💎 <b>PREMIUM FEATURES - NOT AVAILABLE YET</b> 💎
+💎 <b>ᴘʀᴇᴍɪᴜᴍ ꜰᴇᴀᴛᴜʀᴇꜱ – ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ʏᴇᴛ</b> 💎
 <blockquote>
-Premium is not available at the moment.
+ᴘʀᴇᴍɪᴜᴍ ɪꜱ ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴀᴛ ᴛʜᴇ ᴍᴏᴍᴇɴᴛ.
 
-Use your points to unlock benefits by generating more points:
-/genpoints or /freepoints
+ᴜꜱᴇ ʏᴏᴜʀ ᴘᴏɪɴᴛꜱ ᴛᴏ ᴜɴʟᴏᴄᴋ ʙᴇɴᴇꜰɪᴛꜱ  
+<code>/genpoints</code> ᴏʀ <code>/freepoints</code>
 
-<b>Activate with:</b> /plan (Coming Soon)
+<b>ᴘʟᴀɴ:</b> <code>/plan</code> (ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ)
 </blockquote>
 """
 
     PREMIUM_BENEFITS_TXT = """
-✨ <b>Premium Benefits (Coming Soon)</b> ✨
+✨ <b>ᴘʀᴇᴍɪᴜᴍ ʙᴇɴᴇꜰɪᴛꜱ (ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ)</b> ✨
+<blockquote>
+ɢᴇɴᴇʀᴀᴛᴇ ᴘᴏɪɴᴛꜱ ᴡɪᴛʜ <code>/genpoints</code> ᴏʀ <code>/freepoints</code>
 
-Premium membership is currently unavailable.
-
-Meanwhile, generate points with:
-/genpoints or /freepoints
-
-Some upcoming benefits include:
-✅ No advertisements  
-✅ Priority file processing  
-✅ Higher file size limits (up to 4GB)  
-✅ Custom metadata options  
-✅ Exclusive thumbnails  
-✅ Advanced renaming options  
-✅ Early access to new features  
-✅ Dedicated support  
-
-Stay tuned and keep collecting points!
+<b>ᴡʜᴀᴛ ʏᴏᴜ ᴄᴀɴ ᴇxᴘᴇᴄᴛ:</b>  
+✅ ɴᴏ ᴀᴅꜱ  
+✅ ᴘʀɪᴏʀɪᴛʏ ꜰɪʟᴇ ᴘʀᴏᴄᴇꜱꜱɪɴɢ  
+✅ ᴇxᴛᴇɴᴅᴇᴅ ꜰɪʟᴇ ꜱɪᴢᴇ ʟɪᴍɪᴛꜱ (ᴜᴘ ᴛᴏ 4ɢʙ)  
+✅ ᴄᴜꜱᴛᴏᴍ ᴍᴇᴛᴀᴅᴀᴛᴀ  
+✅ ᴇxᴄʟᴜꜱɪᴠᴇ ᴛʜᴜᴍʙɴᴀɪʟꜱ  
+✅ ᴇᴀʀʟʏ ᴀᴄᴄᴇꜱꜱ ᴛᴏ ɴᴇᴡ ꜰᴇᴀᴛᴜʀᴇꜱ
+</blockquote>
 """
 
-
     HELP_TXT = """
-🛠️ <b>COMMAND LIST</b> 🛠️
+🛠️ <b>ᴄᴏᴍᴍᴀɴᴅ ʟɪꜱᴛ</b> 🛠️
 <blockquote>
-ᴀᴡᴇsᴏᴍᴇ ғᴇᴀᴛᴜʀᴇs🫧
-
-ʀᴇɴᴀᴍᴇ ʙᴏᴛ ɪꜱ ᴀ ʜᴀɴᴅʏ ᴛᴏᴏʟ ᴛʜᴀᴛ ʜᴇʟᴘꜱ ʏᴏᴜ ʀᴇɴᴀᴍᴇ ᴀɴᴅ ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ꜰɪʟᴇꜱ ᴇꜰꜰᴏʀᴛʟᴇꜱꜱʟʏ.
-
-➲ /start: ꜱᴇɴᴅ ᴀɴʏ ᴘʜᴏᴛᴏ ᴛᴏ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ꜱᴇᴛ ɪᴛ ᴀꜱ ᴀ ᴛʜᴜᴍʙɴᴀɪʟ.
-➲ /autorename: ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ ʏᴏᴜʀ ꜰɪʟᴇꜱ.
-➲ /del_thumb: ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴏʟᴅ ᴛʜᴜᴍʙɴᴀɪʟ.
-➲ /view_thumb: ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜʀʀᴇɴᴛ ᴛʜᴜᴍʙɴᴀɪʟ.
-➲ /set_caption: ᴛᴏ ꜱᴇᴛ ᴀ ᴄᴜꜱᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ.
-➲ /see_caption: ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜꜱᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ.
-➲ /del_caption: ᴛᴏ ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴄᴜꜱᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ.
-
+<b>ᴜꜱᴇꜰᴜʟ ᴄᴏᴍᴍᴀɴᴅꜱ:</b>  
+➲ /start – ꜱᴇɴᴅ ᴀɴʏ ᴘʜᴏᴛᴏ ᴛᴏ ꜱᴇᴛ ᴀ ᴛʜᴜᴍʙ  
+➲ /autorename – ʀᴇɴᴀᴍᴇ ꜰɪʟᴇꜱ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ  
+➲ /del_thumb – ʀᴇᴍᴏᴠᴇ ᴛʜᴜᴍʙ  
+➲ /view_thumb – ᴘʀᴇᴠɪᴇᴡ ᴛʜᴜᴍʙ  
+➲ /set_caption – ꜱᴇᴛ ᴄᴀᴘᴛɪᴏɴ  
+➲ /see_caption – ᴠɪᴇᴡ ᴄᴀᴘᴛɪᴏɴ  
+➲ /del_caption – ʀᴇᴍᴏᴠᴇ ᴄᴀᴘᴛɪᴏɴ
 </blockquote>
 """
 
     SEND_METADATA = """
-🔮 <b>METADATA EDITOR</b> 🔮
+🔮 <b>ᴍᴇᴛᴀᴅᴀᴛᴀ ᴇᴅɪᴛᴏʀ</b> 🔮
 <blockquote>
-<b>Features:</b>  
-• Edit stream titles  
-• Modify audio tracks  
-• Embed cover art  
+<b>ꜰᴇᴀᴛᴜʀᴇꜱ:</b>  
+• ᴇᴅɪᴛ ꜱᴛʀᴇᴀᴍ ᴛɪᴛʟᴇꜱ  
+• ᴍᴏᴅɪꜰʏ ᴀᴜᴅɪᴏ ᴛʀᴀᴄᴋꜱ  
+• ᴇᴍʙᴇᴅ ᴄᴏᴠᴇʀ ᴀʀᴛ
 
-<code>/metadata on</code> - Enable
+<code>/metadata on</code> – ᴇɴᴀʙʟᴇ
 </blockquote>
 """
 
     SOURCE_TXT = """
-🌠 <b>TECHNOLOGY</b> 🌠
+🌠 <b>ᴛᴇᴄʜɴᴏʟᴏɢʏ</b> 🌠
 <blockquote>
-<b>Powered by:</b>  
-• Python + Pyrogram  
-• Cloud Processing  
-• 99.9999% uptime
+<b>ᴘᴏᴡᴇʀᴇᴅ ʙʏ:</b>  
+• ᴘʏᴛʜᴏɴ + ᴘʏʀᴏɢʀᴀᴍ  
+• ᴄʟᴏᴜᴅ ᴘʀᴏᴄᴇꜱꜱɪɴɢ  
+• 99.9999% ᴜᴘᴛɪᴍᴇ
 </blockquote>
 """
+
 Txt = Scripts()
