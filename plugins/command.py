@@ -323,7 +323,17 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
     except Exception as e:
         logging.error(f"Error during point redemption: {e}")
         await message.reply("**An error occurred. Please try again.**")
+@Client.on_callback_query(filters.regex(r"^setmedia_(document|video)$"))
+async def set_media_preference_handler(client: Client, callback_query: CallbackQuery):
+    media_type = callback_query.data.split("_")[1]  # 'document' or 'video'
+    user_id = callback_query.from_user.id
 
+    success = await hyoshcoder.set_media_preference(user_id, media_type)
+    if success:
+        await callback_query.answer(f"Media type set to {media_type.capitalize()} ✅", show_alert=True)
+        await callback_query.message.edit_text(f"✅ Your media preference has been set to: **{media_type.capitalize()}**")
+    else:
+        await callback_query.answer("Failed to update media preference ❌", show_alert=True)
 @Client.on_message(filters.command(["start", "autorename", "setmedia", "set_caption", "del_caption", "see_caption",
     "view_caption", "viewthumb", "view_thumb", "del_thumb", "delthumb", "metadata",
     "donate", "premium", "plan", "bought", "help", "set_dump", "freepoints", "genpoints",
@@ -464,6 +474,7 @@ async def handle_setmedia(client: Client, message: Message):
         "**Please select the type of media you want to set:**",
         reply_markup=keyboard
     )
+
 
 async def handle_set_caption(client: Client, message: Message, args: list):
     if len(args) == 0:
