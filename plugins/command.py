@@ -331,15 +331,14 @@ async def handle_start_command(client: Client, message: Message, args: list):
     await asyncio.sleep(3)
     await m.delete()
 
-    buttons = InlineKeyboardMarkup([
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
-        [InlineKeyboardButton("My Stats", callback_data='mystats'),
+        [InlineKeyboardButton("My Stats", callback_data='mystats')],
         [InlineKeyboardButton("Earn Points", callback_data='freepoints'),
          InlineKeyboardButton("Go Premium", callback_data='premiumx')],
         [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
          InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
     ])
-
     anim = await get_random_animation()
     img = await get_random_photo()
     caption = Txt.START_TXT.format(user.mention)
