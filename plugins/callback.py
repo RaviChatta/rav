@@ -309,9 +309,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
             caption = (
                 "**Free Points**\n\n"
                 "You can earn points by:\n"
-                f"2. Watching ads - Earn {points} points now!\n\n"
+                f"2. Watching ads - Earn {settings.SHORTENER_POINT_REWARD}  points now!\n\n"
                 f" use /genpoints to get morepoints "
-                "Premium users get 2x points!"
+                
             )
             
             # Edit the existing message instead of sending new one
