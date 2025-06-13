@@ -197,6 +197,15 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
 
         elif data == "help":
+       
+            # Get user-specific settings
+            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+            src_info = await hyoshcoder.get_src_info(user_id)
+    
+            btn_seq_text = "ˢᵉᑫ✅" if sequential_status else "ˢᵉᑫ❌"
+            src_txt = "File name" if src_info == "file_name" else "File caption"
+    
+            # Build dynamic keyboard
             btn = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
@@ -209,7 +218,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
                 ],
                 [
-                    InlineKeyboardButton("ˢᵉᑫ✅", callback_data='sequential'),
+                    InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
                     InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
                     InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
                 ],
@@ -217,7 +226,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
                 ]
             ])
-        
+
             response = {
                 "caption": Txt.HELP_TXT.format(client.mention),
                 "reply_markup": btn,
@@ -503,27 +512,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'photo': img
             }
         
-        elif data in ["sequential", "toggle_src"]:
-            try:
-                if data == "sequential":
-                    await hyoshcoder.toggle_sequential_mode(user_id)
-                    await query.answer("🔁 Sequential mode toggled.", show_alert=False)
-                elif data == "toggle_src":
-                    await hyoshcoder.toggle_src_info(user_id)
-                    await query.answer("🎛️ Source info toggled.", show_alert=False)
-        
-                # Refresh the help or settings UI
-                await cb_handler(client, query)
-        
-            except Exception as e:
-                logger.error(f"Error toggling setting for '{data}': {e}")
-                await query.message.edit_caption(
-                    "⚠️ Failed to update setting. Please try again later.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
-                    ])
-                )
-            return
+
 
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
