@@ -334,7 +334,6 @@ async def handle_start_command(client: Client, message: Message, args: list):
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
         [InlineKeyboardButton("My Stats", callback_data='mystats'),
-         InlineKeyboardButton("Leaderboard", callback_data='leaderboard')],
         [InlineKeyboardButton("Earn Points", callback_data='freepoints'),
          InlineKeyboardButton("Go Premium", callback_data='premiumx')],
         [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
