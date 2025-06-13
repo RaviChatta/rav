@@ -162,7 +162,7 @@ async def freepoints(client: Client, message: Message):
     try:
         user_id = message.from_user.id
         user = await hyoshcoder.users.find_one({"_id": user_id})
-        
+
         # Generate referral code if not exists
         if not user or not user.get("referral_code"):
             referral_code = secrets.token_hex(4)
@@ -173,60 +173,67 @@ async def freepoints(client: Client, message: Message):
             )
         else:
             referral_code = user["referral_code"]
-        
+
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
 
         # Generate points link
         point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
         deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-        short_url = await get_shortlink(
-            url=settings.SHORTED_LINK,
-            api=settings.SHORTED_LINK_API,
-            link=deep_link
-        )
 
-        # Save the points link
+        # ✅ Use a new random shortener for each user
+        shortener = settings.get_random_shortener()
+        shorted_link = shortener["domain"]
+        shorted_api = shortener["api"]
+
+        # Attempt to shorten the deep link
+        short_url = await get_shortlink(url=shorted_link, api=shorted_api, link=deep_link)
+
+        if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
+            short_url = deep_link
+
+        # Save the generated point link
         await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
 
-        # Create buttons
+        # Prepare buttons and caption
         buttons = InlineKeyboardMarkup([
-
             [InlineKeyboardButton("🔙 Back", callback_data="help")]
         ])
 
         caption = (
             "**🎁 Free Points Menu**\n\n"
             "Earn points by:\n"
-            f"1. **Sharing** our bot - Earn {settings.REFER_POINT_REWARD} points per referral\n"
-            f"2. **Watching ads** - Earn {settings.SHORTENER_POINT_REWARD} points instantly\n\n"
-            f"🔗 Your referral link: `{refer_link}`\n"
-            f"💰 Your points link: `{short_url}`\n\n"
-            "Your points will be added automatically!"
+            f"1. **Referring users** – `{refer_link}`\n"
+            f"   ➤ {settings.REFER_POINT_REWARD} points per referral\n"
+            f"2. **Watching sponsored content** –\n"
+            f"   ➤ {settings.SHORTENER_POINT_REWARD} points\n\n"
+            f"🎯 Your points link:\n`{short_url}`\n\n"
+            "⏱ Points are added automatically!"
         )
 
-        img = await get_random_photo()
-        if img:
-            bot_reply = await message.reply_photo(
+        # Optional image (if you use `get_random_photo`)
+        try:
+            img = await get_random_photo()
+            await message.reply_photo(
                 photo=img,
                 caption=caption,
                 reply_markup=buttons,
                 disable_web_page_preview=True
             )
-        else:
-            bot_reply = await message.reply_text(
+        except:
+            await message.reply_text(
                 text=caption,
                 reply_markup=buttons,
                 disable_web_page_preview=True
             )
 
-        # Auto-delete both messages after 60 seconds
+        # Delete both after 30 seconds
         await asyncio.sleep(30)
         await message.delete()
-        await bot_reply.delete()
 
     except Exception as e:
-        logger.error(f"Error in freepoints command: {e}")
-        await message.reply_text("❌ Failed to load free points options. Please try again.")
+        logger.error(f"Error in /freepoints: {e}", exc_info=True)
+        await message.reply_text("❌ Failed to generate free points. Try again.")
+
 
 
 @Client.on_message(filters.command(["view_dump", "viewdump"]) & filters.private)
