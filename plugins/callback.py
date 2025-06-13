@@ -459,31 +459,48 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         elif data == "setmedia":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Video", callback_data='setmedia_video'),
-                 InlineKeyboardButton("Document", callback_data='setmedia_document')],
-                [InlineKeyboardButton("Back", callback_data='help')]
+                [
+                    InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
+                    InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data='help')]
             ])
             current_media = await hyoshcoder.get_media_preference(user_id)
+            current_media_text = current_media.capitalize() if current_media else "Not set"
             response = {
-                'caption': f"🎥 <b>Current Media Preference:</b> {current_media or 'Not set'}\n\n"
-                          "Select the type of media you want to receive:",
+                'caption': f"🎥 <b>Current Media Preference:</b> {current_media_text}\n\n"
+                           "Select the type of media you want to receive:",
                 'reply_markup': btn,
                 'photo': img
             }
-
+        
         elif data.startswith("setmedia_"):
             media_type = data.split("_")[1]
             if media_type not in ['video', 'document']:
                 await query.answer("Invalid media type selected", show_alert=True)
                 return
-                
-            await hyoshcoder.set_media_preference(user_id, media_type)
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data='setmedia')]])
-            response = {
-                'caption': f"✅ <b>Media preference set to:</b> {media_type.capitalize()}",
-                'reply_markup': btn,
-                'photo': img
-            }
+        
+            success = await hyoshcoder.set_media_preference(user_id, media_type)
+            if success:
+                btn = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data='setmedia')]
+                ])
+                response = {
+                    'caption': f"✅ <b>Media preference set to:</b> {media_type.capitalize()}",
+                    'reply_markup': btn,
+                    'photo': img
+                }
+            else:
+                await query.answer("Failed to update media preference ❌", show_alert=True)
+                return
+        
+        # Then send/edit message with the response, for example:
+        await query.message.edit_media(
+            media=InputMediaPhoto(response['photo']),
+            caption=response['caption'],
+            reply_markup=response['reply_markup']
+        )
+
 
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
@@ -509,7 +526,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "remove_dump":
             await hyoshcoder.set_user_channel(user_id, None)
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Back", callback_data="setdump")]
+                [InlineKeyboardButton("🔙 Back", callback_data="help")]
             ])
             response = {
                 'caption': "✅ Dump channel removed successfully.",
@@ -526,15 +543,19 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("Back", callback_data="help")]
             ])
             response = {
-                'caption': "🌟 <b>Premium Membership</b>\n\n"
-                          "Get access to exclusive features:\n"
-                          "• 2x Points Multiplier\n"
-                          "• Priority Processing\n"
-                          "• No Ads\n"
-                          "• Extended File Size Limits\n\n"
-                          "Click below to learn more!",
+                'caption': "🌟 <b>Premium Membership Not Available</b>\n\n"
+                           "Premium is not available at the moment. Meanwhile, use your points to unlock benefits!\n\n"
+                           "Generate more points with:\n"
+                           "/genpoints or /freepoints\n\n"
+                           "Keep collecting points and stay tuned for Premium features like:\n"
+                           "• 2x Points Multiplier\n"
+                           "• Priority Processing\n"
+                           "• No Ads\n"
+                           "• Extended File Size Limits\n\n"
+                           "Start earning points now!",
                 'reply_markup': btn,
                 'photo': img
+
             }
 
         elif data == "thumbnail":
