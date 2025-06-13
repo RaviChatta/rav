@@ -552,8 +552,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 reply_markup=response['reply_markup']
             )
         
-        
-
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
@@ -561,21 +559,22 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("Back", callback_data="help")]
             ])
             response = {
-                'caption': "🌟 <b>Premium Membership Not Available</b>\n\n"
-                           "Premium is not available at the moment. Meanwhile, use your points to unlock benefits!\n\n"
-                           "Generate more points with:\n"
-                           "/genpoints or /freepoints\n\n"
-                           "Keep collecting points and stay tuned for Premium features like:\n"
-                           "• 2x Points Multiplier\n"
-                           "• Priority Processing\n"
-                           "• No Ads\n"
-                           "• Extended File Size Limits\n\n"
-                           "Start earning points now!",
+                'caption': (
+                    "🌟 <b>Premium Membership Not Available</b>\n\n"
+                    "Premium is not available at the moment. Meanwhile, use your points to unlock benefits!\n\n"
+                    "Generate more points with:\n"
+                    "/genpoints or /freepoints\n\n"
+                    "Keep collecting points and stay tuned for Premium features like:\n"
+                    "• 2x Points Multiplier\n"
+                    "• Priority Processing\n"
+                    "• No Ads\n"
+                    "• Extended File Size Limits\n\n"
+                    "Start earning points now!"
+                ),
                 'reply_markup': btn,
                 'photo': img
-
             }
-
+        
         elif data == "thumbnail":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("View Thumbnail", callback_data="showThumb")],
@@ -587,7 +586,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': thumb if thumb else img
             }
-
+        
         elif data == "showThumb":
             caption = "Here is your current thumbnail" if thumb else "No thumbnail set"
             btn = InlineKeyboardMarkup([
@@ -599,7 +598,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': thumb if thumb else img
             }
-
+        
         elif data == "close":
             try:
                 await query.message.delete()
@@ -608,7 +607,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             except:
                 pass
             return
-
+        
         # Send response
         if response:
             try:
@@ -651,7 +650,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 logger.warning(f"Can't write in chat with {user_id}")
             except Exception as e:
                 logger.error(f"Error updating message: {e}")
-
+        
         # Answer the callback query at the end
         try:
             await query.answer()
@@ -659,9 +658,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
             logger.warning("Query ID was invalid or expired")
         except Exception as e:
             logger.error(f"Error answering callback: {e}")
-
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-        await cb_handler(client, query)
-    except Exception as e:
-        logger.error(f"Callback handler error: {e}", exc_info=True)
+        
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            await cb_handler(client, query)
+        except Exception as e:
+            logger.error(f"Callback handler error: {e}", exc_info=True)
