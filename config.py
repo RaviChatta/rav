@@ -21,7 +21,7 @@ class Settings():
     # Répertoires temporaires et de téléchargement
     TEMP_DIR = os.getenv("TEMP_DIR", "temp/")
     DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "downloads/")
-    
+    AUTO_DELETE_TIME = 60
     # Configuration du serveur web
     PORT = os.getenv("PORT", "8000")
     WEBHOOK = os.getenv("WEBHOOK", "True").lower() in ("true", "1", "yes")
