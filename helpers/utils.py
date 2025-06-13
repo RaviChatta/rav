@@ -6,7 +6,7 @@ import time
 from typing import Optional, Tuple , Union
 import math, time
 from shortzy import Shortzy
-
+import asyncio
 from pyrogram.types import (
     Message,
     User,
