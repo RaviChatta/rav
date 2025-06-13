@@ -756,56 +756,61 @@ class Database:
         except Exception as e:
             logger.error(f"Error resetting daily usage: {e}")
             return False
-
-    async def get_user_file_stats(self, user_id):
-        try:
-            user_data = await self.read_user(user_id)
-            if not user_data:
-                return {
-                    'total_renamed': 0,
-                    'today': 0,
-                    'this_week': 0,
-                    'this_month': 0
-                }
     
-            renamed_files = user_data.get('renamed_files', [])
-            now = datetime.now()
-            
-            # Ensure all timestamps are datetime objects
-            processed_files = []
-            for file in renamed_files:
-                if isinstance(file.get('timestamp'), int):
-                    file['timestamp'] = datetime.fromtimestamp(file['timestamp'])
-                processed_files.append(file)
-            
-            today_count = 0
-            week_count = 0
-            month_count = 0
-            
-            for file in processed_files:
-                file_date = file.get('timestamp', now)
-                if not isinstance(file_date, datetime):
-                    continue
-                    
-                if file_date.date() == now.date():
-                    today_count += 1
-                if file_date.isocalendar()[1] == now.isocalendar()[1]:
-                    week_count += 1
-                if file_date.month == now.month and file_date.year == now.year:
-                    month_count += 1
-            
-            return {
-                'total_renamed': len(renamed_files),
-                'today': today_count,
-                'this_week': week_count,
-                'this_month': month_count,
-                'last_updated': now
-            }
-        
+    async def get_user_file_stats(self, user_id: int) -> Dict:
+        """Get user's file rename statistics."""
+        stats = {
+            "total_renamed": 0,
+            "today": 0,
+            "this_week": 0,
+            "this_month": 0
+        }
+    
+        try:
+            user = await self.users.find_one({"_id": user_id})
+            if not user:
+                return stats
+    
+            stats["total_renamed"] = user["activity"].get("total_files_renamed", 0)
+    
+            now = datetime.utcnow()
+            today = now.date()
+            start_of_week = today - timedelta(days=today.weekday())
+            start_of_month = datetime(today.year, today.month, 1).date()
+    
+            # Convert dates to datetime objects at midnight for proper comparison
+            today_start = datetime.combine(today, datetime.min.time())
+            week_start = datetime.combine(start_of_week, datetime.min.time())
+            month_start = datetime.combine(start_of_month, datetime.min.time())
+    
+            # Get all user's file stats
+            file_stats = await self.file_stats.find({"user_id": user_id}).to_list(None)
+    
+            for stat in file_stats:
+                if not isinstance(stat.get("date"), datetime):
+                    # Convert string dates or timestamps to datetime if needed
+                    if isinstance(stat.get("date"), str):
+                        stat_date = datetime.fromisoformat(stat["date"])
+                    elif isinstance(stat.get("date"), (int, float)):
+                        stat_date = datetime.fromtimestamp(stat["date"])
+                    else:
+                        continue
+                else:
+                    stat_date = stat["date"]
+    
+                # Compare dates
+                if stat_date >= today_start:
+                    stats["today"] += 1
+                if stat_date >= week_start:
+                    stats["this_week"] += 1
+                if stat_date >= month_start:
+                    stats["this_month"] += 1
+    
+            return stats
+    
         except Exception as e:
             logger.error(f"Error getting file stats for {user_id}: {e}")
-            return None
-
+            return stats
     async def add_points(self, user_id: int, points: int, source: str = "system", 
                         description: str = None) -> bool:
         """Add points to user's balance with transaction tracking."""
