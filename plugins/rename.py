@@ -79,9 +79,45 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
         logger.error(f"Error tracking rename operation: {e}")
         return False
 
+async def send_to_dump_channel(client, user_id, file_path, caption, thumb_path=None):
+    """Send file to user's dump channel if configured"""
+    try:
+        dump_channel = await hyoshcoder.get_user_channel(user_id)
+        if not dump_channel:
+            return False
+
+        # Check if channel exists and bot has access
+        try:
+            chat = await client.get_chat(dump_channel)
+            if chat.type not in ["channel", "supergroup"]:
+                return False
+        except Exception:
+            return False
+
+        # Send file to dump channel
+        if file_path.endswith(('.mp4', '.mkv', '.avi', '.mov')):
+            await client.send_video(
+                chat_id=dump_channel,
+                video=file_path,
+                caption=caption,
+                thumb=thumb_path
+            )
+        else:
+            await client.send_document(
+                chat_id=dump_channel,
+                document=file_path,
+                caption=caption,
+                thumb=thumb_path
+            )
+        return True
+    except Exception as e:
+        logger.error(f"Error sending to dump channel: {e}")
+        return False
+
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
     user_id = message.from_user.id
+    start_time = time.time()
 
     user_data = await hyoshcoder.read_user(user_id)
     if not user_data:
@@ -101,7 +137,7 @@ async def auto_rename_files(client, message):
     if user_points < rename_cost:
         return await message.reply_text(
             f"❌ You don't have enough points to rename this file (Cost: {rename_cost}).",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="freepoints")]])
         )
 
     if not format_template:
@@ -307,104 +343,124 @@ async def auto_rename_files(client, message):
             if thumb_path:
                 try:
                     img = Image.open(thumb_path).convert("RGB")
-                    img = img.resize((320, 320))
+                    img = img.crop((320, 320))
                     img.save(thumb_path, "JPEG")
                 except Exception as e:
                     print(f"Thumbnail processing error: {e}")
 
             try:
-                if sequential_mode:
-                    log_message = await client.send_document(
-                        settings.LOG_CHANNEL,
-                        document=path,
-                        thumb=thumb_path,
-                        caption=caption,
-                        progress=progress_for_pyrogram,
-                        progress_args=("Upload in progress...", queue_message, time.time())
-                    )
-                    sequential_operations[user_id]["files"].append({
-                        "message_id": log_message.id,
-                        "file_name": renamed_file_name,
-                        "season": season,
-                        "episode": episode_number
-                    })
-
-                    if len(sequential_operations[user_id]["files"]) == sequential_operations[user_id]["expected_count"]:
-                        sorted_files = sorted(
-                            sequential_operations[user_id]["files"],
-                            key=lambda x: (x["season"], x["episode"])
-                        )
-
-                        user_channel = await hyoshcoder.get_user_channel(user_id)
-                        if not user_channel:
-                            user_channel = user_id  
-
-                        try:
-                            await client.get_chat(user_channel)
-                            for file_info in sorted_files:
-                                await asyncio.sleep(3)
-                                await client.copy_message(
-                                    user_channel,
-                                    settings.LOG_CHANNEL,
-                                    file_info["message_id"]
-                                )
-                            await queue_message.reply_text(
-                                f"✅ **All files have been sent to channel:** `{user_channel}`\n"
-                                "If some files weren't completely sent, this is due to Telegram request flooding. "
-                                "Please send these files to me individually."
-                            )
-                        except Exception as e:
-                            await queue_message.reply_text(
-                                f"❌ **Error: Channel {user_channel} is not accessible. {e}\n"
-                            )
-                            for file_info in sorted_files:
-                                await asyncio.sleep(3)
-                                await client.copy_message(
-                                    user_id,
-                                    settings.LOG_CHANNEL,
-                                    file_info["message_id"]
-                                )
-                            await queue_message.reply_text("✅ **All files have been sent to your user ID.**")
-
-                        del sequential_operations[user_id]
+                # First send to dump channel if configured
+                dump_success = await send_to_dump_channel(client, user_id, path, caption, thumb_path)
+                
+                if dump_success:
+                    await queue_message.edit_text(f"✅ File successfully sent to your dump channel!")
                 else:
-                    if media_type == "document":
-                        await client.send_document(
-                            message.chat.id,
+                    if sequential_mode:
+                        log_message = await client.send_document(
+                            settings.LOG_CHANNEL,
                             document=path,
                             thumb=thumb_path,
                             caption=caption,
                             progress=progress_for_pyrogram,
                             progress_args=("Upload in progress...", queue_message, time.time())
                         )
-                    elif media_type == "video":
-                        await client.send_video(
-                            message.chat.id,
-                            video=path,
-                            caption=caption,
-                            thumb=thumb_path,
-                            duration=message.video.duration if message.video else 0,
-                            progress=progress_for_pyrogram,
-                            progress_args=("Upload in progress...", queue_message, time.time())
-                        )
-                    elif media_type == "audio":
-                        await client.send_audio(
-                            message.chat.id,
-                            audio=path,
-                            caption=caption,
-                            thumb=thumb_path,
-                            duration=message.audio.duration if message.audio else 0,
-                            progress=progress_for_pyrogram,
-                            progress_args=("Upload in progress...", queue_message, time.time())
-                        )
-                    
-                    # Track successful rename operation after upload
-                    await track_rename_operation(
-                        user_id=user_id,
-                        original_name=file_name,
-                        new_name=renamed_file_name,
-                        points_deducted=rename_cost
-                    )
+                        sequential_operations[user_id]["files"].append({
+                            "message_id": log_message.id,
+                            "file_name": renamed_file_name,
+                            "season": season,
+                            "episode": episode_number
+                        })
+
+                        if len(sequential_operations[user_id]["files"]) == sequential_operations[user_id]["expected_count"]:
+                            sorted_files = sorted(
+                                sequential_operations[user_id]["files"],
+                                key=lambda x: (x["season"], x["episode"])
+                            )
+
+                            user_channel = await hyoshcoder.get_user_channel(user_id)
+                            if not user_channel:
+                                user_channel = user_id  
+
+                            try:
+                                await client.get_chat(user_channel)
+                                for file_info in sorted_files:
+                                    await asyncio.sleep(3)
+                                    await client.copy_message(
+                                        user_channel,
+                                        settings.LOG_CHANNEL,
+                                        file_info["message_id"]
+                                    )
+                                await queue_message.reply_text(
+                                    f"✅ **All files have been sent to channel:** `{user_channel}`\n"
+                                    "If some files weren't completely sent, this is due to Telegram request flooding. "
+                                    "Please send these files to me individually."
+                                )
+                            except Exception as e:
+                                await queue_message.reply_text(
+                                    f"❌ **Error: Channel {user_channel} is not accessible. {e}\n"
+                                )
+                                for file_info in sorted_files:
+                                    await asyncio.sleep(3)
+                                    await client.copy_message(
+                                        user_id,
+                                        settings.LOG_CHANNEL,
+                                        file_info["message_id"]
+                                    )
+                                await queue_message.reply_text("✅ **All files have been sent to your user ID.**")
+
+                            del sequential_operations[user_id]
+                    else:
+                        if media_type == "document":
+                            await client.send_document(
+                                message.chat.id,
+                                document=path,
+                                thumb=thumb_path,
+                                caption=caption,
+                                progress=progress_for_pyrogram,
+                                progress_args=("Upload in progress...", queue_message, time.time())
+                            )
+                        elif media_type == "video":
+                            await client.send_video(
+                                message.chat.id,
+                                video=path,
+                                caption=caption,
+                                thumb=thumb_path,
+                                duration=message.video.duration if message.video else 0,
+                                progress=progress_for_pyrogram,
+                                progress_args=("Upload in progress...", queue_message, time.time())
+                            )
+                        elif media_type == "audio":
+                            await client.send_audio(
+                                message.chat.id,
+                                audio=path,
+                                caption=caption,
+                                thumb=thumb_path,
+                                duration=message.audio.duration if message.audio else 0,
+                                progress=progress_for_pyrogram,
+                                progress_args=("Upload in progress...", queue_message, time.time())
+                            )
+                
+                # Track successful rename operation after upload
+                await track_rename_operation(
+                    user_id=user_id,
+                    original_name=file_name,
+                    new_name=renamed_file_name,
+                    points_deducted=rename_cost
+                )
+                
+                # Send success message with time taken and points info
+                time_taken = time.time() - start_time
+                remaining_points = (await hyoshcoder.get_points(user_id)) - rename_cost
+                success_msg = (
+                    f"✅ **File successfully processed!**\n\n"
+                    f"➲ **Original Name:** `{file_name}`\n"
+                    f"➲ **New Name:** `{renamed_file_name}`\n"
+                    f"➲ **Time Taken:** {time_taken:.2f} seconds\n"
+                    f"➲ **Points Used:** {rename_cost}\n"
+                    f"➲ **Remaining Points:** {remaining_points}"
+                )
+                
+                await message.reply_text(success_msg)
 
             except FloodWait as e:
                 await asyncio.sleep(e.value + 5)
