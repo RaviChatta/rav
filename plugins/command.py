@@ -49,6 +49,22 @@ async def auto_delete_message(message, delay):
         await message.delete()
     except Exception:
         pass
+@Client.on_message(filters.private & filters.photo)
+async def addthumbs(client, message):
+    """Handle thumbnail setting"""
+    try:
+        mkn = await send_response(client, message.chat.id, "Please wait...")
+        await hyoshcoder.set_thumbnail(message.from_user.id, file_id=message.photo.file_id)
+        await mkn.edit("**Thumbnail saved successfully ✅️**")
+        asyncio.create_task(auto_delete_message(mkn, delay=30))
+    except Exception as e:
+        logger.error(f"Error setting thumbnail: {e}")
+        await send_response(
+            client,
+            message.chat.id,
+            f"{EMOJI['error']} Failed to save thumbnail",
+            delete_after=15
+        )
 
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
@@ -83,7 +99,7 @@ async def generate_point_link(client: Client, message: Message):
         bot_reply = await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
             f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
-            "**🕒 Link valid for 24 hours | 🧬 One-time use only**",
+            "**🕒 Link valid  30 seconds | 🧬 verify more links to get more points**",
             disable_web_page_preview=True
         )
 
@@ -160,10 +176,7 @@ async def freepoints(client: Client, message: Message):
 
         # Create buttons
         buttons = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🔗 Share Referral", url=f"https://t.me/share/url?url={quote(refer_link)}"),
-                InlineKeyboardButton("💰 Earn Points", url=short_url)
-            ],
+
             [InlineKeyboardButton("🔙 Back", callback_data="help")]
         ])
 
