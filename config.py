@@ -55,11 +55,22 @@ class Settings():
     SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002072871676)
     
     # Variables pour le raccourcissement de liens (à configurer si utilisé)
-    SHORTED_LINK = os.getenv("SHORTED_LINK", "pocolinks.com")
-    SHORTED_LINK_API = os.getenv("SHORTED_LINK_API", "de5bd3536a538fb73d70f5d82c5a55820a869b0a")
+    SHORTEN_SERVICES = [
+        {"domain": "pocolinks.com", "api": "de5bd3536a538fb73d70f5d82c5a55820a869b0a"},
+        {"domain": "smallshorts.com", "api": "9c63c5b31b1386ffacbe38c84c15f1eb589e8703"},
+        {"domain": "vplink.in", "api": "af3216e9f613ea737ed5c1d414ead11542ecfe97"},
+        {"domain": "tinyurl.com", "api": "ttJSm2RszqbLenoyY54p2IyFI28DF0wTAHHoQW159uMMH7mb3Pr1vpdZbywa"}
+    ]
+    
+    # Pick one randomly
+    selected_shortener = random.choice(SHORTEN_SERVICES)
+    
+    # Set the config variables
+    SHORTED_LINK = os.getenv("SHORTED_LINK", selected_shortener["domain"])
+    SHORTED_LINK_API = os.getenv("SHORTED_LINK_API", selected_shortener["api"])
     BOT_USERNAME = os.getenv("BOT_USERNAME", "Forwardmsgremoverbot")
     TOKEN_ID_LENGTH = 8  # Or whatever you use
-    SHORTENER_POINT_REWARD = 100 
+    SHORTENER_POINT_REWARD = 50 
     REFER_POINT_REWARD = 50  # or whatever value you want
     LEADERBOARD_DELETE_TIMER = 30
     # URL par défaut pour l'image de démarrage ou de log
