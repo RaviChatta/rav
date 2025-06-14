@@ -371,7 +371,7 @@ async def freepoints(client: Client, message: Message):
             inline_keyboard=[
                 [
                     InlineKeyboardButton("🛡️ Verify", url=short_url),
-                    InlineKeyboardButton("👥 Refer", url=refer_link)
+                    InlineKeyboardButton("📤 Share Referral", switch_inline_query=f"{refer_link}")
                 ]
             ]
         )
