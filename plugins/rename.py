@@ -15,7 +15,7 @@ import subprocess
 import asyncio
 import uuid
 import shlex
-
+import logging
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -198,7 +198,7 @@ async def auto_rename_files(client: Client, message: Message):
     if user_points < rename_cost:
         await status_msg.edit_text(
             f"❌ You need {rename_cost} points (have {user_points})",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Get Points", callback_data="genpoints")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Get Points", callback_data="freepoints")]])
         )
         return
 
