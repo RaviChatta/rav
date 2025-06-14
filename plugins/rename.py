@@ -8,6 +8,7 @@ from hachoir.parser import createParser
 from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
 from database.data import hyoshcoder
 from config import settings
+from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
 import os
 import time
 import re
