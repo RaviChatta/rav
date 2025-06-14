@@ -57,20 +57,20 @@ class Settings():
     
     SHORTEN_SERVICES = [
         {
-            "domain": "pocolinks.com",
-            "api": "de5bd3536a538fb73d70f5d82c5a55820a869b0a"
+            "domain": "linkshortify.com",
+            "api": "aa623da32f4fac5681bb51b20745ddae2ac91462"
         },
         {
-            "domain": "smallshorts.com",
-            "api": "9c63c5b31b1386ffacbe38c84c15f1eb589e8703"
+            "domain": "arolinks.com",
+            "api": "9a78ec81b038a8ac80a59a7456ff6b342927f3d2"
         },
         {
             "domain": "vplink.in",
             "api": "af3216e9f613ea737ed5c1d414ead11542ecfe97"
         },
         {
-            "domain": "tinyurl.com",
-            "api": "ttJSm2RszqbLenoyY54p2IyFI28DF0wTAHHoQW159uMMH7mb3Pr1vpdZbywa"
+            "domain": "shortxlinks.com",
+            "api": "0d984482b29030629709bfb1265677fef8fa32f7"
         }
     ]
 
