@@ -3,6 +3,7 @@ import asyncio
 import secrets
 import uuid
 import string
+import time
 import psutil
 import logging
 from urllib.parse import quote
@@ -369,8 +370,8 @@ async def freepoints(client: Client, message: Message):
         buttons = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton("🛡️ Verify", callback_data="short_url"),
-                    InlineKeyboardButton("👥 Refer", callback_data="refer_link")
+                    InlineKeyboardButton("🛡️ Verify", url=short_url),
+                    InlineKeyboardButton("👥 Refer", url=refer_link)
                 ]
             ]
         )
