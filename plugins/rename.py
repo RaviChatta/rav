@@ -10,6 +10,7 @@ import asyncio
 import uuid
 import logging
 from typing import Optional, Tuple
+from database.data import hyoshcoder
 
 # Configure logging
 logging.basicConfig(
