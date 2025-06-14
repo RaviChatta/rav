@@ -250,7 +250,7 @@ async def generate_point_link(client: Client, message: Message):
         # Send the points link
         bot_reply = await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
-            f"**🔗 Click below link and complete tasks:**\n{short_url}\n\n"
+            f"**🔗 Click below link and complete verification:**\n{short_url}\n\n"
             "**🕒 Link valid 30 seconds | 🧬 verify more links to get more points**",
             disable_web_page_preview=True
         )
@@ -366,19 +366,23 @@ async def freepoints(client: Client, message: Message):
             logger.error(f"Database error saving point link: {db_error}")
 
         # Prepare response
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back", callback_data="help")]
-        ])
-
+        buttons = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton("🛡️ Verify", callback_data="short_url"),
+                    InlineKeyboardButton("👥 Refer", callback_data="refer_link")
+                ]
+            ]
+        )
         caption = (
             "**🎁 Free Points Menu**\n\n"
             "Earn points by:\n"
             f"1. **Referring users** – `{refer_link}`\n"
             f"   ➤ {settings.REFER_POINT_REWARD} points per referral\n"
-            f"2. **Watching sponsored content** –\n"
+            f"2. **Verify  To Get Points ** –\n"
             f"   ➤ {settings.SHORTENER_POINT_REWARD} points per view\n\n"
             f"🎯 Your points link:\n{short_url}\n\n"
-            "⏱ Points are added automatically!\n\n"
+            "⏱ Points will be  added automatically!\n\n"
             f"⌛ This message will be deleted in {settings.AUTO_DELETE_TIME} seconds."
         )
 
