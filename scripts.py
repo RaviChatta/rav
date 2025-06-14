@@ -112,13 +112,13 @@ class Scripts:
 🛠️ <b>ᴄᴏᴍᴍᴀɴᴅ ʟɪꜱᴛ</b> 🛠️
 <blockquote>
 <b>ᴜꜱᴇꜰᴜʟ ᴄᴏᴍᴍᴀɴᴅꜱ:</b>  
-➲ /start – ꜱᴇɴᴅ ᴀɴʏ ᴘʜᴏᴛᴏ ᴛᴏ ꜱᴇᴛ ᴀ ᴛʜᴜᴍʙ  
-➲ /autorename – ʀᴇɴᴀᴍᴇ ꜰɪʟᴇꜱ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ  
-➲ /del_thumb – ʀᴇᴍᴏᴠᴇ ᴛʜᴜᴍʙ  
-➲ /view_thumb – ᴘʀᴇᴠɪᴇᴡ ᴛʜᴜᴍʙ  
-➲ /set_caption – ꜱᴇᴛ ᴄᴀᴘᴛɪᴏɴ  
-➲ /see_caption – ᴠɪᴇᴡ ᴄᴀᴘᴛɪᴏɴ  
-➲ /del_caption – ʀᴇᴍᴏᴠᴇ ᴄᴀᴘᴛɪᴏɴ
+➲ <code>/start <code>– ꜱᴇɴᴅ ᴀɴʏ ᴘʜᴏᴛᴏ ᴛᴏ ꜱᴇᴛ ᴀ ᴛʜᴜᴍʙ  
+➲ <code>/autorename<code> – ʀᴇɴᴀᴍᴇ ꜰɪʟᴇꜱ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ  
+➲ <code>/del_thumb<code> – ʀᴇᴍᴏᴠᴇ ᴛʜᴜᴍʙ  
+➲ <code>/view_thumb<code> – ᴘʀᴇᴠɪᴇᴡ ᴛʜᴜᴍʙ  
+➲ <code>/set_caption<code> – ꜱᴇᴛ ᴄᴀᴘᴛɪᴏɴ  
+➲ <code>/see_caption<code> – ᴠɪᴇᴡ ᴄᴀᴘᴛɪᴏɴ  
+➲ <code>/del_caption<code> – ʀᴇᴍᴏᴠᴇ ᴄᴀᴘᴛɪᴏɴ
 </blockquote>
 """
 
