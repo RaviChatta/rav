@@ -97,7 +97,7 @@ async def auto_rename_files(client, message):
     src_info = await hyoshcoder.get_src_info(user_id)  
 
     if user_points < 1:
-        return await message.reply_text("❌ You don't have enough balance to rename a file. Please recharge your points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
+        return await message.reply_text("❌ You don't have enough balance to rename a file. Please recharge your points.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="freepoints")]]))
 
     if not format_template:
         return await message.reply_text("Please first define an auto-rename format using /autorename")
