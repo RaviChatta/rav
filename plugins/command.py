@@ -393,8 +393,7 @@ async def freepoints(client: Client, message: Message):
                 msg = await message.reply_photo(
                     photo=img,
                     caption=caption,
-                    reply_markup=buttons,
-                    disable_web_page_preview=True
+                    reply_markup=buttons
                 )
             else:
                 msg = await message.reply_text(
