@@ -33,7 +33,7 @@ class Settings():
     BOT_OWNER = int(os.environ.get("BOT_OWNER", "1047253913"))
 
     # Liste des canaux pour le force subscribe (séparés par une virgule)
-    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '').split(',')
+    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', '-1002636559428').split(',')
     
         
     # Récupération et conversion sécurisée des IDs de chat
