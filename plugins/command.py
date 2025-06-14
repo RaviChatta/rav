@@ -114,21 +114,20 @@ async def generate_point_link(client: Client, message: Message):
                 delete_after=30
             )
 
-        # Shorten the link
+        # Shorten the link with error handling
+        short_url = deep_link  # Default to deep link if shortening fails
         try:
-            short_url = await get_shortlink(
+            shortened = await get_shortlink(
                 url=shortener["domain"],
                 api=shortener["api"],
                 link=deep_link
             )
-            
-            # Fallback if shortening fails
-            if not isinstance(short_url, str) or not short_url.startswith(('http://', 'https://')):
-                logger.warning(f"Invalid short URL format: {short_url}")
-                short_url = deep_link
+            if isinstance(shortened, str) and shortened.startswith(('http://', 'https://')):
+                short_url = shortened
+            else:
+                logger.warning(f"Invalid short URL format: {shortened}")
         except Exception as e:
             logger.error(f"Error shortening URL: {e}")
-            short_url = deep_link
 
         # Save to database
         try:
@@ -215,15 +214,14 @@ async def freepoints(client: Client, message: Message):
         user = await hyoshcoder.users.find_one({"_id": user_id})
 
         # Generate or get referral code
-        if not user or not user.get("referral_code"):
+        referral_code = user.get("referral_code") if user else None
+        if not referral_code:
             referral_code = secrets.token_hex(4)
             await hyoshcoder.users.update_one(
                 {"_id": user_id},
                 {"$set": {"referral_code": referral_code}},
                 upsert=True
             )
-        else:
-            referral_code = user["referral_code"]
 
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
 
@@ -241,22 +239,26 @@ async def freepoints(client: Client, message: Message):
                 delete_after=30
             )
 
-        # Shorten the link
+        # Shorten the link with proper error handling
+        short_url = deep_link  # Default to deep link
         try:
-            short_url = await get_shortlink(
+            shortened = await get_shortlink(
                 url=shortener["domain"],
                 api=shortener["api"],
                 link=deep_link
             )
-            
-            if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
-                short_url = deep_link
+            if isinstance(shortened, str) and shortened.startswith(("http://", "https://")):
+                short_url = shortened
+            else:
+                logger.warning(f"Invalid short URL format: {shortened}")
         except Exception as e:
             logger.error(f"Error shortening URL: {e}")
-            short_url = deep_link
 
         # Save point link
-        await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
+        try:
+            await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
+        except Exception as db_error:
+            logger.error(f"Database error saving point link: {db_error}")
 
         # Prepare response
         buttons = InlineKeyboardMarkup([
@@ -269,8 +271,8 @@ async def freepoints(client: Client, message: Message):
             f"1. **Referring users** – `{refer_link}`\n"
             f"   ➤ {settings.REFER_POINT_REWARD} points per referral\n"
             f"2. **Watching sponsored content** –\n"
-            f"   ➤ {settings.SHORTENER_POINT_REWARD} points\n\n"
-            f"🎯 Your points link:\n`{short_url}`\n\n"
+            f"   ➤ {settings.SHORTENER_POINT_REWARD} points per view\n\n"
+            f"🎯 Your points link:\n{short_url}\n\n"
             "⏱ Points are added automatically!\n\n"
             f"⌛ This message will be deleted in {settings.AUTO_DELETE_TIME} seconds."
         )
