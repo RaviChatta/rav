@@ -405,6 +405,7 @@ async def auto_rename_files(client: Client, message: Message):
 
             # Success message
             time_taken = time.time() - start_time
+            remaining_points = (await hyoshcoder.get_points(user_id)) - rename_cost
             success_msg = (
                 f"✅ **Successfully processed!**\n\n"
                 f"➲ **Original:** `{file_name}`\n"
