@@ -3,6 +3,7 @@ import asyncio
 import secrets
 import uuid
 import string
+import psutil
 import logging
 from urllib.parse import quote
 from datetime import datetime, timedelta
