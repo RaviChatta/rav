@@ -153,7 +153,7 @@ async def status_command(client: Client, message: Message):
         
         # Get database stats
         total_users = await hyoshcoder.total_users_count()
-        total_files = await hyoshcoder.total_files_renamed()
+        total_files = await hyoshcoder.total_renamed_files()
         
         text = (
             f"🤖 <b>Bot Status</b>\n\n"
