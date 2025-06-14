@@ -1,16 +1,20 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait
+from pyrogram.types import InputMediaDocument, Message, InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image
 from datetime import datetime
+from hachoir.metadata import extractMetadata
+from hachoir.parser import createParser
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
+from database.data import hyoshcoder
+from config import settings
 import os
 import time
 import re
+import subprocess
 import asyncio
 import uuid
-import logging
-from typing import Optional, Tuple
-from database.data import hyoshcoder
+import shlex
 
 # Configure logging
 logging.basicConfig(
