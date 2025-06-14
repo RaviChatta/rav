@@ -567,7 +567,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
                     InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 Back", callback_data='help")]
+                [InlineKeyboardButton("🔙 Back", callback_data='help')]
             ])
             
             try:
@@ -602,7 +602,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
                     InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 Back", callback_data='help")]
+                [InlineKeyboardButton("🔙 Back", callback_data='help')]
             ])
             
             try:
