@@ -398,8 +398,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "freepoints":
             try:
                 user = await hyoshcoder.users.find_one({"_id": user_id})
-        
-                # Generate referral code if not present
+            
+                # Generate or get referral code
                 if not user or not user.get("referral_code"):
                     referral_code = secrets.token_hex(4)
                     await hyoshcoder.users.update_one(
@@ -409,87 +409,36 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     )
                 else:
                     referral_code = user["referral_code"]
-        
+            
                 refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-        
-                # Generate new point ID and deep link
-                point_id = "".join(random.choices(string.ascii_uppercase + string.digits, k=settings.TOKEN_ID_LENGTH))
-                deep_link = f"https://t.me/{settings.BOT_USERNAME}?start={point_id}"
-        
-                # Pick random shortener
-                shortener = settings.get_random_shortener()
-                short_url = await get_shortlink(
-                    url=shortener["domain"],
-                    api=shortener["api"],
-                    link=deep_link
-                )
-        
-                # Fallback to deep link if shortening failed
-                if not isinstance(short_url, str) or not short_url.startswith(("http://", "https://")):
-                    short_url = deep_link
-        
-                # Save points link to DB
-                await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
-        
-                # Caption
+            
+                # Simple message with just referral info
                 caption = (
-                    "**🎁 Free Points Menu**\n\n"
-                    "Earn points by:\n"
-                    f"1. **Referring users** – `{refer_link}`\n"
-                    f"   ➤ {settings.REFER_POINT_REWARD} points per referral\n"
-                    f"2. **Watching sponsored links** –\n"
-                    f"   ➤ {settings.SHORTENER_POINT_REWARD} points\n\n"
-                    f"🎯 Your points link:\n`{short_url}`\n\n"
-                    "⏱ Points are added automatically!\n\n"
-                    f"⌛ This message will be deleted in {settings.AUTO_DELETE_TIME} seconds."
+                    "**🎯 Your Referral Link**\n\n"
+                    f"Share this link to earn {settings.REFER_POINT_REWARD} points per referral:\n"
+                    f"`{refer_link}`\n\n"
+                    "💡 Use <code>/freepoints for earning points via ads\n"
+                    "💡 Use <code>/genpoints to generate earning links\n\n"
+                    
                 )
-        
-                # Buttons
+            
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back", callback_data="help")]
                 ])
-        
-                # Send message with auto-delete
+            
                 try:
-                    img = await get_random_photo()
-                    if img:
-                        sent_msg = await query.message.edit_media(
-                            media=InputMediaPhoto(media=img, caption=caption),
-                            reply_markup=buttons
-                        )
-                    else:
-                        sent_msg = await query.message.edit_text(
-                            text=caption,
-                            reply_markup=buttons,
-                            disable_web_page_preview=True
-                        )
-                    
-                    # Schedule auto-deletion
-                    asyncio.create_task(auto_delete_message(
-                        chat_id=query.message.chat.id,
-                        message_id=sent_msg.id,
-                        delay=settings.AUTO_DELETE_TIME
-                    ))
-        
-                except Exception as e:
-                    logger.error(f"Error sending free points message: {e}")
-                    sent_msg = await query.message.edit_text(
+                    await query.message.edit_text(
                         text=caption,
                         reply_markup=buttons,
                         disable_web_page_preview=True
                     )
-                    asyncio.create_task(auto_delete_message(
-                        chat_id=query.message.chat.id,
-                        message_id=sent_msg.id,
-                        delay=settings.AUTO_DELETE_TIME
-                    ))
-        
+                except Exception as e:
+                    logger.error(f"Error editing message: {e}")
+                    await query.answer("Error showing referral link", show_alert=True)
+            
             except Exception as e:
-                logger.error(f"Callback freepoints error: {e}", exc_info=True)
-                try:
-                    await query.answer("❌ Error loading free points. Try again.", show_alert=True)
-                except Exception:
-                    pass
+                logger.error(f"Callback freepoints error: {e}")
+                await query.answer("❌ Error loading referral info", show_alert=True)
 
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
