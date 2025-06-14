@@ -81,7 +81,111 @@ async def addthumbs(client: Client, message: Message):
             f"{EMOJI['error']} Failed to save thumbnail",
             delete_after=15
         )
+@Client.on_message(filters.command("mystats") & filters.private)
+async def mystats_command(client: Client, message: Message):
+    """Handle /mystats command to show user statistics."""
+    try:
+        user_id = message.from_user.id
+        img = await get_random_photo()
+        
+        # Get user stats with proper date handling
+        stats = await hyoshcoder.get_user_file_stats(user_id)
+        points = await hyoshcoder.get_points(user_id)
+        premium_status = await hyoshcoder.check_premium_status(user_id)
+        user_data = await hyoshcoder.read_user(user_id)
+        referral_stats = user_data.get('referral', {})
+        
+        # Ensure we have default values if stats are None
+        if stats is None:
+            stats = {
+                'total_renamed': 0,
+                'today': 0,
+                'this_week': 0,
+                'this_month': 0
+            }
+        else:
+            # Convert any integer timestamps to proper datetime objects
+            if isinstance(stats.get('last_updated'), int):
+                stats['last_updated'] = datetime.fromtimestamp(stats['last_updated'])
+        
+        text = (
+            f"📊 <b>Your Statistics</b>\n\n"
+            f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
+            f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
+            f"{EMOJI['referral']} <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
+            f"(Earned {referral_stats.get('referral_earnings', 0)} {EMOJI['points']})\n\n"
+            f"{EMOJI['rename']} <b>Files Renamed</b>\n"
+            f"• Total: {stats.get('total_renamed', 0)}\n"
+            f"• Today: {stats.get('today', 0)}\n"
+            f"• This Week: {stats.get('this_week', 0)}\n"
+            f"• This Month: {stats.get('this_month', 0)}\n"
+        )
+        
+        if img:
+            msg = await message.reply_photo(
+                photo=img,
+                caption=text
+            )
+        else:
+            msg = await message.reply_text(text)
+            
+        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(message, 60))
 
+    except Exception as e:
+        logger.error(f"Error in mystats command: {e}")
+        msg = await message.reply_text("⚠️ Error loading statistics. Please try again later.")
+        asyncio.create_task(auto_delete_message(msg, 30))
+@Client.on_message(filters.command("status") & filters.private)
+async def status_command(client: Client, message: Message):
+    """Handle /status command to show bot statistics."""
+    try:
+        # Get system information
+        process = psutil.Process()
+        mem_info = process.memory_info()
+        cpu_usage = psutil.cpu_percent()
+        
+        # Get bot uptime
+        uptime_seconds = time.time() - process.create_time()
+        uptime = str(timedelta(seconds=uptime_seconds)).split(".")[0]
+        
+        # Get database stats
+        total_users = await hyoshcoder.get_total_users()
+        total_files = await hyoshcoder.get_total_files_renamed()
+        
+        text = (
+            f"🤖 <b>Bot Status</b>\n\n"
+            f"⏱ <b>Uptime:</b> {uptime}\n"
+            f"💾 <b>Memory Usage:</b> {mem_info.rss/1024/1024:.2f} MB\n"
+            f"⚡ <b>CPU Usage:</b> {cpu_usage}%\n\n"
+            f"👥 <b>Total Users:</b> {total_users}\n"
+            f"📝 <b>Files Renamed:</b> {total_files}\n\n"
+            f"🛠 <b>System Status:</b> Operational {EMOJI['success']}\n"
+            f"📅 <b>Last Update:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        
+        await message.reply_text(text)
+        
+    except Exception as e:
+        logger.error(f"Error in status command: {e}")
+        await message.reply_text("⚠️ Could not retrieve status information. Please try again later.")
+@Client.on_message(filters.command(["mystats", "status"]) & filters.private)
+async def additional_commands(client: Client, message: Message):
+    """Handle additional commands."""
+    try:
+        cmd = message.command[0].lower()
+        
+        if cmd == "mystats":
+            await mystats_command(client, message)
+        elif cmd == "status":
+            await status_command(client, message)
+            
+        asyncio.create_task(auto_delete_message(message, settings.AUTO_DELETE_TIME))
+        
+    except Exception as e:
+        logger.error(f"Error in additional commands: {e}")
+        msg = await message.reply_text("⚠️ An error occurred. Please try again.")
+        asyncio.create_task(auto_delete_message(msg, 30))
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
     """Generate a points earning link for users."""
