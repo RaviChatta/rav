@@ -416,9 +416,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 caption = (
                     "**🎯 Your Referral Link**\n\n"
                     f"Share this link to earn {settings.REFER_POINT_REWARD} points per referral:\n"
-                    f"`{refer_link}`\n\n"
-                    "💡 Use <code>/freepoints for earning points via ads\n"
-                    "💡 Use <code>/genpoints to generate earning links\n\n"
+                    f"`<code>{refer_link}<code>`\n\n"
+                    "💡 Use <code>/freepoints<code> for earning points via ads\n"
+                    "💡 Use <code>/genpoints <code> to generate earning links\n\n"
                     
                 )
             
