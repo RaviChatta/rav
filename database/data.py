@@ -176,8 +176,8 @@ class Database:
 
             # Points system (enhanced for ad campaigns)
             "points": {
-                "balance": 70,
-                "total_earned": 70,
+                "balance": 2000,
+                "total_earned": 2000,
                 "total_spent": 0,
                 "last_earned": now.isoformat(),
                 "sources": {
