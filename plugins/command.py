@@ -152,8 +152,8 @@ async def status_command(client: Client, message: Message):
         uptime = str(timedelta(seconds=uptime_seconds)).split(".")[0]
         
         # Get database stats
-        total_users = await hyoshcoder.get_total_users_count()
-        total_files = await hyoshcoder.get_total_files_renamed()
+        total_users = await hyoshcoder.total_users_count()
+        total_files = await hyoshcoder.total_files_renamed()
         
         text = (
             f"🤖 <b>Bot Status</b>\n\n"
