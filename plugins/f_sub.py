@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Validate and filter empty channel usernames
 FORCE_SUB_CHANNELS = [channel.strip() for channel in settings.FORCE_SUB_CHANNELS if channel.strip()]
-IMAGE_URL = "https://i.ibb.co/gFQFknCN/d8a33273f73c.jpg"
+IMAGE_URL = "https://files.catbox.moe/ikzje9.png"
 
 async def not_subscribed(_, __, message):
     if not FORCE_SUB_CHANNELS:
