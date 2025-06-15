@@ -24,6 +24,50 @@ sequential_operations = {}
 user_semaphores = {}
 user_queue_messages = {}
 
+
+async def track_rename_operation(user_id: int, original_name: str, new_name: str, points_deducted: int):
+    """Track successful rename operations in database"""
+    try:
+        # Track in file_stats collection
+        await hyoshcoder.file_stats.insert_one({
+            "user_id": user_id,
+            "original_name": original_name,
+            "new_name": new_name,
+            "timestamp": datetime.now(),
+            "date": datetime.now().date().isoformat()
+        })
+
+        # Update user's activity stats
+        await hyoshcoder.users.update_one(
+            {"_id": user_id},
+            {
+                "$inc": {
+                    "activity.total_files_renamed": 1,
+                    "activity.daily_usage": 1,
+                    "points.total_spent": points_deducted,
+                    "points.balance": -points_deducted
+                },
+                "$set": {
+                    "activity.last_usage_date": datetime.now().isoformat(),
+                    "activity.last_active": datetime.now().isoformat()
+                }
+            }
+        )
+
+        # Record transactionMore actions
+        await hyoshcoder.transactions.insert_one({
+            "user_id": user_id,
+            "type": "file_rename",
+            "amount": -points_deducted,
+            "description": f"Renamed {original_name} to {new_name}",
+            "timestamp": datetime.now(),
+            "balance_after": (await hyoshcoder.get_points(user_id)) - points_deducted
+        })
+
+        return True
+    except Exception as e:
+        logger.error(f"Error tracking rename operation: {e}")
+        return False
 def sanitize_filename(filename: str) -> str:
     """Sanitize filenames to remove problematic characters"""
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename).strip()
