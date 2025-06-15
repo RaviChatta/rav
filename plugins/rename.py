@@ -1,5 +1,5 @@
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image
 from datetime import datetime
@@ -23,6 +23,18 @@ renaming_operations = {}
 sequential_operations = {}
 user_semaphores = {}
 user_queue_messages = {}
+
+
+async def safe_edit_message(message: Message, text: str, **kwargs):
+    """Safely edit a message with handling for MessageNotModified errors"""
+    try:
+        current_text = message.text if hasattr(message, 'text') else message.caption
+        if current_text != text:  # Only edit if content has changed
+            await message.edit_text(text, **kwargs)
+    except MessageNotModified:
+        pass
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
 
 
 async def track_rename_operation(user_id: int, original_name: str, new_name: str, points_deducted: int):
@@ -54,7 +66,7 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
             }
         )
 
-        # Record transactionMore actions
+        # Record transaction
         await hyoshcoder.transactions.insert_one({
             "user_id": user_id,
             "type": "file_rename",
@@ -68,15 +80,19 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
     except Exception as e:
         logger.error(f"Error tracking rename operation: {e}")
         return False
+
+
 def sanitize_filename(filename: str) -> str:
     """Sanitize filenames to remove problematic characters"""
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename).strip()
+
 
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
     """Get or create semaphore for user"""
     if user_id not in user_semaphores:
         user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
+
 
 async def add_comprehensive_metadata(input_path: str, output_path: str, metadata_text: str) -> Tuple[bool, Optional[str]]:
     """
@@ -144,6 +160,7 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
     
     return False, "All metadata addition attempts failed"
 
+
 async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
     """Enhanced dump channel sender with proper media type handling"""
     try:
@@ -185,6 +202,7 @@ async def send_to_dump_channel(client: Client, user_id: int, file_path: str, cap
     except Exception as e:
         logger.error(f"Dump channel error: {e}", exc_info=True)
         return False
+
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client: Client, message: Message):
@@ -275,7 +293,7 @@ async def auto_rename_files(client: Client, message: Message):
     try:
         # Process queue messages
         if user_id in user_queue_messages and user_queue_messages[user_id]:
-            await user_queue_messages[user_id][0].edit_text(f"🔄 **Processing:** `{file_name}`")
+            await safe_edit_message(user_queue_messages[user_id][0], f"🔄 **Processing:** `{file_name}`")
             user_queue_messages[user_id].pop(0)
             
         if user_id not in sequential_operations:
@@ -296,7 +314,7 @@ async def auto_rename_files(client: Client, message: Message):
             for quality_placeholder in quality_placeholders:
                 if quality_placeholder in format_template:
                     if extracted_qualities == "Unknown":
-                        await queue_message.edit_text("**Using 'Unknown' for quality**")
+                        await safe_edit_message(queue_message, "**Using 'Unknown' for quality**")
                         format_template = format_template.replace(quality_placeholder, "Unknown")
                     else:
                         format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
@@ -313,7 +331,7 @@ async def auto_rename_files(client: Client, message: Message):
         temp_file_path = f"{renamed_file_path}_{file_uuid}"
 
         # Download file
-        await queue_message.edit_text(f"📥 **Downloading:** `{file_name}`")
+        await safe_edit_message(queue_message, f"📥 **Downloading:** `{file_name}`")
         try:
             path = await client.download_media(
                 message,
@@ -323,14 +341,14 @@ async def auto_rename_files(client: Client, message: Message):
             )
         except Exception as e:
             del renaming_operations[file_id]
-            return await queue_message.edit_text(f"❌ Download failed: {e}")
+            return await safe_edit_message(queue_message, f"❌ Download failed: {e}")
 
         # Rename file
         try:
             os.rename(path, renamed_file_path)
             path = renamed_file_path
         except Exception as e:
-            await queue_message.edit_text(f"❌ Rename failed: {e}")
+            await safe_edit_message(queue_message, f"❌ Rename failed: {e}")
             if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
             return
@@ -341,7 +359,7 @@ async def auto_rename_files(client: Client, message: Message):
         if _bool_metadata:
             metadata = await hyoshcoder.get_metadata_code(user_id)
             if metadata:
-                await queue_message.edit_text("🔄 Adding metadata to all streams...")
+                await safe_edit_message(queue_message, "🔄 Adding metadata to all streams...")
                 success, error = await add_comprehensive_metadata(
                     renamed_file_path,
                     metadata_file_path,
@@ -353,11 +371,11 @@ async def auto_rename_files(client: Client, message: Message):
                     path = metadata_file_path
                 else:
                     error_msg = error[:500] if error else "Unknown error"
-                    await queue_message.edit_text(f"⚠️ Metadata failed: {error_msg}\nUsing original file")
+                    await safe_edit_message(queue_message, f"⚠️ Metadata failed: {error_msg}\nUsing original file")
                     path = renamed_file_path
 
         # Prepare for upload
-        await queue_message.edit_text(f"📤 **Uploading:** `{file_name}`")
+        await safe_edit_message(queue_message, f"📤 **Uploading:** `{file_name}`")
         thumb_path = None
         custom_caption = await hyoshcoder.get_caption(message.chat.id)
         custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
@@ -413,7 +431,7 @@ async def auto_rename_files(client: Client, message: Message):
             )
             
             if dump_success:
-                await queue_message.edit_text("✅ Sent to dump channel!")
+                await safe_edit_message(queue_message, "✅ Sent to dump channel!")
             else:
                 # Normal upload
                 if media_type == "document":
@@ -465,7 +483,7 @@ async def auto_rename_files(client: Client, message: Message):
             await asyncio.sleep(e.value + 5)
             await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
         except Exception as e:
-            await queue_message.edit_text(f"❌ Upload failed: {e}")
+            await safe_edit_message(queue_message, f"❌ Upload failed: {e}")
             raise
         finally:
             # Cleanup
