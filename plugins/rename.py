@@ -706,15 +706,8 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Beautiful leaderboard with auto-deletion"""
+    """Beautiful leaderboard with auto-deletion in both group and private"""
     try:
-        # Delete the command message if in group
-        if message.chat.type != "private":
-            try:
-                await message.delete()
-            except:
-                pass
-        
         loading_msg = await message.reply_text("🔄 Loading leaderboard...")
         
         # Try to get leaderboard data with retry logic
@@ -786,22 +779,48 @@ async def show_leaderboard(client: Client, message: Message):
         except Exception as e:
             logger.error(f"Error getting user rank: {e}")
             text += "\n⚠️ Couldn't load your personal stats"
+
+        # Send to both private and group chats
+        sent_messages = []
         
-        # Always send to user's private chat for leaderboard
         try:
-            await client.send_message(
+            # Send to private chat first
+            private_msg = await client.send_message(
                 message.from_user.id,
                 text,
                 disable_web_page_preview=True
             )
+            sent_messages.append(private_msg)
+            
+            # If in group, send there too with different message
             if message.chat.type != "private":
-                await message.reply_text("📊 Leaderboard sent to your private chat!")
+                group_msg = await message.reply_text(
+                    "📊 Leaderboard results sent to your private chat!\n"
+                    "Here's a quick preview (will delete in 1 minute):\n\n" +
+                    "\n".join(text.split("\n")[:5]) + "\n...",
+                    disable_web_page_preview=True
+                )
+                sent_messages.append(group_msg)
         except Exception as e:
             logger.error(f"Error sending leaderboard to private chat: {e}")
-            msg = await message.reply_text(text, disable_web_page_preview=True)
-            
-            # Store for auto-deletion (1 hour)
-            await asyncio.sleep(3600)
+            # Fallback to group only if private fails
+            if message.chat.type != "private":
+                group_msg = await message.reply_text(
+                    text,
+                    disable_web_page_preview=True
+                )
+                sent_messages.append(group_msg)
+            else:
+                # If in private and failed, try once more
+                private_msg = await message.reply_text(
+                    text,
+                    disable_web_page_preview=True
+                )
+                sent_messages.append(private_msg)
+
+        # Auto-delete after 1 minute
+        await asyncio.sleep(60)
+        for msg in sent_messages:
             try:
                 await msg.delete()
             except:
