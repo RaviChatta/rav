@@ -10,7 +10,7 @@ from aiohttp import web
 from route import web_server
 from config import settings
 #from plugins.callback import start_cleanup
-from plugins.rename import startup_tasks
+#from plugins.rename import startup_tasks
 from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
@@ -125,7 +125,7 @@ class Bot(Client):
         # Start background tasks
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
-        asyncio.create_task(self.startup_tasks())
+     #   asyncio.create_task(self.startup_tasks())
 
     async def stop(self, *args):
         """Cleanup before shutdown"""
