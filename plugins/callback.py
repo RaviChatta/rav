@@ -56,17 +56,17 @@ metadata_states = defaultdict(dict)
 caption_states = defaultdict(dict)
 
 METADATA_ON = [
-    [InlineKeyboardButton('Metadata Enabled', callback_data='metadata_0'),
+    [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴀᴛᴀ ᴇɴᴀʙʟᴇᴅ •', callback_data='metadata_0'),
      InlineKeyboardButton('✅', callback_data='metadata_0')],
-    [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
-     InlineKeyboardButton('Back', callback_data='help')]
+    [InlineKeyboardButton('• ꜱᴇᴛ ᴄᴜꜱᴛᴏᴍ ᴍᴇᴛᴀᴅᴀᴛᴀ •', callback_data='set_metadata'),
+     InlineKeyboardButton('• ʙᴀᴄᴋ •', callback_data='help')]
 ]
 
 METADATA_OFF = [
-    [InlineKeyboardButton('Metadata Disabled', callback_data='metadata_1'),
+    [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴀᴛᴀ ᴅɪꜱᴀʙʟᴇᴅ •', callback_data='metadata_1'),
      InlineKeyboardButton('❌', callback_data='metadata_1')],
-    [InlineKeyboardButton('Set Custom Metadata', callback_data='set_metadata'),
-     InlineKeyboardButton('Back', callback_data='help')]
+    [InlineKeyboardButton('• ꜱᴇᴛ ᴄᴜꜱᴛᴏᴍ ᴍᴇᴛᴀᴅᴀᴛᴀ •', callback_data='set_metadata'),
+     InlineKeyboardButton('• ʙᴀᴄᴋ •', callback_data='help')]
 ]
 
 SHARE_MESSAGE = """
@@ -135,10 +135,10 @@ async def process_text_states(client, message: Message):
                 current_caption = await hyoshcoder.get_caption(user_id)
                 
                 btn = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
-                    [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
-                    [InlineKeyboardButton("Close", callback_data="close"),
-                     InlineKeyboardButton("Back", callback_data="help")]
+                    [InlineKeyboardButton("• ꜱᴇᴛ ᴄᴀᴘᴛɪᴏɴ •", callback_data="set_caption")],
+                    [InlineKeyboardButton("• ʀᴇᴍᴏᴠᴇ ᴄᴀᴘᴛɪᴏɴ •", callback_data="remove_caption")],
+                    [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"),
+                     InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
                 ])
                 
                 await message.reply(
@@ -190,11 +190,16 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         if data == "home":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
-                [InlineKeyboardButton(f"{EMOJI['stats']} My Stats", callback_data='mystats')],
-                [InlineKeyboardButton(f"{EMOJI['points']} Earn Points", callback_data='freepoints')],
-                [InlineKeyboardButton("❌ Close", callback_data='close')]
+                [
+                    InlineKeyboardButton("• ᴍʏ ᴄᴏᴍᴍᴀɴᴅꜱ •", callback_data='help'),
+                    InlineKeyboardButton(f"{EMOJI['stats']} • ᴍʏ ꜱᴛᴀᴛꜱ •", callback_data='mystats')
+                ],
+                [
+                    InlineKeyboardButton(f"{EMOJI['points']} • ᴇᴀʀɴ ᴘᴏɪɴᴛꜱ •", callback_data='freepoints'),
+                    InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data='close')
+                ]
             ])
+
 
             response = {
                 'caption': Txt.START_TXT.format(query.from_user.mention),
@@ -389,7 +394,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
                 "Reply with text or /cancel",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("❌ Cancel", callback_data="meta")]]
+                    [[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="meta")]]
                 )
             )
             metadata_states[user_id]["prompt_id"] = prompt.id
@@ -443,7 +448,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Close", callback_data="close"), 
+                [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"), 
                  InlineKeyboardButton("Back", callback_data="help")]
             ])
             response = {
@@ -455,10 +460,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "caption":
             current_caption = await hyoshcoder.get_caption(user_id) or "Not set"
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Set Caption", callback_data="set_caption")],
-                [InlineKeyboardButton("Remove Caption", callback_data="remove_caption")],
-                [InlineKeyboardButton("Close", callback_data="close"),
-                 InlineKeyboardButton("Back", callback_data="help")]
+                [InlineKeyboardButton("• ꜱᴇᴛ ᴄᴀᴘᴛɪᴏɴ •", callback_data="set_caption")],
+                [InlineKeyboardButton("• ʀᴇᴍᴏᴠᴇ ᴄᴀᴘᴛɪᴏɴ •", callback_data="remove_caption")],
+                [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"),
+                 InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             
             try:
@@ -485,7 +490,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 f"Current: {await hyoshcoder.get_caption(user_id) or 'None'}\n\n"
                 "Reply with text or /cancel",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("❌ Cancel", callback_data="caption")]]
+                    [[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="caption")]]
                 )
             )
             caption_states[user_id]["prompt_id"] = prompt.id
@@ -494,7 +499,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "remove_caption":
             await hyoshcoder.set_caption(user_id, None)
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Close", callback_data="close"), 
+                [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"), 
                  InlineKeyboardButton("Back", callback_data="help")]
             ])
             response = {
@@ -513,10 +518,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
             current_media_text = current_media.capitalize() if current_media else "Not set"
             btn = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
-                    InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
+                    InlineKeyboardButton("• ᴠɪᴅᴇᴏ •", callback_data='setmedia_video'),
+                    InlineKeyboardButton("• ᴅᴏᴄᴜᴍᴇɴᴛ •", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 Back", callback_data='help')]
+                [InlineKeyboardButton("🔙 • ʙᴀᴄᴋ •", callback_data='help')]
             ])
             
             try:
@@ -548,10 +553,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
             current_media_text = current_media.capitalize()
             btn = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🎥 Video", callback_data='setmedia_video'),
-                    InlineKeyboardButton("📁 Document", callback_data='setmedia_document')
+                    InlineKeyboardButton("• ᴠɪᴅᴇᴏ •", callback_data='setmedia_video'),
+                    InlineKeyboardButton("• ᴅᴏᴄᴜᴍᴇɴᴛ •", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 Back", callback_data='help')]
+                [InlineKeyboardButton("🔙 • ʙᴀᴄᴋ •", callback_data='help')]
             ])
             
             try:
@@ -614,9 +619,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
         
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Buy Premium", callback_data="buy_premium")],
-                [InlineKeyboardButton("Premium Features", callback_data="premium_features")],
-                [InlineKeyboardButton("Back", callback_data="help")]
+                [InlineKeyboardButton("• ʙᴜʏ ᴘʀᴇᴍɪᴜᴍ •", callback_data="buy_premium")],
+                [InlineKeyboardButton("• ᴘʀᴇᴍɪᴜᴍ ꜰᴇᴀᴛᴜʀᴇꜱ •", callback_data="premium_features")],
+                [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             response = {
                 'caption': (
@@ -637,9 +642,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
         
         elif data == "thumbnail":
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("View Thumbnail", callback_data="showThumb")],
-                [InlineKeyboardButton("Close", callback_data="close"), 
-                 InlineKeyboardButton("Back", callback_data="help")]
+                [InlineKeyboardButton("• ᴠɪᴇᴡ ᴛʜᴜᴍʙɴᴀɪʟ •", callback_data="showThumb")],
+                [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"), 
+                 InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             response = {
                 'caption': Txt.THUMBNAIL_TXT,
@@ -650,8 +655,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "showThumb":
             caption = "Here is your current thumbnail" if thumb else "No thumbnail set"
             btn = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Close", callback_data="close"), 
-                 InlineKeyboardButton("Back", callback_data="help")]
+                [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"), 
+                 InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             response = {
                 'caption': caption,
