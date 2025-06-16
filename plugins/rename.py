@@ -232,7 +232,7 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
         await client.send_message(user_id, completion_msg)
     except Exception as e:
         logger.error(f"Error sending completion message: {e}")
-        await client.send_message(user_id, "❌ Failed to load completion stats. The rename was successful though!")
+        await client.send_message(user_id, "✅ All files processed successfully!")
 
 async def send_single_success_message(client: Client, message: Message, file_name: str, renamed_file_name: str, 
                                     start_time: float, rename_cost: int, metadata_added: bool):
@@ -273,7 +273,7 @@ async def auto_rename_files(client: Client, message: Message):
             "start_time": start_time,
             "count": 0,
             "points_used": 0,
-            "is_batch": False
+            "is_batch": hasattr(message, 'media_group_id') and message.media_group_id is not None
         }
     
     batch_data = user_batch_trackers[user_id]
@@ -348,10 +348,18 @@ async def auto_rename_files(client: Client, message: Message):
                 user_queue_messages[user_id].pop(0)
 
             # Sequential mode handling
-            if user_id not in sequential_operations:
-                sequential_operations[user_id] = {"files": [], "expected_count": 0}
+            if sequential_mode:
+                if user_id not in sequential_operations:
+                    sequential_operations[user_id] = {"files": [], "expected_count": 0, "completed": 0}
+                
+                seq_data = sequential_operations[user_id]
+                seq_data["expected_count"] += 1
+                seq_data["files"].append((message, current_file_number))
 
-            sequential_operations[user_id]["expected_count"] += 1
+                # If this isn't the first file in sequence, wait for previous to complete
+                if seq_data["expected_count"] > 1:
+                    while seq_data["completed"] < current_file_number - 1:
+                        await asyncio.sleep(1)
 
             # Extract metadata from filename/caption
             if src_info == "file_name":
@@ -546,8 +554,12 @@ async def auto_rename_files(client: Client, message: Message):
                     # Delete queue message
                     await queue_message.delete()
 
+                    # Mark as completed in sequential mode
+                    if sequential_mode:
+                        sequential_operations[user_id]["completed"] += 1
+
                     # Check if this is part of a media group (batch)
-                    if not hasattr(message, 'media_group_id') or message.media_group_id is None:
+                    if not batch_data["is_batch"]:
                         # Single file - send appropriate completion message
                         if sequential_mode:
                             await send_single_success_message(
@@ -609,6 +621,12 @@ async def auto_rename_files(client: Client, message: Message):
                 if file_processing_counters[user_id] <= 0:
                     del file_processing_counters[user_id]
 
+            # Cleanup sequential operations if complete
+            if sequential_mode and user_id in sequential_operations:
+                seq_data = sequential_operations[user_id]
+                if seq_data["completed"] >= seq_data["expected_count"]:
+                    del sequential_operations[user_id]
+
             # Deduct points
             await hyoshcoder.deduct_points(user_id, rename_cost)
             user_semaphore.release()
@@ -647,6 +665,9 @@ async def handle_media_group_completion(client: Client, message: Message):
 async def show_leaderboard(client: Client, message: Message):
     """Beautiful leaderboard with auto-deletion"""
     try:
+        # Show processing message
+        processing_msg = await message.reply_text("🔄 Loading leaderboard...")
+        
         # Try to get leaderboard data with retry logic
         max_retries = 3
         leaderboard = []
@@ -680,6 +701,8 @@ async def show_leaderboard(client: Client, message: Message):
                     raise
                 await asyncio.sleep(2 ** attempt)
                 continue
+        
+        await processing_msg.delete()
         
         if not leaderboard:
             return await message.reply("No rename data available yet!")
@@ -720,4 +743,8 @@ async def show_leaderboard(client: Client, message: Message):
         
     except Exception as e:
         logger.error(f"Error generating leaderboard: {e}")
+        try:
+            await processing_msg.delete()
+        except:
+            pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
