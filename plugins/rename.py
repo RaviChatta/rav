@@ -25,6 +25,7 @@ user_queue_messages = {}
 user_batch_trackers = {}  # Track batch operations per user
 sequential_operations = {}  # For sequential mode
 file_processing_counters = {}  # Track individual file counters per user
+cancel_operations = {}  # Track cancel requests
 
 async def safe_edit_message(message: Message, text: str, **kwargs):
     """Safely edit a message with handling for MessageNotModified errors"""
@@ -210,6 +211,11 @@ async def get_user_rank(user_id: int) -> Tuple[Optional[int], int]:
 async def send_completion_message(client: Client, user_id: int, start_time: float, file_count: int, points_used: int):
     """Send the unified completion message for batch operations"""
     try:
+        # Check if operation was canceled
+        if user_id in cancel_operations and cancel_operations[user_id]:
+            del cancel_operations[user_id]
+            return await client.send_message(user_id, "❌ Batch processing was canceled!")
+        
         user_rank, total_renames = await get_user_rank(user_id)
         user_points = await hyoshcoder.get_points(user_id)
         
@@ -238,6 +244,11 @@ async def send_single_success_message(client: Client, message: Message, file_nam
                                     start_time: float, rename_cost: int, metadata_added: bool):
     """Send success message for single file operations"""
     try:
+        # Check if operation was canceled
+        if message.from_user.id in cancel_operations and cancel_operations[message.from_user.id]:
+            del cancel_operations[message.from_user.id]
+            return await message.reply_text("❌ Processing was canceled!")
+        
         time_taken = time.time() - start_time
         remaining_points = (await hyoshcoder.get_points(message.from_user.id)) - rename_cost
         success_msg = (
@@ -254,10 +265,30 @@ async def send_single_success_message(client: Client, message: Message, file_nam
         logger.error(f"Error sending success message: {e}")
         await message.reply_text("✅ File processed successfully!")
 
+@Client.on_message(filters.command("cancel"))
+async def cancel_processing(client: Client, message: Message):
+    """Cancel current processing operations"""
+    user_id = message.from_user.id
+    cancel_operations[user_id] = True
+    
+    # Clean up any ongoing operations
+    if user_id in user_batch_trackers:
+        del user_batch_trackers[user_id]
+    if user_id in file_processing_counters:
+        del file_processing_counters[user_id]
+    if user_id in sequential_operations:
+        sequential_operations[user_id]["files"] = []
+    
+    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
+
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
     start_time = time.time()
+
+    # Check for cancel request
+    if user_id in cancel_operations and cancel_operations[user_id]:
+        return
 
     # Initialize user's counter if not exists
     if user_id not in file_processing_counters:
@@ -342,6 +373,11 @@ async def auto_rename_files(client: Client, message: Message):
         await user_semaphore.acquire()
 
         try:
+            # Check for cancel request again after acquiring semaphore
+            if user_id in cancel_operations and cancel_operations[user_id]:
+                await queue_message.edit_text("❌ Processing canceled by user")
+                return
+
             # Process queue messages
             if user_id in user_queue_messages and user_queue_messages[user_id]:
                 await safe_edit_message(user_queue_messages[user_id][0], f"🔄 Processing queue #{current_file_number}")
@@ -355,6 +391,9 @@ async def auto_rename_files(client: Client, message: Message):
                 sequential_operations[user_id]["expected_count"] += 1
                 while len(sequential_operations[user_id]["files"]) > 0:
                     await asyncio.sleep(1)
+                    if user_id in cancel_operations and cancel_operations[user_id]:
+                        await queue_message.edit_text("❌ Processing canceled by user")
+                        return
 
             # Extract metadata from filename/caption
             if src_info == "file_name":
@@ -404,6 +443,10 @@ async def auto_rename_files(client: Client, message: Message):
             max_download_retries = 3
             for attempt in range(max_download_retries):
                 try:
+                    if user_id in cancel_operations and cancel_operations[user_id]:
+                        await queue_message.edit_text("❌ Processing canceled by user")
+                        return
+
                     await safe_edit_message(queue_message, f"📥 Downloading queue #{current_file_number} (Attempt {attempt + 1})")
                     path = await client.download_media(
                         message,
@@ -498,6 +541,10 @@ async def auto_rename_files(client: Client, message: Message):
             max_upload_retries = 5
             for attempt in range(max_upload_retries):
                 try:
+                    if user_id in cancel_operations and cancel_operations[user_id]:
+                        await queue_message.edit_text("❌ Processing canceled by user")
+                        return
+
                     # Try dump channel first
                     dump_success = await send_to_dump_channel(
                         client,
@@ -740,21 +787,25 @@ async def show_leaderboard(client: Client, message: Message):
             logger.error(f"Error getting user rank: {e}")
             text += "\n⚠️ Couldn't load your personal stats"
         
-        if message.chat.type == "private":
-            msg = await message.reply_text(text, disable_web_page_preview=True)
-        else:
-            msg = await client.send_message(
-                message.chat.id,
+        # Always send to user's private chat for leaderboard
+        try:
+            await client.send_message(
+                message.from_user.id,
                 text,
                 disable_web_page_preview=True
             )
-        
-        # Store for auto-deletion (1 hour)
-        await asyncio.sleep(3600)
-        try:
-            await msg.delete()
-        except:
-            pass
+            if message.chat.type != "private":
+                await message.reply_text("📊 Leaderboard sent to your private chat!")
+        except Exception as e:
+            logger.error(f"Error sending leaderboard to private chat: {e}")
+            msg = await message.reply_text(text, disable_web_page_preview=True)
+            
+            # Store for auto-deletion (1 hour)
+            await asyncio.sleep(3600)
+            try:
+                await msg.delete()
+            except:
+                pass
         
     except Exception as e:
         logger.error(f"Error generating leaderboard: {e}")
