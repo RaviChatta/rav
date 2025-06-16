@@ -652,6 +652,4 @@ async def startup_tasks(client: Client):
         await asyncio.sleep(3600)  # Run every hour
         # Cleanup any expired data if needed
 
-@Client.on_startup()
-async def on_startup(client: Client):
-    await startup_tasks(client)
+
