@@ -208,23 +208,23 @@ async def get_user_rank(user_id: int) -> Tuple[Optional[int], int]:
         return None, 0
 
 async def send_completion_message(client: Client, user_id: int, start_time: float, file_count: int, points_used: int):
-    """Send the unified completion message"""
+    """Send the unified completion message for batch operations"""
     try:
         user_rank, total_renames = await get_user_rank(user_id)
         user_points = await hyoshcoder.get_points(user_id)
         
         time_taken = time.time() - start_time
         mins, secs = divmod(int(time_taken), 60)
-        avg_time = time_taken / file_count
+        avg_time = time_taken / file_count if file_count > 0 else 0
         avg_mins, avg_secs = divmod(int(avg_time), 60)
         
         completion_msg = (
-            f"❐ All Tasks Rename Completed\n\n"
-            f"⌬ Total Tasks: « {file_count} »\n"
+            f"❐ Batch Rename Completed\n\n"
+            f"⌬ Total Files: « {file_count} »\n"
             f"⌬ Total Points Used: « {points_used} »\n"
             f"⌬ Points Remaining: « {user_points} »\n"
             f"⌬ Total Time Taken: {mins}m {secs}s\n"
-            f"⌬ Average Time Per Task: {avg_mins}m {avg_secs}s\n"
+            f"⌬ Average Time Per File: {avg_mins}m {avg_secs}s\n"
             f"⌬ Your Total Renames: {total_renames}\n"
             f"⌬ Global Rank: #{user_rank if user_rank else 'N/A'}"
         )
@@ -241,11 +241,11 @@ async def send_single_success_message(client: Client, message: Message, file_nam
         time_taken = time.time() - start_time
         remaining_points = (await hyoshcoder.get_points(message.from_user.id)) - rename_cost
         success_msg = (
-            f"✅ **Successfully processed!**\n\n"
+            f"✅ **File Renamed Successfully!**\n\n"
             f"➲ **Original:** `{file_name}`\n"
             f"➲ **Renamed:** `{renamed_file_name}`\n"
-            f"➲ **Time:** {time_taken:.1f}s\n"
-            f"➲ **Metadata:** {'Yes' if metadata_added else 'No'}\n"
+            f"➲ **Time Taken:** {time_taken:.1f}s\n"
+            f"➲ **Metadata Added:** {'Yes' if metadata_added else 'No'}\n"
             f"➲ **Points Used:** {rename_cost}\n"
             f"➲ **Remaining Points:** {remaining_points}"
         )
@@ -495,7 +495,7 @@ async def auto_rename_files(client: Client, message: Message):
                     thumb_path = None
 
             # Upload flow with retry logic
-            max_upload_retries = 5  # Increased retry attempts
+            max_upload_retries = 5
             for attempt in range(max_upload_retries):
                 try:
                     # Try dump channel first
@@ -556,30 +556,23 @@ async def auto_rename_files(client: Client, message: Message):
 
                     # Check if this is part of a media group (batch)
                     if not hasattr(message, 'media_group_id') or message.media_group_id is None:
-                        # Single file - send appropriate completion message
-                        if sequential_mode:
-                            await send_single_success_message(
-                                client, message, file_name, renamed_file_name,
-                                start_time, rename_cost, metadata_added
-                            )
-                        else:
-                            await send_completion_message(
-                                client,
-                                user_id,
-                                batch_data["start_time"],
-                                1,
-                                rename_cost
-                            )
-                        if user_id in user_batch_trackers:
+                        # Single file - send single success message
+                        await send_single_success_message(
+                            client, message, file_name, renamed_file_name,
+                            start_time, rename_cost, metadata_added
+                        )
+                        
+                        # Clean up if not in batch mode
+                        if user_id in user_batch_trackers and not batch_data["is_batch"]:
                             del user_batch_trackers[user_id]
-
+                    
                     break  # Success, exit retry loop
 
                 except BadRequest as e:
                     if "FILE_PART_INVALID" in str(e):
                         if attempt == max_upload_retries - 1:
                             raise
-                        await asyncio.sleep(5 * (attempt + 1))  # Increased backoff time
+                        await asyncio.sleep(5 * (attempt + 1))
                         continue
                     raise
                 except FloodWait as e:
@@ -589,7 +582,7 @@ async def auto_rename_files(client: Client, message: Message):
                 except Exception as e:
                     if attempt == max_upload_retries - 1:
                         raise
-                    await asyncio.sleep(5 * (attempt + 1))  # Increased backoff time
+                    await asyncio.sleep(5 * (attempt + 1))
                     continue
 
         except Exception as e:
@@ -635,9 +628,11 @@ async def handle_media_group_completion(client: Client, message: Message):
             batch_data = user_batch_trackers[user_id]
             
             # Wait longer to ensure all files are processed
-            await asyncio.sleep(15)  # Increased wait time for batch completion
+            await asyncio.sleep(10)
             
+            # Check if all files in the batch have been processed
             if user_id in user_batch_trackers:  # Still exists after processing
+                # Send completion message
                 await send_completion_message(
                     client,
                     user_id,
@@ -645,11 +640,16 @@ async def handle_media_group_completion(client: Client, message: Message):
                     batch_data["count"],
                     batch_data["points_used"]
                 )
-                # Clean up counters
+                
+                # Clean up
                 if user_id in file_processing_counters:
                     del file_processing_counters[user_id]
                 if user_id in user_batch_trackers:
                     del user_batch_trackers[user_id]
+                
+                # If in sequential mode, clear the operation
+                if user_id in sequential_operations:
+                    sequential_operations[user_id]["files"] = []
     except Exception as e:
         logger.error(f"Error in handle_media_group_completion: {e}")
         try:
@@ -661,6 +661,13 @@ async def handle_media_group_completion(client: Client, message: Message):
 async def show_leaderboard(client: Client, message: Message):
     """Beautiful leaderboard with auto-deletion"""
     try:
+        # Delete the command message if in group
+        if message.chat.type != "private":
+            try:
+                await message.delete()
+            except:
+                pass
+        
         loading_msg = await message.reply_text("🔄 Loading leaderboard...")
         
         # Try to get leaderboard data with retry logic
@@ -706,7 +713,7 @@ async def show_leaderboard(client: Client, message: Message):
         await loading_msg.delete()
         
         if not leaderboard:
-            return await message.reply("No rename data available yet!")
+            return await message.reply_text("No rename data available yet!")
         
         text = "✨ **Top 10 File Renamers** ✨\n\n"
         medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
@@ -733,7 +740,14 @@ async def show_leaderboard(client: Client, message: Message):
             logger.error(f"Error getting user rank: {e}")
             text += "\n⚠️ Couldn't load your personal stats"
         
-        msg = await message.reply(text, disable_web_page_preview=True)
+        if message.chat.type == "private":
+            msg = await message.reply_text(text, disable_web_page_preview=True)
+        else:
+            msg = await client.send_message(
+                message.chat.id,
+                text,
+                disable_web_page_preview=True
+            )
         
         # Store for auto-deletion (1 hour)
         await asyncio.sleep(3600)
