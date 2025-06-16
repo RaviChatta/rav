@@ -254,7 +254,7 @@ async def send_single_success_message(client: Client, message: Message, file_nam
         logger.error(f"Error sending success message: {e}")
         await message.reply_text("✅ File processed successfully!")
 
-@Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
+@Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
     start_time = time.time()
@@ -400,18 +400,23 @@ async def auto_rename_files(client: Client, message: Message):
             file_uuid = str(uuid.uuid4())[:8]
             temp_file_path = f"{renamed_file_path}_{file_uuid}"
 
-            # Download file
-            await safe_edit_message(queue_message, f"📥 Downloading queue #{current_file_number}")
-            try:
-                path = await client.download_media(
-                    message,
-                    file_name=temp_file_path,
-                    progress=progress_for_pyrogram,
-                    progress_args=(f"Downloading #{current_file_number}", queue_message, time.time()),
-                )
-            except Exception as e:
-                del renaming_operations[file_id]
-                return await safe_edit_message(queue_message, f"❌ Download failed: {e}")
+            # Download file with retry logic
+            max_download_retries = 3
+            for attempt in range(max_download_retries):
+                try:
+                    await safe_edit_message(queue_message, f"📥 Downloading queue #{current_file_number} (Attempt {attempt + 1})")
+                    path = await client.download_media(
+                        message,
+                        file_name=temp_file_path,
+                        progress=progress_for_pyrogram,
+                        progress_args=(f"Downloading #{current_file_number}", queue_message, time.time()),
+                    )
+                    break
+                except Exception as e:
+                    if attempt == max_download_retries - 1:
+                        del renaming_operations[file_id]
+                        return await safe_edit_message(queue_message, f"❌ Download failed: {e}")
+                    await asyncio.sleep(2 ** attempt)
 
             # Rename file
             try:
@@ -490,8 +495,8 @@ async def auto_rename_files(client: Client, message: Message):
                     thumb_path = None
 
             # Upload flow with retry logic
-            max_retries = 3
-            for attempt in range(max_retries):
+            max_upload_retries = 5  # Increased retry attempts
+            for attempt in range(max_upload_retries):
                 try:
                     # Try dump channel first
                     dump_success = await send_to_dump_channel(
@@ -572,9 +577,9 @@ async def auto_rename_files(client: Client, message: Message):
 
                 except BadRequest as e:
                     if "FILE_PART_INVALID" in str(e):
-                        if attempt == max_retries - 1:
+                        if attempt == max_upload_retries - 1:
                             raise
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        await asyncio.sleep(5 * (attempt + 1))  # Increased backoff time
                         continue
                     raise
                 except FloodWait as e:
@@ -582,9 +587,9 @@ async def auto_rename_files(client: Client, message: Message):
                     await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
                     break
                 except Exception as e:
-                    if attempt == max_retries - 1:
+                    if attempt == max_upload_retries - 1:
                         raise
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(5 * (attempt + 1))  # Increased backoff time
                     continue
 
         except Exception as e:
@@ -621,7 +626,7 @@ async def auto_rename_files(client: Client, message: Message):
         logger.error(f"Error in auto_rename_files: {e}")
         await message.reply_text("❌ An error occurred while processing your file. Please try again.")
 
-@Client.on_message(filters.media_group & filters.private)
+@Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
     """Handle completion for batch uploads"""
     try:
@@ -629,8 +634,8 @@ async def handle_media_group_completion(client: Client, message: Message):
         if user_id in user_batch_trackers and user_batch_trackers[user_id]["is_batch"]:
             batch_data = user_batch_trackers[user_id]
             
-            # Wait a bit to ensure all files are processed
-            await asyncio.sleep(10)  # Increased wait time for batch completion
+            # Wait longer to ensure all files are processed
+            await asyncio.sleep(15)  # Increased wait time for batch completion
             
             if user_id in user_batch_trackers:  # Still exists after processing
                 await send_completion_message(
@@ -652,7 +657,7 @@ async def handle_media_group_completion(client: Client, message: Message):
         except:
             pass
 
-@Client.on_message(filters.command(["leaderboard", "top"]) & (filters.group | filters.private))
+@Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
     """Beautiful leaderboard with auto-deletion"""
     try:
@@ -674,8 +679,9 @@ async def show_leaderboard(client: Client, message: Message):
                 
                 for user in top_users:
                     try:
-                        user_data = await hyoshcoder.users.find_one({"_id": user["_id"]})
-                        username = user_data.get("username", "Anonymous")
+                        # Get user details with proper error handling
+                        user_data = await client.get_users(user["_id"])
+                        username = user_data.username if user_data.username else user_data.first_name
                         leaderboard.append({
                             "user_id": user["_id"],
                             "username": username,
@@ -683,6 +689,11 @@ async def show_leaderboard(client: Client, message: Message):
                         })
                     except Exception as e:
                         logger.error(f"Error getting user data for {user['_id']}: {e}")
+                        leaderboard.append({
+                            "user_id": user["_id"],
+                            "username": "Anonymous",
+                            "renames": user["total_renames"]
+                        })
                         continue
                 
                 break  # Success, exit retry loop
@@ -703,7 +714,7 @@ async def show_leaderboard(client: Client, message: Message):
         for i, user in enumerate(leaderboard, start=1):
             text += (
                 f"{medals[i-1]} **#{i}:** "
-                f"[{user['username']}](tg://user?id={user['user_id']}) - "
+                f"[@{user['username']}](tg://user?id={user['user_id']}) - "
                 f"`{user['renames']} files`\n"
             )
         
