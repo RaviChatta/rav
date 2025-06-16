@@ -348,7 +348,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 
                 btn = InlineKeyboardMarkup([
                     
-                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                    [InlineKeyboardButton(" • ʙᴀᴄᴋ •", callback_data="help")]
                 ])
                 
                 response = {
@@ -362,7 +362,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 response = {
                     'caption': "⚠️ Error loading statistics. Please try again later.",
                     'reply_markup': InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                        [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
                     ]),
                     'photo': img
                 }
@@ -428,7 +428,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 )
             
                 buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                    [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
                 ])
             
                 try:
@@ -449,7 +449,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• ᴄʟᴏꜱᴇ •", callback_data="close"), 
-                 InlineKeyboardButton("Back", callback_data="help")]
+                 InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             response = {
                 'caption': Txt.FILE_NAME_TXT.format(format_template=format_template),
@@ -521,7 +521,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("• ᴠɪᴅᴇᴏ •", callback_data='setmedia_video'),
                     InlineKeyboardButton("• ᴅᴏᴄᴜᴍᴇɴᴛ •", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 • ʙᴀᴄᴋ •", callback_data='help')]
+                [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data='help')]
             ])
             
             try:
@@ -556,7 +556,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     InlineKeyboardButton("• ᴠɪᴅᴇᴏ •", callback_data='setmedia_video'),
                     InlineKeyboardButton("• ᴅᴏᴄᴜᴍᴇɴᴛ •", callback_data='setmedia_document')
                 ],
-                [InlineKeyboardButton("🔙 • ʙᴀᴄᴋ •", callback_data='help')]
+                [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data='help')]
             ])
             
             try:
@@ -579,7 +579,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📥 Set Dump Channel", callback_data="setdump_instructions")],
                 [InlineKeyboardButton("🗑️ Remove Dump Channel", callback_data="remove_dump")],
-                [InlineKeyboardButton("🔙 Back", callback_data="help")]
+                [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             
             try:
