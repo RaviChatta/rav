@@ -19,6 +19,7 @@ from findanime import AnimeFinder
 import os
 import sys
 
+
 logger = logging.getLogger(__name__)
 load_dotenv()
 
@@ -45,6 +46,17 @@ class Bot(Client):
         self.anime_finder: Optional[AnimeFinder] = None
         self.is_anime_finder_enabled = Config.ANIME_FINDER_ENABLED if hasattr(Config, 'ANIME_FINDER_ENABLED') else True
 
+    async def startup_tasks(self):
+        """Run background tasks"""
+        while True:
+            try:
+                await asyncio.sleep(3600)  # Run every hour
+                # Add your cleanup tasks here
+                logger.info("Running periodic cleanup tasks")
+            except Exception as e:
+                logger.error(f"Error in startup tasks: {e}")
+                await asyncio.sleep(300)
+
     async def cleanup_tasks(self):
         """Handle periodic cleanup tasks"""
         while True:
@@ -59,7 +71,6 @@ class Bot(Client):
         while True:
             try:
                 await hyoshcoder.update_leaderboards()
-
                 logger.info("Leaderboards refreshed successfully")
                 await asyncio.sleep(3600)
             except Exception as e:
@@ -73,12 +84,12 @@ class Bot(Client):
         self.anime_finder = AnimeFinder(self)
         await self.anime_finder.initialize()
         asyncio.create_task(self.anime_finder.adaptive_queue_processor())
+
     async def start(self):
         await super().start()
         
         await initialize_database()
         hyoshcoder.set_client(self)
-  #      await start_cleanup()
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
@@ -111,9 +122,10 @@ class Bot(Client):
             except Exception as e:
                 logger.error(f"Failed to send message in chat {chat_id}: {e}", exc_info=False)
 
+        # Start background tasks
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
-        asyncio.create_task(startup_tasks(app))
+        asyncio.create_task(self.startup_tasks())
 
     async def stop(self, *args):
         """Cleanup before shutdown"""
