@@ -81,7 +81,10 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filenames to remove problematic characters"""
-    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename).strip()
+    # First remove any invalid characters
+    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)
+    # Then ensure the filename is ASCII only to avoid encoding issues
+    return sanitized.encode('ascii', 'ignore').decode('ascii').strip()
 
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
     """Get or create semaphore for user"""
@@ -428,7 +431,7 @@ async def auto_rename_files(client: Client, message: Message):
                         else:
                             format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
 
-            # Prepare file paths
+            # Prepare file paths with ASCII-only filenames
             _, file_extension = os.path.splitext(file_name)
             renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
             renamed_file_path = os.path.join("downloads", renamed_file_name)
@@ -706,7 +709,7 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Beautiful leaderboard with auto-deletion in both group and private"""
+    """Beautiful leaderboard with auto-deletion"""
     try:
         loading_msg = await message.reply_text("🔄 Loading leaderboard...")
         
@@ -780,51 +783,15 @@ async def show_leaderboard(client: Client, message: Message):
             logger.error(f"Error getting user rank: {e}")
             text += "\n⚠️ Couldn't load your personal stats"
 
-        # Send to both private and group chats
-        sent_messages = []
+        # Send the full leaderboard to the chat where command was used
+        msg = await message.reply_text(text, disable_web_page_preview=True)
         
-        try:
-            # Send to private chat first
-            private_msg = await client.send_message(
-                message.from_user.id,
-                text,
-                disable_web_page_preview=True
-            )
-            sent_messages.append(private_msg)
-            
-            # If in group, send there too with different message
-            if message.chat.type != "private":
-                group_msg = await message.reply_text(
-                    "📊 Leaderboard results sent to your private chat!\n"
-                    "Here's a quick preview (will delete in 1 minute):\n\n" +
-                    "\n".join(text.split("\n")[:5]) + "\n...",
-                    disable_web_page_preview=True
-                )
-                sent_messages.append(group_msg)
-        except Exception as e:
-            logger.error(f"Error sending leaderboard to private chat: {e}")
-            # Fallback to group only if private fails
-            if message.chat.type != "private":
-                group_msg = await message.reply_text(
-                    text,
-                    disable_web_page_preview=True
-                )
-                sent_messages.append(group_msg)
-            else:
-                # If in private and failed, try once more
-                private_msg = await message.reply_text(
-                    text,
-                    disable_web_page_preview=True
-                )
-                sent_messages.append(private_msg)
-
         # Auto-delete after 1 minute
         await asyncio.sleep(60)
-        for msg in sent_messages:
-            try:
-                await msg.delete()
-            except:
-                pass
+        try:
+            await msg.delete()
+        except:
+            pass
         
     except Exception as e:
         logger.error(f"Error generating leaderboard: {e}")
