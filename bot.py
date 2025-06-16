@@ -58,6 +58,8 @@ class Bot(Client):
         while True:
             try:
                 await hyoshcoder.update_leaderboards()
+                asyncio.create_task(startup_tasks(app))
+
                 logger.info("Leaderboards refreshed successfully")
                 await asyncio.sleep(3600)
             except Exception as e:
