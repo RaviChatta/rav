@@ -113,15 +113,21 @@ async def mystats_command(client: Client, message: Message):
         
         text = (
             f"📊 <b>Your Statistics</b>\n\n"
-            f"{EMOJI['points']} <b>Points Balance:</b> {points}\n"
-            f"{EMOJI['premium']} <b>Premium Status:</b> {'Active ' + EMOJI['success'] if premium_status.get('is_premium', False) else 'Inactive ' + EMOJI['error']}\n"
-            f"{EMOJI['referral']} <b>Referrals:</b> {referral_stats.get('referred_count', 0)} "
-            f"(Earned {referral_stats.get('referral_earnings', 0)} {EMOJI['points']})\n\n"
-            f"{EMOJI['rename']} <b>Files Renamed</b>\n"
-            f"• Total: {stats.get('total_renamed', 0)}\n"
-            f"• Today: {stats.get('today', 0)}\n"
-            f"• This Week: {stats.get('this_week', 0)}\n"
-            f"• This Month: {stats.get('this_month', 0)}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"<b>💰 Points</b>\n"
+            f"┣ <i>Balance:</i> <code>{points}</code>\n"
+            f"┗ <i>Referral Earnings:</i> <code>{referral_stats.get('referral_earnings', 0)}</code>\n\n"
+            f"<b>🌟 Premium</b>\n"
+            f"┗ <i>Status:</i> {'<code>Active</code> ' + EMOJI['success'] if premium_status.get('is_premium', False) else '<code>Inactive</code> ' + EMOJI['error']}\n\n"
+            f"<b>👥 Referrals</b>\n"
+            f"┗ <i>Count:</i> <code>{referral_stats.get('referred_count', 0)}</code>\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"<b>📁 Files Renamed</b>\n"
+            f"┣ <i>Total:</i> <code>{stats.get('total_renamed', 0)}</code>\n"
+            f"┣ <i>Today:</i> <code>{stats.get('today', 0)}</code>\n"
+            f"┣ <i>This Week:</i> <code>{stats.get('this_week', 0)}</code>\n"
+            f"┗ <i>This Month:</i> <code>{stats.get('this_month', 0)}</code>\n"
+            f"━━━━━━━━━━━━━━━━━━"
         )
         
         if img:
@@ -163,7 +169,6 @@ async def status_command(client: Client, message: Message):
             f"⚡ <b>CPU Usage:</b> {cpu_usage}%\n\n"
             f"👥 <b>Total Users:</b> {total_users}\n"
             f"📝 <b>Files Renamed:</b> {total_files}\n\n"
-            f"🛠 <b>System Status:</b> Operational {EMOJI['success']}\n"
             f"📅 <b>Last Update:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
@@ -371,8 +376,8 @@ async def freepoints(client: Client, message: Message):
         buttons = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton("🛡️ Verify", url=short_url),
-                    InlineKeyboardButton("📤 Share Referral", switch_inline_query=f"{refer_link}")
+                    InlineKeyboardButton("🛡️ ᴠᴇʀɪꜰʏ", url=short_url),
+                    InlineKeyboardButton("📤ꜱʜᴀʀᴇ ʀᴇꜰᴇʀʀᴀʟ", switch_inline_query=f"{refer_link}")
                 ]
             ]
         )
@@ -554,8 +559,8 @@ async def handle_setmedia(client: Client, message: Message):
     """Handle media preference setting."""
     try:
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📁 Document", callback_data="setmedia_document")],
-            [InlineKeyboardButton("🎥 Video", callback_data="setmedia_video")]
+            [InlineKeyboardButton("• Document •", callback_data="setmedia_document")],
+            [InlineKeyboardButton("• ᴠɪᴅᴇᴏ •", callback_data="setmedia_video")]
         ])
         
         msg = await message.reply_text(
@@ -678,12 +683,17 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
 
     # Prepare buttons
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("MY COMMANDS", callback_data='help')],
-        [InlineKeyboardButton("My Stats", callback_data='mystats')],
-        [InlineKeyboardButton("Earn Points", callback_data='freepoints')],
-        [InlineKeyboardButton("Updates", url='https://t.me/Raaaaavi'),
-         InlineKeyboardButton("Support", url='https://t.me/Raaaaavi')]
+        [InlineKeyboardButton("• ᴍʏ ᴄᴏᴍᴍᴀɴᴅꜱ •", callback_data='help')],  # Single-row button
+        [
+            InlineKeyboardButton("• ꜱᴛᴀᴛꜱ •", callback_data='mystats'),
+            InlineKeyboardButton("• ᴇᴀʀɴ ᴘᴏɪɴᴛꜱ •", callback_data='freepoints')
+        ],
+        [
+            InlineKeyboardButton("• Updates •", url='https://t.me/Raaaaavi'),
+            InlineKeyboardButton("• Support •", url='https://t.me/Raaaaavi')
+        ]
     ])
+
 
     # Send welcome message with media
     try:
@@ -787,7 +797,7 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
         # Mark link as used
         await hyoshcoder.mark_point_used(point_id)
         
-        msg = await message.reply(f"✅ Success! {point_data['points']} points added to your account!")
+        msg = await message.reply(f"✅ 𝑺𝒖𝒄𝒄𝒆𝒔𝒔! {point_data['points']} 𝒑𝒐𝒊𝒏𝒕𝒔 𝒂𝒅𝒅𝒆𝒅 𝒕𝒐 𝒚𝒐𝒖𝒓 𝒂𝒄𝒄𝒐𝒖𝒏𝒕!")
         asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
 
