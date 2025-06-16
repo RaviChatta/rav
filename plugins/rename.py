@@ -26,6 +26,7 @@ user_batch_trackers = {}  # Track batch operations per user
 sequential_operations = {}  # For sequential mode
 file_processing_counters = {}  # Track individual file counters per user
 cancel_operations = {}  # Track cancel requests
+processed_files = set()  # Track processed files to prevent duplicate point deductions
 
 async def safe_edit_message(message: Message, text: str, **kwargs):
     """Safely edit a message with handling for MessageNotModified errors"""
@@ -41,6 +42,11 @@ async def safe_edit_message(message: Message, text: str, **kwargs):
 async def track_rename_operation(user_id: int, original_name: str, new_name: str, points_deducted: int):
     """Track successful rename operations in database"""
     try:
+        # Check if this file was already processed
+        file_hash = hash((user_id, original_name, new_name))
+        if file_hash in processed_files:
+            return True
+            
         await hyoshcoder.file_stats.insert_one({
             "user_id": user_id,
             "original_name": original_name,
@@ -74,6 +80,8 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
             "balance_after": (await hyoshcoder.get_points(user_id)) - points_deducted
         })
 
+        # Mark file as processed
+        processed_files.add(file_hash)
         return True
     except Exception as e:
         logger.error(f"Error tracking rename operation: {e}")
@@ -340,20 +348,28 @@ async def auto_rename_files(client: Client, message: Message):
             return await message.reply_text("Please set your rename format with /autorename")
 
         # File type handling
+        file_size = 0
         if message.document:
             file_id = message.document.file_id
             file_name = message.document.file_name
             media_type = media_preference or "document"
+            file_size = message.document.file_size
         elif message.video:
             file_id = message.video.file_id
             file_name = f"{message.video.file_name}.mp4" if not message.video.file_name.endswith('.mp4') else message.video.file_name
             media_type = media_preference or "video"
+            file_size = message.video.file_size
         elif message.audio:
             file_id = message.audio.file_id
             file_name = f"{message.audio.file_name}.mp3" if not message.audio.file_name.endswith('.mp3') else message.audio.file_name
             media_type = media_preference or "audio"
+            file_size = message.audio.file_size
         else:
             return await message.reply_text("Unsupported file type")
+
+        # Check file size (2GB limit)
+        if file_size > 2 * 1024 * 1024 * 1024:  # 2GB in bytes
+            return await message.reply_text("ᴛʜᴇ ғɪʟᴇ ᴇxᴄᴇᴇᴅs 2GB. ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴀ sᴍᴀʟʟᴇʀ ғɪʟᴇ ᴏʀ ᴍᴇᴅɪᴀ.")
 
         # Check for duplicate processing
         if file_id in renaming_operations:
@@ -480,7 +496,7 @@ async def auto_rename_files(client: Client, message: Message):
             if _bool_metadata:
                 metadata = await hyoshcoder.get_metadata_code(user_id)
                 if metadata:
-                    await safe_edit_message(queue_message, f"🔄 Adding metadata to #{current_file_number}")
+                    await safe_edit_message(queue_message, f"🔄 𝙧𝙚𝙣𝙖𝙢𝙞𝙣𝙜 𝙖𝙣𝙙 𝘼𝙙𝙙𝙞𝙣𝙜 𝙢𝙚𝙩𝙖𝙙𝙖𝙩𝙖 𝙩𝙤 #{current_file_number}")
                     success, error = await add_comprehensive_metadata(
                         renamed_file_path,
                         metadata_file_path,
@@ -502,20 +518,18 @@ async def auto_rename_files(client: Client, message: Message):
             custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
 
             # Get file info
+            file_size_human = humanbytes(file_size)
             if message.document:
-                file_size = humanbytes(message.document.file_size)
                 duration = convert(0)
             elif message.video:
-                file_size = humanbytes(message.video.file_size)
                 duration = convert(message.video.duration or 0)
             elif message.audio:
-                file_size = humanbytes(message.audio.file_size)
                 duration = convert(message.audio.duration or 0)
 
             caption = (
                 custom_caption.format(
                     filename=renamed_file_name,
-                    filesize=file_size,
+                    filesize=file_size_human,
                     duration=duration,
                 )
                 if custom_caption
@@ -592,7 +606,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
                             )
 
-                    # Track the operation
+                    # Track the operation (only if not already processed)
                     batch_data["points_used"] += rename_cost
                     await track_rename_operation(
                         user_id=user_id,
@@ -604,8 +618,11 @@ async def auto_rename_files(client: Client, message: Message):
                     # Delete queue message
                     await queue_message.delete()
 
-                    # Check if this is part of a media group (batch)
-                    if not hasattr(message, 'media_group_id') or message.media_group_id is None:
+                    # Check if this is part of a batch or single file
+                    if hasattr(message, 'media_group_id') and message.media_group_id:
+                        # For batch files, we'll handle completion in handle_media_group_completion
+                        pass
+                    else:
                         # Single file - send single success message
                         await send_single_success_message(
                             client, message, file_name, renamed_file_name,
@@ -661,8 +678,7 @@ async def auto_rename_files(client: Client, message: Message):
                 if file_processing_counters[user_id] <= 0:
                     del file_processing_counters[user_id]
 
-            # Deduct points
-            await hyoshcoder.deduct_points(user_id, rename_cost)
+            # Deduct points (already handled in track_rename_operation)
             user_semaphore.release()
 
     except Exception as e:
