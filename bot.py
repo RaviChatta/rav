@@ -10,6 +10,7 @@ from aiohttp import web
 from route import web_server
 from config import settings
 #from plugins.callback import start_cleanup
+from plugins.rename import startup_tasks
 from database.data import initialize_database, hyoshcoder
 from dotenv import load_dotenv
 import logging
@@ -58,7 +59,6 @@ class Bot(Client):
         while True:
             try:
                 await hyoshcoder.update_leaderboards()
-                asyncio.create_task(startup_tasks(app))
 
                 logger.info("Leaderboards refreshed successfully")
                 await asyncio.sleep(3600)
@@ -113,6 +113,7 @@ class Bot(Client):
 
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
+        asyncio.create_task(startup_tasks(app))
 
     async def stop(self, *args):
         """Cleanup before shutdown"""
