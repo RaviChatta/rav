@@ -26,6 +26,7 @@ from pyrogram.enums import ChatMemberStatus, ParseMode
 from config import settings
 from scripts import Txt
 from helpers.utils import get_random_photo, get_random_animation, get_shortlink
+from plugins.rename import *
 from database.data import hyoshcoder
 
 logger = logging.getLogger(__name__)
