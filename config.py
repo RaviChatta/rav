@@ -12,7 +12,7 @@ class Settings():
     # API et authentification du bot
     API_HASH = os.getenv("API_HASH", "a712d2b8486f26c4dee5127cc9ae0615")
     API_ID = os.getenv("API_ID", "20793620")
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "7644884863:AAH7ionirEaMHcT6OBGaDlvhV8SbN4EAXAI")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "7991682891:AAHq3QY1Bgf3UoucgLeAS2wCw-geUUlZAbI")
     
     # Configuration de la base de données
     DATA_URI = os.getenv("DATA_URI", "mongodb+srv://luffyravi2000:AfeOePR1ZVQLJL4P@cluster2.qbjobeq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster2")
