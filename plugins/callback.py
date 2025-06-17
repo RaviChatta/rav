@@ -426,11 +426,13 @@ async def cb_handler(client: Client, query: CallbackQuery):
             prompt = await query.message.edit_text(
                 "📝 <b>Send new metadata text</b>\n\n"
                 "Example: <code>@CulturedTeluguweeb</code>\n"
-                f"Current: <code>{escape(await hyoshcoder.get_metadata_code(user_id) or 'None'}</code>\n\n"
+                f"Current: <code>{escape(await hyoshcoder.get_metadata_code(user_id) or 'None')}</code>\n\n"
                 "Reply with text or /cancel",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="meta")]]
                 )
+            )
+            
             )
             metadata_states[user_id]["prompt_id"] = prompt.id
             return
