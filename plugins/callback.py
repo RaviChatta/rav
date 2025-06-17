@@ -5,6 +5,7 @@ import time
 import logging
 import string
 import secrets
+from html import escape
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     CallbackQuery, 
@@ -21,11 +22,12 @@ from database.data import hyoshcoder
 from config import settings
 from datetime import datetime
 from collections import defaultdict
-from pyrogram.errors import QueryIdInvalid, FloodWait, ChatWriteForbidden
+from pyrogram.errors import QueryIdInvalid, FloodWait, ChatWriteForbidden, BadRequest
 from asyncio import create_task, sleep
+from os import path
 
 logger = logging.getLogger(__name__)
-ADMIN_USER_ID = settings.ADMIN
+logger.setLevel(logging.INFO)
 
 # Emoji Constants
 EMOJI = {
@@ -82,6 +84,34 @@ I'm using this awesome file renaming bot with these features:
 Join me using this link: {invite_link}
 """
 
+async def safe_edit_media(message, media_type, media_file, caption, reply_markup):
+    """Safely edit media messages with proper error handling"""
+    try:
+        if media_type == 'photo':
+            media = InputMediaPhoto(media=media_file or await get_random_photo(), caption=caption)
+        elif media_type == 'animation':
+            media = InputMediaAnimation(media=media_file or await get_random_animation(), caption=caption)
+        else:
+            raise ValueError("Invalid media type")
+        
+        await message.edit_media(
+            media=media,
+            reply_markup=reply_markup
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Error editing media: {e}")
+        try:
+            await message.edit_text(
+                text=caption,
+                reply_markup=reply_markup,
+                disable_web_page_preview=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error editing text: {e}")
+            return False
+
 async def auto_delete_message(chat_id: int, message_id: int, delay: int = 30):
     """Automatically delete a message after a specified delay."""
     try:
@@ -94,6 +124,37 @@ async def auto_delete_message(chat_id: int, message_id: int, delay: int = 30):
         await auto_delete_message(chat_id, message_id, delay)
     except Exception as e:
         logger.error(f"Error auto-deleting message {message_id} in chat {chat_id}: {e}")
+
+async def is_valid_channel(client, chat_id):
+    """Check if a channel is valid and accessible"""
+    try:
+        if chat_id is None:
+            return False
+        await client.get_chat(chat_id)
+        return True
+    except Exception:
+        return False
+
+async def cleanup_states():
+    """Clean up expired states periodically"""
+    while True:
+        await asyncio.sleep(300)  # Clean every 5 minutes
+        current_time = time.time()
+        
+        # Clean expired metadata states
+        expired_meta = [uid for uid, state in metadata_states.items() 
+                       if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_meta:
+            metadata_states.pop(uid, None)
+            
+        # Clean expired caption states
+        expired_caption = [uid for uid, state in caption_states.items()
+                          if current_time - state.get('timestamp', 0) > 300]
+        for uid in expired_caption:
+            caption_states.pop(uid, None)
+
+# Start the cleanup task
+create_task(cleanup_states())
 
 @Client.on_message(filters.private & filters.text & ~filters.command(['start']))
 async def process_text_states(client, message: Message):
@@ -112,15 +173,17 @@ async def process_text_states(client, message: Message):
                 bool_meta = await hyoshcoder.get_metadata(user_id)
                 
                 await message.reply(
-                    f"✅ <b>Success!</b>\nMetadata set to:\n<code>{message.text}</code>",
+                    f"✅ <b>Success!</b>\nMetadata set to:\n<code>{escape(message.text)}</code>",
                     reply_markup=InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF)
                 )
                 
             metadata_states.pop(user_id, None)
+            return
             
         except Exception as e:
             await message.reply(f"❌ Error: {str(e)}")
             metadata_states.pop(user_id, None)
+            return
     
     # Handle caption state
     elif user_id in caption_states and not message.text.startswith('/'):
@@ -143,34 +206,19 @@ async def process_text_states(client, message: Message):
                 
                 await message.reply(
                     f"✅ <b>Caption Updated Successfully!</b>\n\n"
-                    f"📝 <b>Current Caption:</b>\n{current_caption}",
+                    f"📝 <b>Current Caption:</b>\n<code>{escape(current_caption) if current_caption else 'None'}</code>",
                     reply_markup=btn
                 )
                 
             caption_states.pop(user_id, None)
+            return
             
         except Exception as e:
             await message.reply(f"❌ Error: {str(e)}")
             caption_states.pop(user_id, None)
-    else:
-        message.continue_propagation()
-
-async def cleanup_states():
-    while True:
-        await asyncio.sleep(300)
-        current_time = time.time()
-        
-        # Clean metadata states
-        expired_meta = [uid for uid, state in metadata_states.items() 
-                       if current_time - state.get('timestamp', 0) > 300]
-        for uid in expired_meta:
-            metadata_states.pop(uid, None)
+            return
             
-        # Clean caption states
-        expired_caption = [uid for uid, state in caption_states.items()
-                          if current_time - state.get('timestamp', 0) > 300]
-        for uid in expired_caption:
-            caption_states.pop(uid, None)
+    message.continue_propagation()
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -178,14 +226,20 @@ async def cb_handler(client: Client, query: CallbackQuery):
     user_id = query.from_user.id
     
     try:
-        # Get common resources
-        img = await get_random_photo()
-        anim = await get_random_animation()
-        thumb = await hyoshcoder.get_thumbnail(user_id)
-        sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-        src_info = await hyoshcoder.get_src_info(user_id)
-        src_txt = "File name" if src_info == "file_name" else "File caption"
-        btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
+        # Get common resources with error handling
+        try:
+            img = await get_random_photo()
+            anim = await get_random_animation()
+            thumb = await hyoshcoder.get_thumbnail(user_id) or img
+            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
+            src_info = await hyoshcoder.get_src_info(user_id)
+            src_txt = "File name" if src_info == "file_name" else "File caption"
+            btn_sec_text = "Sequential ✅" if sequential_status else "Sequential ❌"
+        except Exception as e:
+            logger.error(f"Error getting resources: {e}")
+            await query.answer("❌ Error loading resources. Please try again.", show_alert=True)
+            return
+
         response = None
 
         if data == "home":
@@ -200,7 +254,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 ]
             ])
 
-
             response = {
                 'caption': Txt.START_TXT.format(query.from_user.mention),
                 'reply_markup': btn,
@@ -208,15 +261,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
             }
 
         elif data == "help":
-       
-            # Get user-specific settings
-            sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-            src_info = await hyoshcoder.get_src_info(user_id)
-    
             btn_seq_text = "ˢᵉᑫ✅" if sequential_status else "ˢᵉᑫ❌"
             src_txt = "File name" if src_info == "file_name" else "File caption"
     
-            # Build dynamic keyboard
             btn = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
@@ -243,13 +290,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 "reply_markup": btn,
                 "photo": img
             }
+
         elif data == "sequential":
-            # Toggle sequential mode
             current_status = await hyoshcoder.get_sequential_mode(user_id)
             new_status = not current_status
             await hyoshcoder.set_sequential_mode(user_id, new_status)
             
-            # Update the button text in the help menu
             btn_seq_text = "ˢᵉᑫ✅" if new_status else "ˢᵉᑫ❌"
             src_txt = "File name" if await hyoshcoder.get_src_info(user_id) == "file_name" else "File caption"
             
@@ -276,14 +322,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
             
             await query.message.edit_reply_markup(reply_markup=btn)
             await query.answer(f"Sequential mode {'enabled' if new_status else 'disabled'}")
-        
+
         elif data == "toggle_src":
-            # Toggle between file name and file caption as source
             current_src = await hyoshcoder.get_src_info(user_id)
             new_src = "file_caption" if current_src == "file_name" else "file_name"
             await hyoshcoder.set_src_info(user_id, new_src)
             
-            # Update the button text in the help menu
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
             btn_seq_text = "ˢᵉᑫ✅" if sequential_status else "ˢᵉᑫ❌"
             src_txt = "File name" if new_src == "file_name" else "File caption"
@@ -311,27 +355,20 @@ async def cb_handler(client: Client, query: CallbackQuery):
             
             await query.message.edit_reply_markup(reply_markup=btn)
             await query.answer(f"Source changed to {src_txt}")
+
         elif data == "mystats":
             try:
-                # Get user stats with proper date handling
-                stats = await hyoshcoder.get_user_file_stats(user_id)
+                stats = await hyoshcoder.get_user_file_stats(user_id) or {
+                    'total_renamed': 0,
+                    'today': 0,
+                    'this_week': 0,
+                    'this_month': 0
+                }
+                
                 points = await hyoshcoder.get_points(user_id)
                 premium_status = await hyoshcoder.check_premium_status(user_id)
                 user_data = await hyoshcoder.read_user(user_id)
                 referral_stats = user_data.get('referral', {})
-                
-                # Ensure we have default values if stats are None
-                if stats is None:
-                    stats = {
-                        'total_renamed': 0,
-                        'today': 0,
-                        'this_week': 0,
-                        'this_month': 0
-                    }
-                else:
-                    # Convert any integer timestamps to proper datetime objects
-                    if isinstance(stats.get('last_updated'), int):
-                        stats['last_updated'] = datetime.fromtimestamp(stats['last_updated'])
                 
                 text = (
                     f"📊 <b>Your Statistics</b>\n\n"
@@ -347,7 +384,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 )
                 
                 btn = InlineKeyboardMarkup([
-                    
                     [InlineKeyboardButton(" • ʙᴀᴄᴋ •", callback_data="help")]
                 ])
                 
@@ -369,7 +405,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
         elif data in ["meta", "metadata_0", "metadata_1"]:
             if data.startswith("metadata_"):
-                # Toggle the metadata status
                 new_status = data == "metadata_1"
                 await hyoshcoder.set_metadata(user_id, new_status)
             
@@ -377,7 +412,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             meta_code = await hyoshcoder.get_metadata_code(user_id) or "Not set"
             
             response = {
-                'caption': f"<b>Current Metadata:</b>\n\n➜ {meta_code}",
+                'caption': f"<b>Current Metadata:</b>\n\n➜ <code>{escape(meta_code)}</code>",
                 'reply_markup': InlineKeyboardMarkup(METADATA_ON if bool_meta else METADATA_OFF),
                 'photo': img
             }
@@ -391,7 +426,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             prompt = await query.message.edit_text(
                 "📝 <b>Send new metadata text</b>\n\n"
                 "Example: <code>@CulturedTeluguweeb</code>\n"
-                f"Current: {await hyoshcoder.get_metadata_code(user_id) or 'None'}\n\n"
+                f"Current: <code>{escape(await hyoshcoder.get_metadata_code(user_id) or 'None'}</code>\n\n"
                 "Reply with text or /cancel",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="meta")]]
@@ -403,47 +438,40 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "freepoints":
             try:
                 user = await hyoshcoder.users.find_one({"_id": user_id})
-            
-                # Generate or get referral code
-                if not user or not user.get("referral_code"):
+                referral_code = user.get("referral_code") if user else secrets.token_hex(4)
+                
+                if not user or not referral_code:
                     referral_code = secrets.token_hex(4)
                     await hyoshcoder.users.update_one(
                         {"_id": user_id},
                         {"$set": {"referral_code": referral_code}},
                         upsert=True
                     )
-                else:
-                    referral_code = user["referral_code"]
-            
+                
                 refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-            
-                # Simple message with just referral info
+                
                 caption = (
                     "**🎯 Your Referral Link**\n\n"
                     f"Share this link to earn {settings.REFER_POINT_REWARD} points per referral:\n"
-                    f"`<code>{refer_link}<code>`\n\n"
-                    "💡 Use <code>/freepoints<code> for earning points via ads\n"
-                    "💡 Use <code>/genpoints <code> to generate earning links\n\n"
-                    
+                    f"`{refer_link}`\n\n"
+                    "💡 Use `/freepoints` for earning points via ads\n"
+                    "💡 Use `/genpoints` to generate earning links\n\n"
                 )
-            
+                
                 buttons = InlineKeyboardMarkup([
                     [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
                 ])
-            
-                try:
-                    await query.message.edit_text(
-                        text=caption,
-                        reply_markup=buttons,
-                        disable_web_page_preview=True
-                    )
-                except Exception as e:
-                    logger.error(f"Error editing message: {e}")
-                    await query.answer("Error showing referral link", show_alert=True)
+                
+                response = {
+                    'text': caption,
+                    'reply_markup': buttons,
+                    'disable_web_page_preview': True
+                }
             
             except Exception as e:
                 logger.error(f"Callback freepoints error: {e}")
                 await query.answer("❌ Error loading referral info", show_alert=True)
+                return
 
         elif data == "file_names":
             format_template = await hyoshcoder.get_format_template(user_id) or "Not set"
@@ -466,17 +494,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                  InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             
-            try:
-                await query.message.edit_media(
-                    media=InputMediaPhoto(media=img, caption=f"📝 <b>Current Caption:</b>\n{current_caption}"),
-                    reply_markup=btn
-                )
-            except Exception as e:
-                logger.error(f"Error updating caption menu: {e}")
-                await query.message.edit_text(
-                    text=f"📝 <b>Current Caption:</b>\n{current_caption}",
-                    reply_markup=btn
-                )
+            await safe_edit_media(
+                query.message,
+                'photo',
+                img,
+                f"📝 <b>Current Caption:</b>\n<code>{escape(current_caption)}</code>",
+                btn
+            )
+            return
 
         elif data == "set_caption":
             caption_states[user_id] = {
@@ -487,7 +512,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             prompt = await query.message.edit_text(
                 "📝 <b>Send new caption text</b>\n\n"
                 "Example: <code>📕Name ➠ : {filename}\n🔗 Size ➠ : {filesize}\n⏰ Duration ➠ : {duration}</code>\n\n"
-                f"Current: {await hyoshcoder.get_caption(user_id) or 'None'}\n\n"
+                f"Current: <code>{escape(await hyoshcoder.get_caption(user_id) or 'None')}</code>\n\n"
                 "Reply with text or /cancel",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="caption")]]
@@ -507,11 +532,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
-            await query.message.edit_media(
-                media=InputMediaPhoto(response['photo']),
-                caption=response['caption'],
-                reply_markup=response['reply_markup']
+            await safe_edit_media(
+                query.message,
+                'photo',
+                img,
+                response['caption'],
+                response['reply_markup']
             )
+            return
         
         elif data == "setmedia":
             current_media = await hyoshcoder.get_media_preference(user_id)
@@ -524,20 +552,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data='help')]
             ])
             
-            try:
-                await query.message.edit_media(
-                    media=InputMediaPhoto(
-                        media=img,
-                        caption=f"🎥 <b>Current Media Preference:</b> {current_media_text}"
-                    ),
-                    reply_markup=btn
-                )
-            except Exception as e:
-                logger.error(f"Error updating media settings menu: {e}")
-                await query.message.edit_text(
-                    text=f"🎥 <b>Current Media Preference:</b> {current_media_text}",
-                    reply_markup=btn
-                )
+            await safe_edit_media(
+                query.message,
+                'photo',
+                img,
+                f"🎥 <b>Current Media Preference:</b> {current_media_text}",
+                btn
+            )
+            return
         
         elif data.startswith("setmedia_"):
             media_type = data.split("_")[1]
@@ -548,9 +570,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await hyoshcoder.set_media_preference(user_id, media_type)
             await query.answer(f"Media preference set to {media_type}", show_alert=True)
             
-            # Return to media menu
-            current_media = media_type
-            current_media_text = current_media.capitalize()
+            current_media_text = media_type.capitalize()
             btn = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("• ᴠɪᴅᴇᴏ •", callback_data='setmedia_video'),
@@ -559,20 +579,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data='help')]
             ])
             
-            try:
-                await query.message.edit_media(
-                    media=InputMediaPhoto(
-                        media=img,
-                        caption=f"🎥 <b>Current Media Preference:</b> {current_media_text}"
-                    ),
-                    reply_markup=btn
-                )
-            except Exception as e:
-                logger.error(f"Error updating media settings after change: {e}")
-                await query.message.edit_text(
-                    text=f"🎥 <b>Current Media Preference:</b> {current_media_text}",
-                    reply_markup=btn
-                )
+            await safe_edit_media(
+                query.message,
+                'photo',
+                img,
+                f"🎥 <b>Current Media Preference:</b> {current_media_text}",
+                btn
+            )
+            return
                 
         elif data == "setdump":
             current_dump = await hyoshcoder.get_user_channel(user_id)
@@ -582,20 +596,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="help")]
             ])
             
-            try:
-                await query.message.edit_media(
-                    media=InputMediaPhoto(
-                        media=img,
-                        caption=f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>"
-                    ),
-                    reply_markup=btn
-                )
-            except Exception as e:
-                logger.error(f"Error updating dump channel menu: {e}")
-                await query.message.edit_text(
-                    text=f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>",
-                    reply_markup=btn
-                )
+            await safe_edit_media(
+                query.message,
+                'photo',
+                img,
+                f"📤 <b>Current Dump Channel</b>: <code>{current_dump or 'Not set'}</code>",
+                btn
+            )
+            return
         
         elif data == "setdump_instructions":
             await query.answer("ℹ️ Use /set_dump <channel_id> to configure dump channel.", show_alert=True)
@@ -611,11 +619,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 'reply_markup': btn,
                 'photo': img
             }
-            await query.message.edit_media(
-                media=InputMediaPhoto(response['photo']),
-                caption=response['caption'],
-                reply_markup=response['reply_markup']
+            await safe_edit_media(
+                query.message,
+                'photo',
+                img,
+                response['caption'],
+                response['reply_markup']
             )
+            return
         
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
@@ -649,7 +660,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = {
                 'caption': Txt.THUMBNAIL_TXT,
                 'reply_markup': btn,
-                'photo': thumb if thumb else img
+                'photo': thumb
             }
         
         elif data == "showThumb":
@@ -661,7 +672,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             response = {
                 'caption': caption,
                 'reply_markup': btn,
-                'photo': thumb if thumb else img
+                'photo': thumb
             }
         
         elif data == "close":
@@ -674,48 +685,48 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
         
         # Send response
-# Send response
         if response:
             try:
                 if 'photo' in response:
-                    if query.message.photo:
-                        await query.message.edit_media(
-                            media=InputMediaPhoto(
-                                media=response['photo'] or await get_random_photo(),
-                                caption=response['caption']
-                            ),
-                            reply_markup=response['reply_markup']
-                        )
-                    else:
-                        await query.message.delete()
-                        await client.send_photo(
-                            chat_id=query.message.chat.id,
-                            photo=response['photo'] or await get_random_photo(),
-                            caption=response['caption'],
-                            reply_markup=response['reply_markup']
+                    if not await safe_edit_media(
+                        query.message,
+                        'photo',
+                        response['photo'],
+                        response['caption'],
+                        response['reply_markup']
+                    ):
+                        await query.message.edit_text(
+                            text=response['caption'],
+                            reply_markup=response['reply_markup'],
+                            disable_web_page_preview=True
                         )
                 elif 'animation' in response:
-                    await query.message.edit_media(
-                        media=InputMediaAnimation(
-                            media=response['animation'],
-                            caption=response['caption']
-                        ),
-                        reply_markup=response['reply_markup']
+                    await safe_edit_media(
+                        query.message,
+                        'animation',
+                        response['animation'],
+                        response['caption'],
+                        response['reply_markup']
+                    )
+                elif 'text' in response:
+                    await query.message.edit_text(
+                        text=response['text'],
+                        reply_markup=response['reply_markup'],
+                        disable_web_page_preview=response.get('disable_web_page_preview', True)
                     )
                 else:
                     await query.message.edit_text(
-                        text=response.get('caption', response.get('text', '')),
+                        text=response.get('caption', ''),
                         reply_markup=response['reply_markup'],
-                        disable_web_page_preview=True,
-                        parse_mode=enums.ParseMode.HTML
+                        disable_web_page_preview=True
                     )
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-                await cb_handler(client, query)
-            except ChatWriteForbidden:
-                logger.warning(f"Can't write in chat with {user_id}")
+                return await cb_handler(client, query)
+            except BadRequest as e:
+                logger.error(f"BadRequest: {e}")
             except Exception as e:
-                logger.error(f"Error updating message: {e}")
+                logger.error(f"Error sending response: {e}")
         
         # Answer the callback query
         try:
@@ -727,7 +738,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        await cb_handler(client, query)
+        return await cb_handler(client, query)
     except Exception as e:
         logger.error(f"Callback handler error: {e}", exc_info=True)
         try:
