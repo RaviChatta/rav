@@ -10,9 +10,9 @@ id_pattern = re.compile(r'^-?\d+$')
 
 class Settings():
     # API et authentification du bot
-    API_HASH = os.getenv("API_HASH", "449da69cf4081dc2cc74eea828d0c490")
-    API_ID = os.getenv("API_ID", "24500584")
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "7644884863:AAGIeaSQnTdnUkk3m3U3JMrVucJYssxZO-E")
+    API_HASH = os.getenv("API_HASH", "a712d2b8486f26c4dee5127cc9ae0615")
+    API_ID = os.getenv("API_ID", "20793620")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "7644884863:AAH7ionirEaMHcT6OBGaDlvhV8SbN4EAXAI")
     
     # Configuration de la base de données
     DATA_URI = os.getenv("DATA_URI", "mongodb+srv://luffyravi2000:AfeOePR1ZVQLJL4P@cluster2.qbjobeq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster2")
@@ -44,7 +44,7 @@ class Settings():
         return default
 
     # LOG_CHANNEL : Peut servir de canal de log
-    LOG_CHANNEL = safe_int("LOG_CHANNEL",-1001333766434)
+    LOG_CHANNEL = safe_int("LOG_CHANNEL", -1001333766434)
     
     # CHANNEL_LOG : Autre canal de log si nécessaire
     CHANNEL_LOG = safe_int("CHANNEL_LOG", -1001333766434)
