@@ -88,6 +88,6 @@ class Settings():
     LEADERBOARD_DELETE_TIMER = 30
     # URL par défaut pour l'image de démarrage ou de log
     IMAGES = os.getenv("IMAGES", "https://files.catbox.moe/3fnqwm.png https://files.catbox.moe/ikzje9.png ")
-    ANIMATIONS = os.getenv("ANIMATIONS", "CgACAgUAAxkBAAI0Vmg7Mvvv5pviZa3X3EoOcPjELHRvAAKIFAACh_PgVUqDkRmyCLEnHgQ CgACAgUAAxkBAAI0VGg7MvR9HxCuyV4L4aWZWKGPUFV2AAKHFAACh_PgVacMEeJozkEcHgQ").strip()
+    ANIMATIONS = os.getenv("ANIMATIONS", "CgACAgUAAxkBAAMCaFHMN42d-6xOYmAJLrHy7GZSuY4AAkcXAAJropFWeHj762J8d5AeBA CgACAgUAAxkBAAMEaFHMSnEtf6CWZvm64ndibmIk5mwAAkgXAAJropFWDeIwYreCjHIeBA").strip()
 # Crée une instance de Settings pour un accès global
 settings = Settings()
