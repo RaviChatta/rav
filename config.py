@@ -1,5 +1,5 @@
 import re, os, time
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 import random
 import logging
 logger = logging.getLogger(__name__)
