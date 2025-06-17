@@ -110,7 +110,7 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
 
     # Global control: Only update once every 1.5 seconds per message
     last = last_progress_edit.get(message.chat.id, 0)
-    if now - last < 1.5 and current != total:
+    if now - last < 2.5 and current != total:
         return
     last_progress_edit[message.chat.id] = now
 
