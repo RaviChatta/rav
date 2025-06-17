@@ -701,7 +701,7 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
         ],
         [
             InlineKeyboardButton("• Updates •", url='https://t.me/TFIBOTS'),
-            InlineKeyboardButton("• Support •", url='https://t.me/+Kjrko1kMS6czMjdl')
+            InlineKeyboardButton("• Support •", url='https://t.me/TFIBOTS_SUPPORT')
         ]
     ])
 
