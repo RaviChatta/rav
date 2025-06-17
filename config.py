@@ -29,8 +29,8 @@ class Settings():
     BOT_UPTIME  = time.time()
     
     # Liste des administrateurs (IDs séparés par espace)
-    ADMIN = [int(admin) for admin in os.getenv('ADMIN', '1047253913').split() if admin.isdigit()]
-    BOT_OWNER = int(os.environ.get("BOT_OWNER", "1047253913"))
+    ADMIN = [int(admin) for admin in os.getenv('ADMIN', '7259016766').split() if admin.isdigit()]
+    BOT_OWNER = int(os.environ.get("BOT_OWNER", "7259016766"))
 
     # Liste des canaux pour le force subscribe (séparés par une virgule)
     FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', ' ').split(',')
@@ -54,7 +54,7 @@ class Settings():
     
     # UPDATE_CHANNEL et SUPPORT_GROUP restent en chaîne de caractères
     UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", -1002768753641)
-    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -4849239303)
+    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002563598431)
     
     SHORTEN_SERVICES = [
         {
