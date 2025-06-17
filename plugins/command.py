@@ -69,6 +69,58 @@ async def send_auto_delete_message(
     asyncio.create_task(auto_delete_message(msg, delete_after))
     return msg
 
+async def send_welcome_media(
+    client: Client,
+    chat_id: int,
+    caption: str,
+    reply_markup: InlineKeyboardMarkup = None
+) -> bool:
+    """Send welcome media with proper fallback handling."""
+    try:
+        # Try animation first
+        anim = await get_random_animation()
+        if anim:
+            await client.send_animation(
+                chat_id=chat_id,
+                animation=anim,
+                caption=caption,
+                reply_markup=reply_markup
+            )
+            return True
+        
+        # Fallback to photo
+        img = await get_random_photo()
+        if img:
+            await client.send_photo(
+                chat_id=chat_id,
+                photo=img,
+                caption=caption,
+                reply_markup=reply_markup
+            )
+            return True
+        
+        # Final fallback to text
+        await client.send_message(
+            chat_id=chat_id,
+            text=caption,
+            reply_markup=reply_markup
+        )
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error sending welcome media: {e}")
+        # Try text-only fallback
+        try:
+            await client.send_message(
+                chat_id=chat_id,
+                text=caption,
+                reply_markup=reply_markup
+            )
+            return True
+        except Exception as fallback_error:
+            logger.error(f"Fallback error: {fallback_error}")
+            return False
+
 @Client.on_message(filters.private & filters.photo)
 async def addthumbs(client: Client, message: Message):
     """Handle thumbnail setting."""
@@ -84,6 +136,7 @@ async def addthumbs(client: Client, message: Message):
             f"{EMOJI['error']} Failed to save thumbnail",
             delete_after=15
         )
+
 @Client.on_message(filters.command("mystats") & filters.private)
 async def mystats_command(client: Client, message: Message):
     """Handle /mystats command to show user statistics."""
@@ -145,6 +198,7 @@ async def mystats_command(client: Client, message: Message):
         logger.error(f"Error in mystats command: {e}")
         msg = await message.reply_text("⚠️ Error loading statistics. Please try again later.")
         asyncio.create_task(auto_delete_message(msg, 30))
+
 @Client.on_message(filters.command("status") & filters.private)
 async def status_command(client: Client, message: Message):
     """Handle /status command to show bot statistics."""
@@ -177,6 +231,7 @@ async def status_command(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Error in status command: {e}")
         await message.reply_text("⚠️ Could not retrieve status information. Please try again later.")
+
 @Client.on_message(filters.command(["mystats", "status"]) & filters.private)
 async def additional_commands(client: Client, message: Message):
     """Handle additional commands."""
@@ -194,6 +249,7 @@ async def additional_commands(client: Client, message: Message):
         logger.error(f"Error in additional commands: {e}")
         msg = await message.reply_text("⚠️ An error occurred. Please try again.")
         asyncio.create_task(auto_delete_message(msg, 30))
+
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
     """Generate a points earning link for users."""
@@ -614,51 +670,6 @@ async def set_media_preference_handler(client: Client, callback_query: CallbackQ
             show_alert=True
         )
 
-@Client.on_message(filters.command(["start", "help", "set_caption", "del_caption", 
-                                  "view_caption", "viewthumb", "delthumb", "metadata",
-                                  "donate", "premium", "plan", "bought"]) & filters.private)
-async def command_handler(client: Client, message: Message):
-    """Main command handler with auto-delete for all commands except start."""
-    try:
-        cmd = message.command[0].lower()
-        args = message.command[1:]
-
-        # Handle start command separately (no auto-delete)
-        if cmd == 'start':
-            await handle_start_command(client, message, args)
-            return
-
-        # Process other commands
-        if cmd == "help":
-            await handle_help(client, message)
-        elif cmd == "set_caption":
-            await handle_set_caption(client, message, args)
-        elif cmd in ["del_caption", "delcaption"]:
-            await handle_del_caption(client, message)
-        elif cmd in ["see_caption", "view_caption"]:
-            await handle_view_caption(client, message)
-        elif cmd in ["viewthumb", "view_thumb"]:
-            await handle_view_thumb(client, message)
-        elif cmd in ["del_thumb", "delthumb"]:
-            await handle_del_thumb(client, message)
-        elif cmd in ["donate", "premium", "plan", "bought"]:
-            await handle_premium(client, message)
-
-        # Auto-delete the command message and response
-        if cmd != "start":  # Don't auto-delete start commands
-            asyncio.create_task(auto_delete_message(message, settings.AUTO_DELETE_TIME))
-
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-    except Exception as e:
-        logger.error(f"Command error: {e}")
-        await send_auto_delete_message(
-            client,
-            message.chat.id,
-            "⚠️ An error occurred. Please try again.",
-            delete_after=30
-        )
-
 async def handle_start_command(client: Client, message: Message, args: List[str]):
     """Handle start command with referral and point redemption."""
     user = message.from_user
@@ -694,34 +705,29 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
         ]
     ])
 
-
     # Send welcome message with media
     try:
-        anim = await get_random_animation()
-        if anim:
-            await message.reply_animation(
-                animation=anim,
-                caption=Txt.START_TXT.format(user.mention),
-                reply_markup=buttons
-            )
-            return
+        # Try to send with media first
+        media_sent = await send_welcome_media(
+            client=client,
+            chat_id=message.chat.id,
+            caption=Txt.START_TXT.format(user.mention),
+            reply_markup=buttons
+        )
         
-        img = await get_random_photo()
-        if img:
-            await message.reply_photo(
-                photo=img,
-                caption=Txt.START_TXT.format(user.mention),
+        if not media_sent:
+            # Fallback to text if media fails
+            await message.reply_text(
+                text=Txt.START_TXT.format(user.mention),
                 reply_markup=buttons
             )
-            return
     except Exception as e:
-        logger.error(f"Error sending welcome media: {e}")
-
-    # Fallback to text if media fails
-    await message.reply_text(
-        text=Txt.START_TXT.format(user.mention),
-        reply_markup=buttons
-    )
+        logger.error(f"Error in welcome message: {e}")
+        # Final fallback if everything fails
+        await message.reply_text(
+            text=Txt.START_TXT.format(user.mention),
+            reply_markup=buttons
+        )
 
 async def handle_referral(client: Client, user: User, referral_code: str):
     """Handle referral registration."""
@@ -809,7 +815,6 @@ async def handle_point_redemption(client: Client, message: Message, point_id: st
             "**An error occurred. Please try again.**",
             delete_after=30
         )
-
 
 async def handle_autorename(client: Client, message: Message, args: List[str]):
     """Handle the /autorename command to set rename template."""
@@ -1011,14 +1016,10 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
         asyncio.create_task(auto_delete_message(msg, 60))
         asyncio.create_task(auto_delete_message(message, 60))
 
-
-# Register all commands
-@Client.on_message(filters.command([
-    "start", "help", "autorename", "set_caption", "del_caption", 
-    "view_caption", "viewthumb", "delthumb", "set_dump",
-    "view_dump", "del_dump", "freepoints", "genpoints",
-     "refer", "premium", "donate"
-]) & filters.private)
+@Client.on_message(filters.command(["start", "help", "autorename", "set_caption", "del_caption", 
+                                  "view_caption", "viewthumb", "delthumb", "set_dump",
+                                  "view_dump", "del_dump", "freepoints", "genpoints",
+                                  "refer", "premium", "donate"]) & filters.private)
 async def command_dispatcher(client: Client, message: Message):
     """Dispatch commands to appropriate handlers."""
     try:
@@ -1055,8 +1056,6 @@ async def command_dispatcher(client: Client, message: Message):
             await freepoints(client, message)
         elif cmd == "genpoints":
             await generate_point_link(client, message)
-        elif cmd in ["leaderboard", "lb"]:
-            await handle_leaderboard(client, message)
         elif cmd == "refer":
             await refer(client, message)
         elif cmd in ["premium", "donate"]:
