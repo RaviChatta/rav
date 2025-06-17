@@ -19,6 +19,7 @@ from config import settings
 import logging
 
 logger = logging.getLogger(__name__)
+last_progress_edit = {}
 
 # Patterns for extracting season numbers
 SEASON_PATTERNS = [
@@ -100,60 +101,77 @@ async def extract_quality(filename: str) -> str:
             return extractor(match)
     return "Unknown"
 
+
+
+
 async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
     diff = now - start
-    if round(diff % 5.00) == 0 or current == total:        
+
+    # Global control: Only update once every 1.5 seconds per message
+    last = last_progress_edit.get(message.chat.id, 0)
+    if now - last < 1.5 and current != total:
+        return
+    last_progress_edit[message.chat.id] = now
+
+    try:
         percentage = current * 100 / total
-        speed = current / diff
+        speed = current / diff if diff > 0 else 0
         elapsed_time = round(diff) * 1000
-        time_to_completion = round((total - current) / speed) * 1000
+        time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
         estimated_total_time = elapsed_time + time_to_completion
 
-        elapsed_time = TimeFormatter(milliseconds=elapsed_time)
-        estimated_total_time = TimeFormatter(milliseconds=estimated_total_time)
+        elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
+        estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
 
         progress = "{0}{1}".format(
-            ''.join(["█" for i in range(math.floor(percentage / 5))]),
-            ''.join(["░" for i in range(20 - math.floor(percentage / 5))])
-        )            
-        tmp = progress + Txt.PROGRESS_BAR.format( 
+            ''.join(["█" for _ in range(math.floor(percentage / 5))]),
+            ''.join(["░" for _ in range(20 - math.floor(percentage / 5))])
+        )
+
+        tmp = progress + Txt.PROGRESS_BAR.format(
             round(percentage, 2),
             humanbytes(current),
             humanbytes(total),
-            humanbytes(speed),            
-            estimated_total_time if estimated_total_time != '' else "0 s"
+            humanbytes(speed),
+            estimated_total_time_str if estimated_total_time_str != '' else "0s"
         )
-        try:
-            await message.edit(
-                text=f"{ud_type}\n\n{tmp}",               
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• Cancel •", callback_data="close")]])                                               
-            )
-        except:
-            pass
 
-def humanbytes(size):    
+        await message.edit(
+            text=f"{ud_type}\n\n{tmp}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("• Cancel •", callback_data="close")]
+            ])
+        )
+    except Exception as e:
+        pass  # Optionally log e
+
+
+def humanbytes(size):
     if not size:
-        return ""
+        return "0B"
     power = 2**10
     n = 0
     Dic_powerN = {0: ' ', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
-    while size > power:
+    while size >= power and n < 4:
         size /= power
         n += 1
-    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
+    return f"{round(size, 2)} {Dic_powerN[n]}B"
+
 
 def TimeFormatter(milliseconds: int) -> str:
     seconds, milliseconds = divmod(int(milliseconds), 1000)
     minutes, seconds = divmod(seconds, 60)
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
-    tmp = ((str(days) + "d, ") if days else "") + \
-        ((str(hours) + "h, ") if hours else "") + \
-        ((str(minutes) + "m, ") if minutes else "") + \
-        ((str(seconds) + "s, ") if seconds else "") + \
-        ((str(milliseconds) + "ms, ") if milliseconds else "")
-    return tmp[:-2] 
+    parts = []
+    if days: parts.append(f"{days}d")
+    if hours: parts.append(f"{hours}h")
+    if minutes: parts.append(f"{minutes}m")
+    if seconds: parts.append(f"{seconds}s")
+    if milliseconds: parts.append(f"{milliseconds}ms")
+    return " ".join(parts) if parts else "0s"
+
 
 def convert(seconds):
     seconds = seconds % (24 * 3600)
