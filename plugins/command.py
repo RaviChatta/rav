@@ -689,8 +689,8 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
             InlineKeyboardButton("• ᴇᴀʀɴ ᴘᴏɪɴᴛꜱ •", callback_data='freepoints')
         ],
         [
-            InlineKeyboardButton("• Updates •", url='https://t.me/Raaaaavi'),
-            InlineKeyboardButton("• Support •", url='https://t.me/Raaaaavi')
+            InlineKeyboardButton("• Updates •", url='https://t.me/TFIBOTS'),
+            InlineKeyboardButton("• Support •", url='https://t.me/+Kjrko1kMS6czMjdl')
         ]
     ])
 
