@@ -13,10 +13,9 @@ shortzy
 filelock
 psutil
 aiofiles
-aiohttp
 cloudinary
 PyPDF2
 pdf2image
 utils
 playwright
-
+python-dotenv
