@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 Config = settings
-SUPPORT_CHAT = -1002072871676
+SUPPORT_CHAT = -1002679596200
 
 class Bot(Client):
     def __init__(self):
