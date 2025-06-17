@@ -815,12 +815,11 @@ async def handle_autorename(client: Client, message: Message, args: List[str]):
     """Handle the /autorename command to set rename template."""
     if not args:
         msg = await message.reply_text(
-            "**Please provide a rename template**\n\n"
-            "Example:\n"
-            "`/autorename MyFile_[episode]_[quality]`\n\n"
-            "Available placeholders:\n"
-            "[filename], [size], [duration], [date], [time]"
+            "/autorename ᴏɴᴇ ᴘᴜɴᴄʜ ᴍᴀɴ [Sseason - EPepisode - [Quality] [Dual]\n\n"
+            "⟩ ᴄᴏᴍᴍᴀɴᴅ:\n"
+            "/autorename – ᴜꜱᴇ ᴘʟᴀᴄᴇʜᴏʟᴅᴇʀꜱ ᴛᴏ ᴍᴀɴᴀɢᴇ ꜰɪʟᴇɴᴀᴍᴇꜱ."
         )
+
         asyncio.create_task(auto_delete_message(msg, 60))
         asyncio.create_task(auto_delete_message(message, 60))
         return
