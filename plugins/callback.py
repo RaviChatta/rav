@@ -433,7 +433,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 )
             )
             
-            )
+            
             metadata_states[user_id]["prompt_id"] = prompt.id
             return
 
