@@ -33,7 +33,6 @@ class Bot(Client):
             workers=8,
             plugins={"root": "plugins"},
             sleep_threshold=30,
-            max_concurrent_transmissions=4,
             in_memory=True,
             takeout=True
         )
