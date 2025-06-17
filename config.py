@@ -54,7 +54,7 @@ class Settings():
     
     # UPDATE_CHANNEL et SUPPORT_GROUP restent en chaîne de caractères
     UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", -1002768753641)
-    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002679596200)
+    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -4849239303)
     
     SHORTEN_SERVICES = [
         {
