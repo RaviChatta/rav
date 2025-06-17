@@ -12,11 +12,11 @@ class Settings():
     # API et authentification du bot
     API_HASH = os.getenv("API_HASH", "449da69cf4081dc2cc74eea828d0c490")
     API_ID = os.getenv("API_ID", "24500584")
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "1599848664:AAHc75il2BECWK39tiPv4pVf-gZdPt4MFcw")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "7644884863:AAGIeaSQnTdnUkk3m3U3JMrVucJYssxZO-E")
     
     # Configuration de la base de données
-    DATA_URI = os.getenv("DATA_URI", "mongodb+srv://erenyeagermikasa84:pkbOXb3ulzi9cEFd@cluster0.ingt8mt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-    DATA_NAME = os.getenv("DATA_NAME", "erenyeagermikasa84")
+    DATA_URI = os.getenv("DATA_URI", "mongodb+srv://luffyravi2000:AfeOePR1ZVQLJL4P@cluster2.qbjobeq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster2")
+    DATA_NAME = os.getenv("DATA_NAME", "Cluster2")
     
     # Répertoires temporaires et de téléchargement
     TEMP_DIR = os.getenv("TEMP_DIR", "temp/")
@@ -33,7 +33,7 @@ class Settings():
     BOT_OWNER = int(os.environ.get("BOT_OWNER", "1047253913"))
 
     # Liste des canaux pour le force subscribe (séparés par une virgule)
-    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', ' CulturedTeluguweeb').split(',')
+    FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', ' ').split(',')
     
         
     # Récupération et conversion sécurisée des IDs de chat
@@ -50,11 +50,11 @@ class Settings():
     CHANNEL_LOG = safe_int("CHANNEL_LOG", -1001333766434)
     
     # DUMP_CHANNEL : Canal pour l'envoi des fichiers renommer
-    DUMP_CHANNEL = safe_int("DUMP_CHANNEL", None)
+    DUMP_CHANNEL = safe_int("DUMP_CHANNEL", -1002636559428)
     
     # UPDATE_CHANNEL et SUPPORT_GROUP restent en chaîne de caractères
-    UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", None)
-    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002072871676)
+    UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", -1002768753641)
+    SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", -1002679596200)
     
     SHORTEN_SERVICES = [
         {
@@ -81,7 +81,7 @@ class Settings():
         Example: { "domain": "pocolinks.com", "api": "xxx" }
         """
         return random.choice(self.SHORTEN_SERVICES)
-    BOT_USERNAME = os.getenv("BOT_USERNAME", "Forwardmsgremoverbot")
+    BOT_USERNAME = os.getenv("BOT_USERNAME", "Autorenameboabot")
     TOKEN_ID_LENGTH = 8  # Or whatever you use
     SHORTENER_POINT_REWARD = 50 
     REFER_POINT_REWARD = 300  # or whatever value you want
