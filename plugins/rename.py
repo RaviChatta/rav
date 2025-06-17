@@ -9,6 +9,7 @@ import re
 import asyncio
 import uuid
 import logging
+import math
 from typing import Optional, Tuple, Dict, List
 
 # Database imports
@@ -89,9 +90,7 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filenames to remove problematic characters"""
-    # First remove any invalid characters
     sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)
-    # Then ensure the filename is ASCII only to avoid encoding issues
     return sanitized.encode('ascii', 'ignore').decode('ascii').strip()
 
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
@@ -222,7 +221,6 @@ async def get_user_rank(user_id: int) -> Tuple[Optional[int], int]:
 async def send_completion_message(client: Client, user_id: int, start_time: float, file_count: int, points_used: int):
     """Send the unified completion message for batch operations"""
     try:
-        # Check if operation was canceled
         if user_id in cancel_operations and cancel_operations[user_id]:
             del cancel_operations[user_id]
             return await client.send_message(user_id, "❌ Batch processing was canceled!")
@@ -255,7 +253,6 @@ async def send_single_success_message(client: Client, message: Message, file_nam
                                     start_time: float, rename_cost: int, metadata_added: bool):
     """Send success message for single file operations"""
     try:
-        # Check if operation was canceled
         if message.from_user.id in cancel_operations and cancel_operations[message.from_user.id]:
             del cancel_operations[message.from_user.id]
             return await message.reply_text("❌ Processing was canceled!")
@@ -276,13 +273,51 @@ async def send_single_success_message(client: Client, message: Message, file_nam
         logger.error(f"Error sending success message: {e}")
         await message.reply_text("✅ File processed successfully!")
 
+async def turbo_download(client: Client, message: Message, file_path: str, progress_callback=None) -> str:
+    """Ultra-fast download implementation with progress tracking"""
+    async def _download():
+        return await client.download_media(
+            message,
+            file_name=file_path,
+            block=False,
+            chunk_size=1024*1024*8,  # 8MB chunks
+            max_retries=3,
+            read_timeout=30,
+            write_timeout=30,
+            no_progress=True
+        )
+    
+    # Get the client's smart request handler if available
+    if hasattr(client, '_smart_request'):
+        return await client._smart_request(_download)
+    return await _download()
+
+async def turbo_upload(client: Client, chat_id: int, file_path: str, **kwargs) -> Message:
+    """Ultra-fast upload implementation"""
+    async def _upload():
+        return await client.send_document(
+            chat_id,
+            document=file_path,
+            chunk_size=1024*1024*8,  # 8MB chunks
+            disable_notification=True,
+            disable_content_type_detection=True,
+            allow_cache=False,
+            read_timeout=30,
+            write_timeout=30,
+            **kwargs
+        )
+    
+    # Get the client's smart request handler if available
+    if hasattr(client, '_smart_request'):
+        return await client._smart_request(_upload)
+    return await _upload()
+
 @Client.on_message(filters.command("cancel"))
 async def cancel_processing(client: Client, message: Message):
     """Cancel current processing operations"""
     user_id = message.from_user.id
     cancel_operations[user_id] = True
     
-    # Clean up any ongoing operations
     if user_id in user_batch_trackers:
         del user_batch_trackers[user_id]
     if user_id in file_processing_counters:
@@ -297,19 +332,15 @@ async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
     start_time = time.time()
 
-    # Check for cancel request
     if user_id in cancel_operations and cancel_operations[user_id]:
         return
 
-    # Initialize user's counter if not exists
     if user_id not in file_processing_counters:
         file_processing_counters[user_id] = 0
     
-    # Get unique file number for this user
     file_processing_counters[user_id] += 1
     current_file_number = file_processing_counters[user_id]
 
-    # Initialize batch tracker if not exists
     if user_id not in user_batch_trackers:
         user_batch_trackers[user_id] = {
             "start_time": start_time,
@@ -321,7 +352,6 @@ async def auto_rename_files(client: Client, message: Message):
     batch_data = user_batch_trackers[user_id]
     batch_data["count"] += 1
 
-    # Get user data
     try:
         user_data = await hyoshcoder.read_user(user_id)
         if not user_data:
@@ -334,7 +364,6 @@ async def auto_rename_files(client: Client, message: Message):
         sequential_mode = user_data.get("sequential_mode", False)
         src_info = await hyoshcoder.get_src_info(user_id)
 
-        # Get points config
         points_config = await hyoshcoder.get_config("points_config", {})
         rename_cost = points_config.get("rename_cost", 1)
 
@@ -347,7 +376,6 @@ async def auto_rename_files(client: Client, message: Message):
         if not format_template:
             return await message.reply_text("Please set your rename format with /autorename")
 
-        # File type handling
         file_size = 0
         if message.document:
             file_id = message.document.file_id
@@ -367,11 +395,9 @@ async def auto_rename_files(client: Client, message: Message):
         else:
             return await message.reply_text("Unsupported file type")
 
-        # Check file size (2GB limit)
-        if file_size > 2 * 1024 * 1024 * 1024:  # 2GB in bytes
+        if file_size > 2 * 1024 * 1024 * 1024:
             return await message.reply_text("ᴛʜᴇ ғɪʟᴇ ᴇxᴄᴇᴇᴅs 2GB. ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴀ sᴍᴀʟʟᴇʀ ғɪʟᴇ ᴏʀ ᴍᴇᴅɪᴀ.")
 
-        # Check for duplicate processing
         if file_id in renaming_operations:
             elapsed_time = (datetime.now() - renaming_operations[file_id]).seconds
             if elapsed_time < 10:
@@ -379,7 +405,6 @@ async def auto_rename_files(client: Client, message: Message):
 
         renaming_operations[file_id] = datetime.now()
 
-        # Queue message with detailed info
         confirmation_message = (
             "**File added to queue ✅**\n"
             f"➲ **Name:** `{file_name}`\n"
@@ -392,17 +417,14 @@ async def auto_rename_files(client: Client, message: Message):
         await user_semaphore.acquire()
 
         try:
-            # Check for cancel request again after acquiring semaphore
             if user_id in cancel_operations and cancel_operations[user_id]:
                 await queue_message.edit_text("❌ Processing canceled by user")
                 return
 
-            # Process queue messages
             if user_id in user_queue_messages and user_queue_messages[user_id]:
                 await safe_edit_message(user_queue_messages[user_id][0], f"🔄 Processing queue #{current_file_number}")
                 user_queue_messages[user_id].pop(0)
 
-            # Sequential mode handling
             if sequential_mode:
                 if user_id not in sequential_operations:
                     sequential_operations[user_id] = {"files": [], "expected_count": 0}
@@ -414,7 +436,6 @@ async def auto_rename_files(client: Client, message: Message):
                         await queue_message.edit_text("❌ Processing canceled by user")
                         return
 
-            # Extract metadata from filename/caption
             if src_info == "file_name":
                 episode_number = await extract_episode(file_name)
                 season = await extract_season(file_name)
@@ -429,7 +450,6 @@ async def auto_rename_files(client: Client, message: Message):
                 season = await extract_season(file_name)
                 extracted_qualities = await extract_quality(file_name)
 
-            # Apply format template
             if episode_number or season:
                 placeholders = ["episode", "Episode", "EPISODE", "{episode}", "season", "Season", "SEASON", "{season}"]
                 for placeholder in placeholders:
@@ -447,7 +467,6 @@ async def auto_rename_files(client: Client, message: Message):
                         else:
                             format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
 
-            # Prepare file paths with ASCII-only filenames
             _, file_extension = os.path.splitext(file_name)
             renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
             renamed_file_path = os.path.join("downloads", renamed_file_name)
@@ -458,7 +477,7 @@ async def auto_rename_files(client: Client, message: Message):
             file_uuid = str(uuid.uuid4())[:8]
             temp_file_path = f"{renamed_file_path}_{file_uuid}"
 
-            # Download file with retry logic
+            # Use turbo download method
             max_download_retries = 3
             for attempt in range(max_download_retries):
                 try:
@@ -467,12 +486,7 @@ async def auto_rename_files(client: Client, message: Message):
                         return
 
                     await safe_edit_message(queue_message, f"📥 Downloading queue #{current_file_number} (Attempt {attempt + 1})")
-                    path = await client.download_media(
-                        message,
-                        file_name=temp_file_path,
-                        progress=progress_for_pyrogram,
-                        progress_args=(f"Downloading #{current_file_number}", queue_message, time.time()),
-                    )
+                    path = await turbo_download(client, message, temp_file_path)
                     break
                 except Exception as e:
                     if attempt == max_download_retries - 1:
@@ -480,7 +494,6 @@ async def auto_rename_files(client: Client, message: Message):
                         return await safe_edit_message(queue_message, f"❌ Download failed: {e}")
                     await asyncio.sleep(2 ** attempt)
 
-            # Rename file
             try:
                 os.rename(path, renamed_file_path)
                 path = renamed_file_path
@@ -490,7 +503,6 @@ async def auto_rename_files(client: Client, message: Message):
                     os.remove(temp_file_path)
                 return
 
-            # Add metadata if enabled
             metadata_added = False
             _bool_metadata = await hyoshcoder.get_metadata(user_id)
             if _bool_metadata:
@@ -511,13 +523,11 @@ async def auto_rename_files(client: Client, message: Message):
                         await safe_edit_message(queue_message, f"⚠️ Metadata failed: {error_msg}\nUsing original file")
                         path = renamed_file_path
 
-            # Prepare for upload
             await safe_edit_message(queue_message, f"📤 Uploading queue #{current_file_number}")
             thumb_path = None
             custom_caption = await hyoshcoder.get_caption(message.chat.id)
             custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
 
-            # Get file info
             file_size_human = humanbytes(file_size)
             if message.document:
                 duration = convert(0)
@@ -536,7 +546,6 @@ async def auto_rename_files(client: Client, message: Message):
                 else f"**{renamed_file_name}**"
             )
 
-            # Handle thumbnail
             if custom_thumb:
                 thumb_path = await client.download_media(custom_thumb)
             elif media_type == "video" and message.video.thumbs:
@@ -554,7 +563,6 @@ async def auto_rename_files(client: Client, message: Message):
                     logger.warning(f"Thumbnail error: {e}")
                     thumb_path = None
 
-            # Upload flow with retry logic
             max_upload_retries = 5
             for attempt in range(max_upload_retries):
                 try:
@@ -562,7 +570,6 @@ async def auto_rename_files(client: Client, message: Message):
                         await queue_message.edit_text("❌ Processing canceled by user")
                         return
 
-                    # Try dump channel first
                     dump_success = await send_to_dump_channel(
                         client,
                         user_id,
@@ -574,15 +581,13 @@ async def auto_rename_files(client: Client, message: Message):
                     if dump_success:
                         await safe_edit_message(queue_message, f"✅ Sent #{current_file_number} to dump channel!")
                     else:
-                        # Normal upload
                         if media_type == "document":
-                            await client.send_document(
+                            await turbo_upload(
+                                client,
                                 message.chat.id,
-                                document=path,
+                                path,
                                 thumb=thumb_path,
-                                caption=caption,
-                                progress=progress_for_pyrogram,
-                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                caption=caption
                             )
                         elif media_type == "video":
                             await client.send_video(
@@ -591,9 +596,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 caption=caption,
                                 thumb=thumb_path,
                                 duration=message.video.duration if message.video else 0,
-                                supports_streaming=True,
-                                progress=progress_for_pyrogram,
-                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                supports_streaming=True
                             )
                         elif media_type == "audio":
                             await client.send_audio(
@@ -601,12 +604,9 @@ async def auto_rename_files(client: Client, message: Message):
                                 audio=path,
                                 caption=caption,
                                 thumb=thumb_path,
-                                duration=message.audio.duration if message.audio else 0,
-                                progress=progress_for_pyrogram,
-                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                duration=message.audio.duration if message.audio else 0
                             )
 
-                    # Track the operation (only if not already processed)
                     batch_data["points_used"] += rename_cost
                     await track_rename_operation(
                         user_id=user_id,
@@ -615,25 +615,20 @@ async def auto_rename_files(client: Client, message: Message):
                         points_deducted=rename_cost
                     )
 
-                    # Delete queue message
                     await queue_message.delete()
 
-                    # Check if this is part of a batch or single file
                     if hasattr(message, 'media_group_id') and message.media_group_id:
-                        # For batch files, we'll handle completion in handle_media_group_completion
                         pass
                     else:
-                        # Single file - send single success message
                         await send_single_success_message(
                             client, message, file_name, renamed_file_name,
                             start_time, rename_cost, metadata_added
                         )
                         
-                        # Clean up if not in batch mode
                         if user_id in user_batch_trackers and not batch_data["is_batch"]:
                             del user_batch_trackers[user_id]
                     
-                    break  # Success, exit retry loop
+                    break
 
                 except BadRequest as e:
                     if "FILE_PART_INVALID" in str(e):
@@ -656,7 +651,6 @@ async def auto_rename_files(client: Client, message: Message):
             await safe_edit_message(queue_message, f"❌ Upload failed: {e}")
             raise
         finally:
-            # Cleanup
             try:
                 if os.path.exists(renamed_file_path):
                     os.remove(renamed_file_path)
@@ -672,13 +666,11 @@ async def auto_rename_files(client: Client, message: Message):
             if file_id in renaming_operations:
                 del renaming_operations[file_id]
 
-            # Decrement counter when done
             if user_id in file_processing_counters:
                 file_processing_counters[user_id] -= 1
                 if file_processing_counters[user_id] <= 0:
                     del file_processing_counters[user_id]
 
-            # Deduct points (already handled in track_rename_operation)
             user_semaphore.release()
 
     except Exception as e:
@@ -693,12 +685,9 @@ async def handle_media_group_completion(client: Client, message: Message):
         if user_id in user_batch_trackers and user_batch_trackers[user_id]["is_batch"]:
             batch_data = user_batch_trackers[user_id]
             
-            # Wait longer to ensure all files are processed
             await asyncio.sleep(10)
             
-            # Check if all files in the batch have been processed
-            if user_id in user_batch_trackers:  # Still exists after processing
-                # Send completion message
+            if user_id in user_batch_trackers:
                 await send_completion_message(
                     client,
                     user_id,
@@ -707,13 +696,11 @@ async def handle_media_group_completion(client: Client, message: Message):
                     batch_data["points_used"]
                 )
                 
-                # Clean up
                 if user_id in file_processing_counters:
                     del file_processing_counters[user_id]
                 if user_id in user_batch_trackers:
                     del user_batch_trackers[user_id]
                 
-                # If in sequential mode, clear the operation
                 if user_id in sequential_operations:
                     sequential_operations[user_id]["files"] = []
     except Exception as e:
@@ -729,7 +716,6 @@ async def show_leaderboard(client: Client, message: Message):
     try:
         loading_msg = await message.reply_text("🔄 Loading leaderboard...")
         
-        # Try to get leaderboard data with retry logic
         max_retries = 3
         leaderboard = []
         
@@ -745,7 +731,6 @@ async def show_leaderboard(client: Client, message: Message):
                 
                 for user in top_users:
                     try:
-                        # Get user details with proper error handling
                         user_data = await client.get_users(user["_id"])
                         username = user_data.username if user_data.username else user_data.first_name
                         leaderboard.append({
@@ -762,7 +747,7 @@ async def show_leaderboard(client: Client, message: Message):
                         })
                         continue
                 
-                break  # Success, exit retry loop
+                break
             except Exception as e:
                 if attempt == max_retries - 1:
                     raise
@@ -799,10 +784,8 @@ async def show_leaderboard(client: Client, message: Message):
             logger.error(f"Error getting user rank: {e}")
             text += "\n⚠️ Couldn't load your personal stats"
 
-        # Send the full leaderboard to the chat where command was used
         msg = await message.reply_text(text, disable_web_page_preview=True)
         
-        # Auto-delete after 1 minute
         await asyncio.sleep(60)
         try:
             await msg.delete()
