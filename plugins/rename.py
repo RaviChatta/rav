@@ -100,8 +100,30 @@ async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
         user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
 
+async def get_stream_indexes(input_path: str):
+    try:
+        probe = await asyncio.create_subprocess_exec(
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v,a,s',
+            '-show_entries', 'stream=index,codec_type',
+            '-of', 'json', input_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await probe.communicate()
+        data = json.loads(stdout.decode())
+
+        video_indexes = [s['index'] for s in data['streams'] if s['codec_type'] == 'video']
+        audio_indexes = [s['index'] for s in data['streams'] if s['codec_type'] == 'audio']
+        subtitle_indexes = [s['index'] for s in data['streams'] if s['codec_type'] == 'subtitle']
+        return video_indexes, audio_indexes, subtitle_indexes
+    except Exception as e:
+        return [], [], []
+
 async def add_comprehensive_metadata(input_path: str, output_path: str, metadata_text: str) -> Tuple[bool, Optional[str]]:
-    """Enhanced metadata addition with FFmpeg"""
+    """Enhanced metadata addition with FFmpeg and dynamic stream detection"""
+    video_indexes, audio_indexes, subtitle_indexes = await get_stream_indexes(input_path)
+
     metadata_cmds = [
         [
             'ffmpeg', '-i', input_path,
@@ -109,10 +131,12 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
             '-metadata', f'title={metadata_text}',
             '-metadata', f'comment={metadata_text}',
             '-metadata', f'description={metadata_text}',
-            '-metadata:s:v', f'title={metadata_text}',
-            *[arg for i in range(10) for arg in [f'-metadata:s:a:{i}', f'title={metadata_text}']],
-            *[arg for i in range(10) for arg in [f'-metadata:s:s:{i}', f'title={metadata_text}']],
-            '-movflags', '+faststart',
+            *[f'-metadata:s:v:{i}' for i in video_indexes for _ in (0,)],
+            *[metadata_text for _ in video_indexes],
+            *[f'-metadata:s:a:{i}' for i in audio_indexes for _ in (0,)],
+            *[metadata_text for _ in audio_indexes],
+            *[f'-metadata:s:s:{i}' for i in subtitle_indexes for _ in (0,)],
+            *[metadata_text for _ in subtitle_indexes],
             '-f', 'matroska',
             '-y', output_path
         ],
@@ -120,8 +144,10 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
             'ffmpeg', '-i', input_path,
             '-map', '0', '-c', 'copy',
             '-metadata', f'title={metadata_text}',
-            '-metadata:s:v', f'title={metadata_text}',
-            '-metadata:s:a', f'title={metadata_text}',
+            *[f'-metadata:s:v:{i}' for i in video_indexes for _ in (0,)],
+            *[metadata_text for _ in video_indexes],
+            *[f'-metadata:s:a:{i}' for i in audio_indexes for _ in (0,)],
+            *[metadata_text for _ in audio_indexes],
             '-y', output_path
         ],
         [
@@ -139,24 +165,24 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
-            
+
             if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                 return True, None
-            
+
             error_msg = stderr.decode()
             if attempt == len(metadata_cmds):
                 return False, error_msg
-            
+
         except asyncio.TimeoutError:
             if attempt == len(metadata_cmds):
                 return False, "FFmpeg timed out after 5 minutes"
         except Exception as e:
             if attempt == len(metadata_cmds):
                 return False, str(e)
-    
+
     return False, "All metadata addition attempts failed"
+
 
 async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
     """Enhanced dump channel sender"""
@@ -306,20 +332,26 @@ async def auto_rename_files(client: Client, message: Message):
         file_processing_counters[user_id] = 0
     
     # Get unique file number for this user
-    file_processing_counters[user_id] += 1
+    # Increment file counter
+    file_processing_counters[user_id] = file_processing_counters.get(user_id, 0) + 1
     current_file_number = file_processing_counters[user_id]
-
-    # Initialize batch tracker if not exists
-    if user_id not in user_batch_trackers:
-        user_batch_trackers[user_id] = {
-            "start_time": start_time,
-            "count": 0,
-            "points_used": 0,
-            "is_batch": bool(getattr(message, 'media_group_id', None))
-        }
     
-    batch_data = user_batch_trackers[user_id]
-    batch_data["count"] += 1
+    # Initialize batch tracker only if media_group_id exists
+    if getattr(message, 'media_group_id', None):
+        if user_id not in user_batch_trackers:
+            user_batch_trackers[user_id] = {
+                "start_time": start_time,
+                "count": 0,
+                "points_used": 0,
+                "is_batch": True
+            }
+        
+        batch_data = user_batch_trackers[user_id]
+        batch_data["count"] += 1
+    else:
+        # Not a batch - handle single file
+        current_file_number = 1  # Optional fallback for single uploads
+
 
     # Get user data
     try:
@@ -618,22 +650,21 @@ async def auto_rename_files(client: Client, message: Message):
                     # Delete queue message
                     await queue_message.delete()
 
-                    # Check if this is part of a batch or single file
-                    if hasattr(message, 'media_group_id') and message.media_group_id:
-                        # For batch files, we'll handle completion in handle_media_group_completion
-                        pass
-                    else:
-                        # Single file - send single success message
-                        await send_single_success_message(
-                            client, message, file_name, renamed_file_name,
-                            start_time, rename_cost, metadata_added
-                        )
-                        
-                        # Clean up if not in batch mode
-                        if user_id in user_batch_trackers and not batch_data["is_batch"]:
-                            del user_batch_trackers[user_id]
-                    
-                    break  # Success, exit retry loop
+                 # Check if this is part of a batch or single file
+                if hasattr(message, 'media_group_id') and message.media_group_id:
+                    # ✅ Track batch progress
+                    file_processing_counters[user_id] = file_processing_counters.get(user_id, 0) + 1
+                else:
+                    # Single file - send single success message
+                    await send_single_success_message(
+                        client, message, file_name, renamed_file_name,
+                        start_time, rename_cost, metadata_added
+                    )
+                
+                    # Clean up if not in batch mode
+                    if user_id in user_batch_trackers and not batch_data.get("is_batch"):
+                        del user_batch_trackers[user_id]
+
 
                 except BadRequest as e:
                     if "FILE_PART_INVALID" in str(e):
@@ -687,41 +718,57 @@ async def auto_rename_files(client: Client, message: Message):
 
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
-    """Handle completion for batch uploads"""
+    """Handle completion message for batch uploads"""
     try:
         user_id = message.from_user.id
-        if user_id in user_batch_trackers and user_batch_trackers[user_id]["is_batch"]:
-            batch_data = user_batch_trackers[user_id]
-            
-            # Wait longer to ensure all files are processed
-            await asyncio.sleep(10)
-            
-            # Check if all files in the batch have been processed
-            if user_id in user_batch_trackers:  # Still exists after processing
-                # Send completion message
+
+        # If batch not tracked, skip
+        if user_id not in user_batch_trackers:
+            return
+
+        batch_data = user_batch_trackers[user_id]
+        if not batch_data.get("is_batch"):
+            return
+
+        expected_files = batch_data["count"]
+
+        # Wait and poll until all files processed
+        for _ in range(15):  # Max 15 x 2s = 30 seconds wait
+            await asyncio.sleep(2)
+
+            completed = file_processing_counters.get(user_id, 0)
+
+            if completed >= expected_files:
+                # All done!
                 await send_completion_message(
                     client,
                     user_id,
                     batch_data["start_time"],
-                    batch_data["count"],
+                    expected_files,
                     batch_data["points_used"]
                 )
-                
-                # Clean up
-                if user_id in file_processing_counters:
-                    del file_processing_counters[user_id]
-                if user_id in user_batch_trackers:
-                    del user_batch_trackers[user_id]
-                
-                # If in sequential mode, clear the operation
-                if user_id in sequential_operations:
-                    sequential_operations[user_id]["files"] = []
+
+                # Cleanup
+                file_processing_counters.pop(user_id, None)
+                user_batch_trackers.pop(user_id, None)
+                sequential_operations.pop(user_id, None)
+
+                return  # All done
+
+        # Timeout fallback
+        await client.send_message(user_id, "✅ Batch finished but couldn't verify file count.")
+        
+        # Safe cleanup fallback
+        file_processing_counters.pop(user_id, None)
+        user_batch_trackers.pop(user_id, None)
+
     except Exception as e:
         logger.error(f"Error in handle_media_group_completion: {e}")
         try:
-            await client.send_message(user_id, "✅ Batch processing completed but couldn't send stats!")
+            await client.send_message(user_id, "✅ Batch finished but error showing stats.")
         except:
             pass
+
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
