@@ -249,7 +249,6 @@ async def additional_commands(client: Client, message: Message):
         logger.error(f"Error in additional commands: {e}")
         msg = await message.reply_text("⚠️ An error occurred. Please try again.")
         asyncio.create_task(auto_delete_message(msg, 30))
-
 @Client.on_message(filters.command("genpoints") & filters.private)
 async def generate_point_link(client: Client, message: Message):
     """Generate a points earning link for users."""
@@ -297,7 +296,7 @@ async def generate_point_link(client: Client, message: Message):
         except Exception as e:
             logger.error(f"Error shortening URL: {e}")
 
-        # Save to database
+        # Save to database (without expiration)
         try:
             await db.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
             logger.info(f"Point link saved for user {user_id}")
@@ -310,11 +309,11 @@ async def generate_point_link(client: Client, message: Message):
                 delete_after=30
             )
 
-        # Send the points link
+        # Send the points link (removed expiration mention)
         bot_reply = await message.reply(
             f"**🎁 Get {settings.SHORTENER_POINT_REWARD} Points**\n\n"
             f"**🔗 Click below link and complete verification:**\n{short_url}\n\n"
-            "**🕒 Link valid 30 seconds | 🧬 verify more links to get more points**",
+            "**🧬 Verify more links to get more points**",
             disable_web_page_preview=True
         )
 
@@ -422,11 +421,17 @@ async def freepoints(client: Client, message: Message):
         except Exception as e:
             logger.error(f"Error shortening URL: {e}")
 
-        # Save point link
+        # Save point link (without expiration)
         try:
             await hyoshcoder.create_point_link(user_id, point_id, settings.SHORTENER_POINT_REWARD)
         except Exception as db_error:
             logger.error(f"Database error saving point link: {db_error}")
+            return await send_auto_delete_message(
+                client,
+                message.chat.id,
+                "❌ Failed to generate points link. Please try again.",
+                delete_after=30
+            )
 
         # Prepare response
         buttons = InlineKeyboardMarkup(
@@ -437,15 +442,16 @@ async def freepoints(client: Client, message: Message):
                 ]
             ]
         )
+        
         caption = (
             "**🎁 Free Points Menu**\n\n"
             "Earn points by:\n"
             f"1. **Referring users** – `{refer_link}`\n"
             f"   ➤ {settings.REFER_POINT_REWARD} points per referral\n"
-            f"2. **Verify  To Get Points ** –\n"
+            f"2. **Verify To Get Points** –\n"
             f"   ➤ {settings.SHORTENER_POINT_REWARD} points per view\n\n"
             f"🎯 Your points link:\n{short_url}\n\n"
-            "⏱ Points will be  added automatically!\n\n"
+            "⏱ Points will be added automatically!\n"
             f"⌛ This message will be deleted in {settings.AUTO_DELETE_TIME} seconds."
         )
 
