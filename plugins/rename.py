@@ -9,6 +9,7 @@ import re
 import asyncio
 import uuid
 import logging
+import json
 from typing import Optional, Tuple, Dict, List
 
 # Database imports
@@ -183,7 +184,6 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
 
     return False, "All metadata addition attempts failed"
 
-
 async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
     """Enhanced dump channel sender"""
     try:
@@ -332,8 +332,7 @@ async def auto_rename_files(client: Client, message: Message):
         file_processing_counters[user_id] = 0
     
     # Get unique file number for this user
-    # Increment file counter
-    file_processing_counters[user_id] = file_processing_counters.get(user_id, 0) + 1
+    file_processing_counters[user_id] += 1
     current_file_number = file_processing_counters[user_id]
     
     # Initialize batch tracker only if media_group_id exists
@@ -351,7 +350,6 @@ async def auto_rename_files(client: Client, message: Message):
     else:
         # Not a batch - handle single file
         current_file_number = 1  # Optional fallback for single uploads
-
 
     # Get user data
     try:
@@ -639,7 +637,8 @@ async def auto_rename_files(client: Client, message: Message):
                             )
 
                     # Track the operation (only if not already processed)
-                    batch_data["points_used"] += rename_cost
+                    if hasattr(message, 'media_group_id') and message.media_group_id:
+                        user_batch_trackers[user_id]["points_used"] += rename_cost
                     await track_rename_operation(
                         user_id=user_id,
                         original_name=file_name,
@@ -650,21 +649,22 @@ async def auto_rename_files(client: Client, message: Message):
                     # Delete queue message
                     await queue_message.delete()
 
-                 # Check if this is part of a batch or single file
-                if hasattr(message, 'media_group_id') and message.media_group_id:
-                    # ✅ Track batch progress
-                    file_processing_counters[user_id] = file_processing_counters.get(user_id, 0) + 1
-                else:
-                    # Single file - send single success message
-                    await send_single_success_message(
-                        client, message, file_name, renamed_file_name,
-                        start_time, rename_cost, metadata_added
-                    )
-                
-                    # Clean up if not in batch mode
-                    if user_id in user_batch_trackers and not batch_data.get("is_batch"):
-                        del user_batch_trackers[user_id]
+                    # Check if this is part of a batch or single file
+                    if hasattr(message, 'media_group_id') and message.media_group_id:
+                        # Track batch progress
+                        file_processing_counters[user_id] += 1
+                    else:
+                        # Single file - send single success message
+                        await send_single_success_message(
+                            client, message, file_name, renamed_file_name,
+                            start_time, rename_cost, metadata_added
+                        )
+                    
+                        # Clean up if not in batch mode
+                        if user_id in user_batch_trackers and not user_batch_trackers[user_id].get("is_batch"):
+                            del user_batch_trackers[user_id]
 
+                    break
 
                 except BadRequest as e:
                     if "FILE_PART_INVALID" in str(e):
@@ -768,7 +768,6 @@ async def handle_media_group_completion(client: Client, message: Message):
             await client.send_message(user_id, "✅ Batch finished but error showing stats.")
         except:
             pass
-
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
