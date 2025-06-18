@@ -319,17 +319,25 @@ async def send_single_success_message(client: Client, message: Message, file_nam
             del cancel_operations[message.from_user.id]
             return await message.reply_text("❌ Processing was canceled!")
         
-        time_taken = time.time() - start_time
+        elapsed_seconds = time.time() - start_time
+        minutes, seconds = divmod(int(elapsed_seconds), 60)
+        
+        if minutes > 0:
+            time_taken_str = f"{minutes}m {seconds}s"
+        else:
+            time_taken_str = f"{seconds}s"
+
         remaining_points = (await hyoshcoder.get_points(message.from_user.id)) - rename_cost
         success_msg = (
-            f"✅ **File Renamed Successfully!**\n\n"
-            f"➲ **Original:** `{file_name}`\n"
-            f"➲ **Renamed:** `{renamed_file_name}`\n"
-            f"➲ **Time Taken:** {time_taken:.1f}s\n"
-            f"➲ **Metadata Added:** {'Yes' if metadata_added else 'No'}\n"
-            f"➲ **Points Used:** {rename_cost}\n"
-            f"➲ **Remaining Points:** {remaining_points}"
+            f"✅ 𝗙𝗶𝗹𝗲 𝗥𝗲𝗻𝗮𝗺𝗲𝗱 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹𝗹𝘆!\n\n"
+            f"➲ 𝗢𝗿𝗶𝗴𝗶𝗻𝗮𝗹: `{file_name}`\n"
+            f"➲ 𝗥𝗲𝗻𝗮𝗺𝗲𝗱: `{renamed_file_name}`\n"
+            f"➲ 𝗧𝗶𝗺𝗲 𝗧𝗮𝗸𝗲𝗻: {time_taken_str}\n"
+            f"➲ 𝗠𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝗔𝗱𝗱𝗲𝗱: {'𝗬𝗲𝘀' if metadata_added else '𝗡𝗼'}\n"
+            f"➲ 𝗣𝗼𝗶𝗻𝘁𝘀 𝗨𝘀𝗲𝗱: {rename_cost}\n"
+            f"➲ 𝗥𝗲𝗺𝗮𝗶𝗻𝗶𝗻𝗴 𝗣𝗼𝗶𝗻𝘁𝘀: {remaining_points}"
         )
+
         await message.reply_text(success_msg)
     except Exception as e:
         logger.error(f"Error sending success message: {e}")
@@ -444,11 +452,12 @@ async def auto_rename_files(client: Client, message: Message):
 
         # Queue message with detailed info
         confirmation_message = (
-            "**File added to queue ✅**\n"
-            f"➲ **Name:** `{file_name}`\n"
-            f"➲ **Queue Position:** #{current_file_number}\n"
-            f"➲ **Points to Deduct:** {rename_cost}"
+            "𝗙𝗶𝗹𝗲 𝗮𝗱𝗱𝗲𝗱 𝘁𝗼 𝗾𝘂𝗲𝘂𝗲 ✅\n"
+            f"➲ 𝗡𝗮𝗺𝗲: `{file_name}`\n"
+            f"➲ 𝗤𝘂𝗲𝘂𝗲 𝗣𝗼𝘀𝗶𝘁𝗶𝗼𝗻: #{current_file_number}\n"
+            f"➲ 𝗣𝗼𝗶𝗻𝘁𝘀 𝘁𝗼 𝗗𝗲𝗱𝘂𝗰𝘁: {rename_cost}"
         )
+
         queue_message = await message.reply_text(confirmation_message)
 
         user_semaphore = await get_user_semaphore(user_id)
@@ -462,7 +471,7 @@ async def auto_rename_files(client: Client, message: Message):
 
             # Process queue messages
             if user_id in user_queue_messages and user_queue_messages[user_id]:
-                await safe_edit_message(user_queue_messages[user_id][0], f"🔄 Processing queue #{current_file_number}")
+                await safe_edit_message(user_queue_messages[user_id][0], f"🔄 𝗣𝗿𝗼𝗰𝗲𝘀𝘀𝗶𝗻𝗴 𝗾𝘂𝗲𝘂𝗲 #{current_file_number}")
                 user_queue_messages[user_id].pop(0)
 
             # Sequential mode handling
@@ -529,7 +538,7 @@ async def auto_rename_files(client: Client, message: Message):
                         await queue_message.edit_text("❌ Processing canceled by user")
                         return
 
-                    await safe_edit_message(queue_message, f"📥 Downloading queue #{current_file_number} (Attempt {attempt + 1})")
+                    await safe_edit_message(queue_message, f"📥 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗶𝗻𝗴 𝗾𝘂𝗲𝘂𝗲 #{current_file_number} (𝗔𝘁𝘁𝗲𝗺𝗽𝘁 {attempt + 1})")
                     path = await client.download_media(
                         message,
                         file_name=temp_file_path,
@@ -559,7 +568,8 @@ async def auto_rename_files(client: Client, message: Message):
             if _bool_metadata:
                 metadata = await hyoshcoder.get_metadata_code(user_id)
                 if metadata:
-                    await safe_edit_message(queue_message, f"🔄 Renaming and adding metadata to #{current_file_number}")
+                    await safe_edit_message(queue_message,f"🔄 𝗥𝗲𝗻𝗮𝗺𝗶𝗻𝗴 𝗮𝗻𝗱 𝗮𝗱𝗱𝗶𝗻𝗴 𝗺𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝘁𝗼 #{current_file_number}")
+                    
                     success, error = await add_comprehensive_metadata(
                         renamed_file_path,
                         metadata_file_path,
@@ -575,7 +585,7 @@ async def auto_rename_files(client: Client, message: Message):
                         path = renamed_file_path
 
             # Prepare for upload
-            await safe_edit_message(queue_message, f"📤 Uploading queue #{current_file_number}")
+            await safe_edit_message(queue_message, f"📤 𝗨𝗽𝗹𝗼𝗮𝗱𝗶𝗻𝗴 𝗾𝘂𝗲𝘂𝗲 #{current_file_number}")
             thumb_path = None
             custom_caption = await hyoshcoder.get_caption(message.chat.id)
             custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
@@ -791,7 +801,7 @@ async def handle_media_group_completion(client: Client, message: Message):
 async def show_leaderboard(client: Client, message: Message):
     """Beautiful leaderboard with auto-deletion"""
     try:
-        loading_msg = await message.reply_text("🔄 Loading leaderboard...")
+        loading_msg = await message.reply_text("🔄 𝗟𝗼𝗮𝗱𝗶𝗻𝗴 𝗹𝗲𝗮𝗱𝗲𝗿𝗯𝗼𝗮𝗿𝗱...")
         
         # Try to get leaderboard data with retry logic
         max_retries = 3
