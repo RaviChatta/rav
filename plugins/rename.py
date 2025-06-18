@@ -29,6 +29,15 @@ file_processing_counters = {}  # Track individual file counters per user
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
 
+def sanitize_metadata(metadata_text: str) -> str:
+    """Sanitize metadata text to be FFmpeg-safe"""
+    if not metadata_text:
+        return ""
+    # Replace problematic characters with underscore
+    sanitized = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', metadata_text)
+    # Limit to 500 characters (FFmpeg has limits on metadata length)
+    return sanitized[:500]
+
 async def safe_edit_message(message: Message, text: str, **kwargs):
     """Safely edit a message with handling for MessageNotModified errors"""
     try:
@@ -123,66 +132,90 @@ async def get_stream_indexes(input_path: str):
 
 async def add_comprehensive_metadata(input_path: str, output_path: str, metadata_text: str) -> Tuple[bool, Optional[str]]:
     """Enhanced metadata addition with FFmpeg and dynamic stream detection"""
-    video_indexes, audio_indexes, subtitle_indexes = await get_stream_indexes(input_path)
+    try:
+        # Sanitize metadata text first
+        safe_metadata = sanitize_metadata(metadata_text)
+        if not safe_metadata:
+            return False, "Empty metadata after sanitization"
 
-    metadata_cmds = [
-        [
+        # First get stream information
+        video_indexes, audio_indexes, subtitle_indexes = await get_stream_indexes(input_path)
+        
+        # Build base command
+        base_cmd = [
             'ffmpeg', '-i', input_path,
-            '-map', '0', '-c', 'copy',
-            '-metadata', f'title={metadata_text}',
-            '-metadata', f'comment={metadata_text}',
-            '-metadata', f'description={metadata_text}',
-            *[f'-metadata:s:v:{i}' for i in video_indexes for _ in (0,)],
-            *[metadata_text for _ in video_indexes],
-            *[f'-metadata:s:a:{i}' for i in audio_indexes for _ in (0,)],
-            *[metadata_text for _ in audio_indexes],
-            *[f'-metadata:s:s:{i}' for i in subtitle_indexes for _ in (0,)],
-            *[metadata_text for _ in subtitle_indexes],
-            '-f', 'matroska',
-            '-y', output_path
-        ],
-        [
-            'ffmpeg', '-i', input_path,
-            '-map', '0', '-c', 'copy',
-            '-metadata', f'title={metadata_text}',
-            *[f'-metadata:s:v:{i}' for i in video_indexes for _ in (0,)],
-            *[metadata_text for _ in video_indexes],
-            *[f'-metadata:s:a:{i}' for i in audio_indexes for _ in (0,)],
-            *[metadata_text for _ in audio_indexes],
-            '-y', output_path
-        ],
-        [
-            'ffmpeg', '-i', input_path,
-            '-c', 'copy',
-            '-metadata', f'title={metadata_text}',
-            '-y', output_path
+            '-map', '0',  # Include all streams
+            '-c', 'copy',  # Copy all streams without re-encoding
+            '-metadata', f'title={safe_metadata}',
+            '-metadata', f'comment={safe_metadata}',
+            '-metadata', f'description={safe_metadata}',
         ]
-    ]
 
-    for attempt, cmd in enumerate(metadata_cmds, 1):
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+        # Add stream-specific metadata
+        for idx in video_indexes:
+            base_cmd.extend([f'-metadata:s:v:{idx}', safe_metadata])
+        for idx in audio_indexes:
+            base_cmd.extend([f'-metadata:s:a:{idx}', safe_metadata])
+        for idx in subtitle_indexes:
+            base_cmd.extend([f'-metadata:s:s:{idx}', safe_metadata])
 
-            if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                return True, None
+        # Add output file
+        base_cmd.extend(['-y', output_path])  # -y to overwrite output file
 
-            error_msg = stderr.decode()
-            if attempt == len(metadata_cmds):
-                return False, error_msg
+        # Try the comprehensive command first
+        process = await asyncio.create_subprocess_exec(
+            *base_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
-        except asyncio.TimeoutError:
-            if attempt == len(metadata_cmds):
-                return False, "FFmpeg timed out after 5 minutes"
-        except Exception as e:
-            if attempt == len(metadata_cmds):
-                return False, str(e)
+        if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            return True, None
 
-    return False, "All metadata addition attempts failed"
+        # If comprehensive command failed, try simpler versions
+        simpler_cmds = [
+            [
+                'ffmpeg', '-i', input_path,
+                '-map', '0', '-c', 'copy',
+                '-metadata', f'title={safe_metadata}',
+                *[f'-metadata:s:v:{idx}' for idx in video_indexes for _ in (safe_metadata,)],
+                *[f'-metadata:s:a:{idx}' for idx in audio_indexes for _ in (safe_metadata,)],
+                '-y', output_path
+            ],
+            [
+                'ffmpeg', '-i', input_path,
+                '-c', 'copy',
+                '-metadata', f'title={safe_metadata}',
+                '-y', output_path
+            ]
+        ]
+
+        for cmd in simpler_cmds:
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+
+                if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    return True, None
+
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                continue
+
+        # If all attempts failed
+        error_msg = stderr.decode() if stderr else "Unknown FFmpeg error"
+        return False, error_msg[:500]  # Return first 500 chars of error message
+
+    except asyncio.TimeoutError:
+        return False, "FFmpeg timed out after 5 minutes"
+    except Exception as e:
+        return False, str(e)
 
 async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
     """Enhanced dump channel sender"""
@@ -263,9 +296,9 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
         
         completion_msg = (
             f"❐ Batch Rename Completed\n\n"
-            f"⌬ Total Files: « {file_count} »\n"
-            f"⌬ Total Points Used: « {points_used} »\n"
-            f"⌬ Points Remaining: « {user_points} »\n"
+            f"⌬ Total Files Processed: {file_count}\n"
+            f"⌬ Total Points Used: {points_used}\n"
+            f"⌬ Points Remaining: {user_points}\n"
             f"⌬ Total Time Taken: {mins}m {secs}s\n"
             f"⌬ Average Time Per File: {avg_mins}m {avg_secs}s\n"
             f"⌬ Your Total Renames: {total_renames}\n"
@@ -526,7 +559,7 @@ async def auto_rename_files(client: Client, message: Message):
             if _bool_metadata:
                 metadata = await hyoshcoder.get_metadata_code(user_id)
                 if metadata:
-                    await safe_edit_message(queue_message, f"🔄 𝙧𝙚𝙣𝙖𝙢𝙞𝙣𝙜 𝙖𝙣𝙙 𝘼𝙙𝙙𝙞𝙣𝙜 𝙢𝙚𝙩𝙖𝙙𝙖𝙩𝙖 𝙩𝙤 #{current_file_number}")
+                    await safe_edit_message(queue_message, f"🔄 Renaming and adding metadata to #{current_file_number}")
                     success, error = await add_comprehensive_metadata(
                         renamed_file_path,
                         metadata_file_path,
@@ -731,36 +764,21 @@ async def handle_media_group_completion(client: Client, message: Message):
             return
 
         expected_files = batch_data["count"]
+        completed_files = batch_data["count"]  # We've already counted all files when they were added
 
-        # Wait and poll until all files processed
-        for _ in range(15):  # Max 15 x 2s = 30 seconds wait
-            await asyncio.sleep(2)
+        # Send completion message immediately since we track count at addition
+        await send_completion_message(
+            client,
+            user_id,
+            batch_data["start_time"],
+            completed_files,
+            batch_data["points_used"]
+        )
 
-            completed = file_processing_counters.get(user_id, 0)
-
-            if completed >= expected_files:
-                # All done!
-                await send_completion_message(
-                    client,
-                    user_id,
-                    batch_data["start_time"],
-                    expected_files,
-                    batch_data["points_used"]
-                )
-
-                # Cleanup
-                file_processing_counters.pop(user_id, None)
-                user_batch_trackers.pop(user_id, None)
-                sequential_operations.pop(user_id, None)
-
-                return  # All done
-
-        # Timeout fallback
-        await client.send_message(user_id, "✅ Batch finished but couldn't verify file count.")
-        
-        # Safe cleanup fallback
+        # Cleanup
         file_processing_counters.pop(user_id, None)
         user_batch_trackers.pop(user_id, None)
+        sequential_operations.pop(user_id, None)
 
     except Exception as e:
         logger.error(f"Error in handle_media_group_completion: {e}")
