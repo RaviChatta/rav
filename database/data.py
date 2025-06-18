@@ -9,7 +9,7 @@ from bson.objectid import ObjectId
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, ConnectionFailure
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time  # Include `time`
 from config import settings
 from pyrogram import Client
 
@@ -487,19 +487,23 @@ class Database:
             logger.error(f"Error counting premium users: {e}")
             return 0
 
+    
     async def get_daily_active_users(self) -> int:
         """Get count of daily active users."""
         try:
             today = datetime.utcnow().date()
+            start_of_day = datetime.combine(today, time.min)
             return await self.users.count_documents({
                 "activity.last_active": {
-                    "$gte": datetime.datetime.combine(today, datetime.time.min)
+                    "$gte": start_of_day
                 }
             })
         except Exception as e:
             logger.error(f"Error counting daily active users: {e}")
             return 0
+    
 
+    
     async def read_user(self, id: int) -> Optional[Dict]:
         """Get user document by ID."""
         try:
