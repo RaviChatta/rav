@@ -925,137 +925,134 @@ async def show_leaderboard(client: Client, message: Message):
         except:
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
-#instant ss
-@Client.on_message(filters.command("ss"))
-async def instant_screenshots(client: Client, message: Message):
-    """Instant screenshots using Telegram's thumbnails (~3 sec)"""
-    temp_dir = None
+
+# ─── SCREENSHOT GENERATOR (MAX 4K) ────────────────────────────────────────────
+
+async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
+    """Generate evenly spaced high-quality screenshots up to 4K resolution."""
     try:
-        if not message.reply_to_message or not (
-            message.reply_to_message.video or message.reply_to_message.document
-        ):
-            return await message.reply_text("Please reply to a video file to generate instant previews")
+        os.makedirs(output_dir, exist_ok=True)
 
-        processing_msg = await message.reply_text("⚡ Generating instant previews...")
-
-        media = message.reply_to_message.video or message.reply_to_message.document
-        screenshot_paths, temp_dir = await generate_telegram_thumbnails(client, message.reply_to_message)
-
-        if not screenshot_paths:
-            await processing_msg.edit_text("❌ Failed to generate previews")
-            return
-
-        await client.send_media_group(
-            chat_id=message.chat.id,
-            media=[InputMediaPhoto(media=p) for p in screenshot_paths],
-            reply_to_message_id=message.reply_to_message.id
-        )
-        await processing_msg.edit_text(f"✅ {len(screenshot_paths)} instant previews generated!")
-
-    finally:
-        if temp_dir:
-            await cleanup(temp_dir)
-
-
-@Client.on_message(filters.command("hdss"))
-async def hd_screenshots(client: Client, message: Message):
-    """Ultra HD screenshots with perfect frame accuracy (~20 sec)"""
-    temp_dir = None
-    try:
-        if not message.reply_to_message or not (
-            message.reply_to_message.video or message.reply_to_message.document
-        ):
-            return await message.reply_text("Please reply to a video file to generate HD screenshots")
-
-        processing_msg = await message.reply_text("🔄 Generating HD screenshots (this takes 15–20 seconds)...")
-
-        media = message.reply_to_message.video or message.reply_to_message.document
-
-        # Prepare temp directory
-        temp_dir = f"temp/hdss_{message.from_user.id}_{int(time.time())}"
-        os.makedirs(temp_dir, exist_ok=True)
-
-        video_path = os.path.join(temp_dir, "source.mp4")
-        await client.download_media(media, file_name=video_path)
-
-        # Generate HD screenshots
-        screenshot_paths = await generate_hd_screenshots(video_path, temp_dir)
-
-        if not screenshot_paths:
-            await processing_msg.edit_text("❌ Failed to generate HD screenshots")
-            return
-
-        await client.send_media_group(
-            chat_id=message.chat.id,
-            media=[InputMediaPhoto(media=p) for p in screenshot_paths],
-            reply_to_message_id=message.reply_to_message.id
-        )
-        await processing_msg.edit_text(f"🎬 {len(screenshot_paths)} cinema-quality screenshots generated!")
-
-    finally:
-        if temp_dir:
-            await cleanup(temp_dir)
-
-# Core Generation Functions
-async def generate_telegram_thumbnails(client: Client, message: Message, count=5) -> Tuple[List[str], str]:
-    """Generate screenshots using Telegram's thumbnail system"""
-    temp_dir = f"temp/thumb_{message.from_user.id}_{int(time.time())}"
-    os.makedirs(temp_dir, exist_ok=True)
-    screenshots = []
-    
-    try:
-        duration = message.video.duration
-        timestamps = [duration * (i+0.5)/count for i in range(count)]  # Distributed points
-        
-        for i, ts in enumerate(timestamps, 1):
-            path = os.path.join(temp_dir, f"preview_{i}.jpg")
-            await client.download_media(message, file_name=path, thumb=f"{ts}")
-            if os.path.exists(path): screenshots.append(path)
-            
-        return screenshots, temp_dir
-    except Exception as e:
-        logger.error(f"Thumbnail error: {str(e)}")
-        return [], temp_dir
-
-async def generate_hd_screenshots(video_path: str, output_dir: str, count=5) -> List[str]:
-    """Generate lossless HD screenshots with FFmpeg"""
-    try:
-        # Get video metadata
+        # Get video duration using ffprobe
         probe = await asyncio.create_subprocess_exec(
-            'ffprobe', '-v', 'error', '-select_streams', 'v:0',
-            '-show_entries', 'stream=width,height,duration', '-of', 'csv=p=0',
-            video_path, stdout=asyncio.subprocess.PIPE
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            video_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         stdout, _ = await probe.communicate()
-        width, height, duration = map(float, stdout.decode().strip().split(','))
-        
-        # Generate timestamps avoiding keyframe issues
-        timestamps = [duration * (i+0.5)/count for i in range(count)]
-        
-        # Single FFmpeg command for all screenshots (faster)
-        cmd = [
-            'ffmpeg', '-hide_banner', '-loglevel', 'error',
-            '-ss', str(timestamps[0]), '-i', video_path,
-            '-vsync', '0', '-frames:v', str(count),
-            '-vf', f"select='between(t,{timestamps[0]},{timestamps[-1]})',fps=1/{duration/count}",
-            '-q:v', '1', '-f', 'image2', os.path.join(output_dir, 'hd_%02d.png')
-        ]
-        
-        process = await asyncio.create_subprocess_exec(*cmd)
-        await process.wait()
-        
-        return sorted(glob.glob(os.path.join(output_dir, 'hd_*.png')))[:count]
+        duration = float(stdout.decode().strip())
+
+        # Calculate even timestamps, avoiding very start/end
+        start = duration * 0.05
+        end = duration * 0.95
+        interval = (end - start) / count
+        timestamps = [start + i * interval for i in range(count)]
+
+        screenshots = []
+
+        for i, timestamp in enumerate(timestamps):
+            output_path = os.path.join(output_dir, f"screenshot_{i+1}.jpg")
+            cmd = [
+                'ffmpeg',
+                '-ss', str(timestamp),
+                '-i', video_path,
+                '-vframes', '1',
+                '-q:v', '2',              # High quality JPEG
+                '-y',
+                output_path
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await process.wait()
+
+            if os.path.exists(output_path):
+                screenshots.append(output_path)
+
+        return screenshots
+
     except Exception as e:
-        logger.error(f"HD generation error: {str(e)}")
+        logger.error(f"Error generating screenshots: {e}")
         return []
 
-# Universal Cleanup
-async def cleanup(path: str, retries=3):
-    for attempt in range(retries):
+# ─── TELEGRAM COMMAND HANDLER ─────────────────────────────────────────────────
+
+@Client.on_message(filters.command("ss"))
+async def generate_screenshots_command(client: Client, message: Message):
+    """Generate and send clean, full-res screenshots from a video."""
+    temp_dir = None
+    try:
+        if not message.reply_to_message or not (
+            message.reply_to_message.video or message.reply_to_message.document
+        ):
+            return await message.reply_text("📎 Please reply to a video file to generate screenshots.")
+
+        user_id = message.from_user.id
+        media = message.reply_to_message.video or message.reply_to_message.document
+
+        # Check user points
+        points_config = await hyoshcoder.get_config("points_config", {})
+        screenshot_cost = points_config.get("screenshot_cost", 5)
+        user_points = await hyoshcoder.get_points(user_id)
+
+        if user_points < screenshot_cost:
+            return await message.reply_text(
+                f"❌ You need {screenshot_cost} points to generate screenshots!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💎 Free Points", callback_data="freepoints")]
+                ])
+            )
+
+        processing_msg = await message.reply_text("🔄 Downloading and processing video...")
+
+        # Prepare temp directory
+        temp_dir = f"temp_screenshots_{user_id}_{int(time.time())}"
+        os.makedirs(temp_dir, exist_ok=True)
+        video_path = os.path.join(temp_dir, "video.mp4")
+
+        # Download the video
+        await client.download_media(media, file_name=video_path)
+
+        await processing_msg.edit_text("🖼 Generating 4K-resolution screenshots...")
+
+        # Generate screenshots
+        screenshot_paths = await generate_screenshots(video_path, temp_dir)
+
+        if not screenshot_paths:
+            await processing_msg.edit_text("❌ Failed to generate screenshots.")
+            return
+
+        # Send photo album without captions
+        media_group = [
+            InputMediaPhoto(media=path) for path in screenshot_paths[:10]
+        ]
+
+        await client.send_media_group(
+            chat_id=message.chat.id,
+            media=media_group
+        )
+
+        # Deduct points
+        await hyoshcoder.users.update_one(
+            {"_id": user_id},
+            {"$inc": {"points.balance": -screenshot_cost}}
+        )
+
+        await processing_msg.edit_text(
+            f"✅ {len(screenshot_paths)} full-resolution screenshots sent! (-{screenshot_cost} points)"
+        )
+
+    except Exception as e:
+        logger.error(f"Error in screenshot command: {e}")
+        await message.reply_text("❌ An error occurred while processing your request.")
+    finally:
         try:
-            shutil.rmtree(path)
-            break
-        except Exception as e:
-            if attempt == retries-1:
-                logger.error(f"Failed to cleanup {path}: {str(e)}")
-            await asyncio.sleep(1)
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except Exception as cleanup_error:
+            logger.warning(f"Cleanup failed: {cleanup_error}")
