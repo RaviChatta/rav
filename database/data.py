@@ -923,17 +923,26 @@ class Database:
             user = await self.users.find_one({"_id": user_id})
             if not user:
                 return {"is_premium": False, "reason": "User not found"}
-
-            if user["premium"]["is_premium"]:
-                if user["premium"]["until"] and \
-                   datetime.datetime.fromisoformat(user["premium"]["until"]) < datetime.utcnow():
-                    await self.deactivate_premium(user_id)
-                    return {"is_premium": False, "reason": "Subscription expired"}
-                return {"is_premium": True, "until": user["premium"]["until"], "plan": user["premium"]["plan"]}
+    
+            premium_info = user.get("premium", {})
+            is_premium = premium_info.get("is_premium", False)
+            until = premium_info.get("until")
+            plan = premium_info.get("plan")
+    
+            if is_premium:
+                if until:
+                    expiry_time = datetime.datetime.fromisoformat(until)
+                    if expiry_time < datetime.datetime.utcnow():
+                        await self.deactivate_premium(user_id)
+                        return {"is_premium": False, "reason": "Subscription expired"}
+                return {"is_premium": True, "until": until, "plan": plan}
+    
             return {"is_premium": False, "reason": "No active subscription"}
+    
         except Exception as e:
             logger.error(f"Error checking premium status for {user_id}: {e}")
             return {"is_premium": False, "reason": "Error checking status"}
+
 
     async def deactivate_premium(self, user_id: int) -> bool:
         """Deactivate premium subscription for a user."""
