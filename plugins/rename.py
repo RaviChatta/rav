@@ -929,12 +929,12 @@ async def show_leaderboard(client: Client, message: Message):
 # ─── SCREENSHOT GENERATOR (MAX 4K) ────────────────────────────────────────────
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
-    """Generate evenly spaced high-quality screenshots up to 4K resolution."""
+    """Generate screenshots at the video's native resolution using ffmpeg."""
     try:
         os.makedirs(output_dir, exist_ok=True)
 
-        # Get video duration using ffprobe
-        probe = await asyncio.create_subprocess_exec(
+        # Get duration
+        probe_duration = await asyncio.create_subprocess_exec(
             'ffprobe', '-v', 'error',
             '-show_entries', 'format=duration',
             '-of', 'default=noprint_wrappers=1:nokey=1',
@@ -942,10 +942,24 @@ async def generate_screenshots(video_path: str, output_dir: str, count: int = 10
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, _ = await probe.communicate()
+        stdout, _ = await probe_duration.communicate()
         duration = float(stdout.decode().strip())
 
-        # Calculate even timestamps, avoiding very start/end
+        # Get resolution
+        probe_resolution = await asyncio.create_subprocess_exec(
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height',
+            '-of', 'csv=p=0:s=x',
+            video_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        res_out, _ = await probe_resolution.communicate()
+        resolution = res_out.decode().strip()
+        logger.info(f"Detected video resolution: {resolution}")
+
+        # Even timestamps
         start = duration * 0.05
         end = duration * 0.95
         interval = (end - start) / count
@@ -960,15 +974,13 @@ async def generate_screenshots(video_path: str, output_dir: str, count: int = 10
                 '-ss', str(timestamp),
                 '-i', video_path,
                 '-vframes', '1',
-                '-q:v', '2',              # High quality JPEG
+                '-q:v', '2',  # High quality
                 '-y',
                 output_path
             ]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
+            process = await asyncio.create_subprocess_exec(*cmd,
+                                                           stdout=asyncio.subprocess.DEVNULL,
+                                                           stderr=asyncio.subprocess.DEVNULL)
             await process.wait()
 
             if os.path.exists(output_path):
@@ -979,6 +991,7 @@ async def generate_screenshots(video_path: str, output_dir: str, count: int = 10
     except Exception as e:
         logger.error(f"Error generating screenshots: {e}")
         return []
+
 
 # ─── TELEGRAM COMMAND HANDLER ─────────────────────────────────────────────────
 
@@ -1018,7 +1031,7 @@ async def generate_screenshots_command(client: Client, message: Message):
         # Download the video
         await client.download_media(media, file_name=video_path)
 
-        await processing_msg.edit_text("🖼 Generating 4K-resolution screenshots...")
+        await processing_msg.edit_text("🖼 Generating screenshots at original video resolution...")
 
         # Generate screenshots
         screenshot_paths = await generate_screenshots(video_path, temp_dir)
