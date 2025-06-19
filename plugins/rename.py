@@ -895,18 +895,22 @@ async def show_leaderboard(client: Client, message: Message):
         except:
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
-# INSTANT (No Download) - Fast but lower quality
+#instant ss
 @Client.on_message(filters.command("ss"))
 async def instant_screenshots(client: Client, message: Message):
     """Instant screenshots using Telegram's thumbnails (~3 sec)"""
     temp_dir = None
     try:
-        if not message.reply_to_message or not message.reply_to_message.video:
-            return await message.reply_text("Reply to a video message")
+        if not message.reply_to_message or not (
+            message.reply_to_message.video or message.reply_to_message.document
+        ):
+            return await message.reply_text("Please reply to a video file to generate instant previews")
 
         processing_msg = await message.reply_text("⚡ Generating instant previews...")
+
+        media = message.reply_to_message.video or message.reply_to_message.document
         screenshot_paths, temp_dir = await generate_telegram_thumbnails(client, message.reply_to_message)
-        
+
         if not screenshot_paths:
             await processing_msg.edit_text("❌ Failed to generate previews")
             return
@@ -919,27 +923,34 @@ async def instant_screenshots(client: Client, message: Message):
         await processing_msg.edit_text(f"✅ {len(screenshot_paths)} instant previews generated!")
 
     finally:
-        if temp_dir: await cleanup(temp_dir)
+        if temp_dir:
+            await cleanup(temp_dir)
 
-# HD QUALITY (Download + FFmpeg) - Slower but pristine quality
+
 @Client.on_message(filters.command("hdss"))
 async def hd_screenshots(client: Client, message: Message):
     """Ultra HD screenshots with perfect frame accuracy (~20 sec)"""
     temp_dir = None
     try:
-        if not message.reply_to_message or not message.reply_to_message.video:
-            return await message.reply_text("Reply to a video message")
+        if not message.reply_to_message or not (
+            message.reply_to_message.video or message.reply_to_message.document
+        ):
+            return await message.reply_text("Please reply to a video file to generate HD screenshots")
 
-        processing_msg = await message.reply_text("🔄 Generating HD screenshots (this takes 15-20 seconds)...")
-        
-        # Download video
+        processing_msg = await message.reply_text("🔄 Generating HD screenshots (this takes 15–20 seconds)...")
+
+        media = message.reply_to_message.video or message.reply_to_message.document
+
+        # Prepare temp directory
         temp_dir = f"temp/hdss_{message.from_user.id}_{int(time.time())}"
+        os.makedirs(temp_dir, exist_ok=True)
+
         video_path = os.path.join(temp_dir, "source.mp4")
-        await message.reply_to_message.download(video_path)
-        
+        await client.download_media(media, file_name=video_path)
+
         # Generate HD screenshots
         screenshot_paths = await generate_hd_screenshots(video_path, temp_dir)
-        
+
         if not screenshot_paths:
             await processing_msg.edit_text("❌ Failed to generate HD screenshots")
             return
@@ -952,7 +963,8 @@ async def hd_screenshots(client: Client, message: Message):
         await processing_msg.edit_text(f"🎬 {len(screenshot_paths)} cinema-quality screenshots generated!")
 
     finally:
-        if temp_dir: await cleanup(temp_dir)
+        if temp_dir:
+            await cleanup(temp_dir)
 
 # Core Generation Functions
 async def generate_telegram_thumbnails(client: Client, message: Message, count=5) -> Tuple[List[str], str]:
