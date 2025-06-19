@@ -724,26 +724,34 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
     user_id = user.id
      # Add user to database
     await hyoshcoder.add_user(user_id)
-    
+
     if args:
         arg = args[0]
     
-        # Handle referral code (e.g. /start ref_ABC123)
+        # Handle referral code (e.g., /start ref_ABC123)
         if arg.startswith("ref_"):
             referral_code = arg[4:]
-            referrer = await hyoshcoder.users.find_one({"referral_code": referral_code})
-            
+            referrer = await hyoshcoder.users.find_one({
+                "referral.referral_code": referral_code
+            })
+    
             if referrer and referrer["_id"] != user_id:
-                updated = await hyoshcoder.users.update_one(
-                    {"_id": referrer["_id"]},
-                    {"$addToSet": {"referral.referred_users": user_id}}
+                # Safely add points regardless of points format
+                success = await hyoshcoder.safe_increment_points(
+                    referrer["_id"],
+                    settings.REFER_POINT_REWARD
                 )
     
-                if updated.modified_count > 0:
+                if success:
+                    # Update referral stats
                     await hyoshcoder.users.update_one(
                         {"_id": referrer["_id"]},
-                        {"$inc": {"points": settings.REFER_POINT_REWARD}}  # <-- changed to points
+                        {
+                            "$inc": {"referral.referred_count": 1},
+                            "$addToSet": {"referral.referred_users": user_id}
+                        }
                     )
+    
                     try:
                         await client.send_message(
                             referrer["_id"],
@@ -751,6 +759,8 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
                         )
                     except Exception:
                         pass
+    
+
     
         # Handle point redemption link (e.g. /start XYZ123)
         else:
