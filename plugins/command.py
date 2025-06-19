@@ -725,42 +725,36 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
      # Add user to database
     await hyoshcoder.add_user(user_id)
 
-    if args:
-        arg = args[0]
+    # In your handle_start_command function, update the referral section:
+    if arg.startswith("ref_"):
+        referral_code = arg[4:]
+        referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
     
-        # Handle referral code (e.g., /start ref_ABC123)
-        if arg.startswith("ref_"):
-            referral_code = arg[4:]
-            referrer = await hyoshcoder.users.find_one({
-                "referral.referral_code": referral_code
-            })
-    
-            if referrer and referrer["_id"] != user_id:
-                # Safely add points regardless of points format
-                success = await hyoshcoder.safe_increment_points(
+        if referrer and referrer["_id"] != user_id:
+            # Add points to referrer's balance
+            await hyoshcoder.add_points(
+                referrer["_id"], 
+                settings.REFER_POINT_REWARD,
+                source="referral",
+                description=f"Referral bonus for user {user_id}"
+            )
+            
+            # Update referral stats
+            await hyoshcoder.users.update_one(
+                {"_id": referrer["_id"]},
+                {
+                    "$inc": {"referral.referred_count": 1},
+                    "$addToSet": {"referral.referred_users": user_id}
+                }
+            )
+            
+            try:
+                await client.send_message(
                     referrer["_id"],
-                    settings.REFER_POINT_REWARD
+                    f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
                 )
-    
-                if success:
-                    # Update referral stats
-                    await hyoshcoder.users.update_one(
-                        {"_id": referrer["_id"]},
-                        {
-                            "$inc": {"referral.referred_count": 1},
-                            "$addToSet": {"referral.referred_users": user_id}
-                        }
-                    )
-    
-                    try:
-                        await client.send_message(
-                            referrer["_id"],
-                            f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
-                        )
-                    except Exception:
-                        pass
-    
-
+            except Exception:
+                pass
     
         # Handle point redemption link (e.g. /start XYZ123)
         else:
