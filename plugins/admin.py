@@ -1077,6 +1077,62 @@ class AdminPanel:
             text,
             reply_markup=AdminPanel.back_button("user_menu")
         )
+    @staticmethod
+    async def handle_db_reset(client: Client, callback: CallbackQuery):
+        """Handle database reset confirmation"""
+        data_parts = callback.data.split("_")
+        action = data_parts[0]
+        admin_id = int(data_parts[3])
+        
+        if callback.from_user.id != admin_id:
+            await callback.answer("❌ Only the initiating admin can confirm this action!", show_alert=True)
+            return
+
+        if action == "cancel":
+            await callback.message.edit_text("✅ Database reset cancelled")
+            await callback.answer()
+            return
+            
+        await callback.message.edit_text("🔄 Resetting database... This may take a moment")
+        
+        result = await hyoshcoder.reset_database(admin_id)
+        
+        if "error" in result:
+            await callback.message.edit_text(f"❌ Reset failed: {result['error']}")
+        else:
+            reset_report = (
+                "✅ **Database Reset Complete**\n\n"
+                f"🗑 Deleted:\n"
+                f"- {result['users_deleted']} users\n"
+                f"- {result['files_deleted']} file records\n"
+                f"- {result['tokens_deleted']} token links\n\n"
+                "The bot now has a fresh database!"
+            )
+            await callback.message.edit_text(reset_report)
+            
+        await callback.answer()
+
+    @staticmethod
+    async def handle_admin_callbacks(client: Client, callback: CallbackQuery):
+        """Updated callback handler with resetdb support"""
+        data = callback.data
+        
+        try:
+            # Add this condition to handle resetdb callbacks
+            if data.startswith(("confirm_db_reset_", "cancel_db_reset_")):
+                await AdminPanel.handle_db_reset(client, callback)
+                return
+                
+            # Keep all your existing conditions
+            elif data == "admin_main":
+                await AdminPanel.show_main_menu(client, callback)
+            elif data == "points_menu":
+                # ... rest of your existing callback handling
+                
+            await callback.answer()
+        except Exception as e:
+            logger.error(f"Error in admin callback {data}: {e}")
+            await callback.answer("❌ An error occurred", show_alert=True)
 
     # ========================
     # Callback Handlers
@@ -1177,7 +1233,31 @@ class AdminPanel:
 # ========================
 # Command Handlers
 # ========================
+@Client.on_message(filters.command("resetdb") & filters.user(ADMIN_USER_ID))
+async def reset_database_command(client: Client, message: Message):
+    """Admin command to completely reset the database"""
+    try:
+        confirm_buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚠️ CONFIRM RESET", callback_data=f"confirm_db_reset_{message.from_user.id}")],
+            [InlineKeyboardButton("Cancel", callback_data=f"cancel_db_reset_{message.from_user.id}")]
+        ])
 
+        warning_msg = (
+            "🚨 **DATABASE RESET WARNING** 🚨\n\n"
+            "This will PERMANENTLY DELETE:\n"
+            "- All user accounts\n"
+            "- All file statistics\n"
+            "- All point tokens\n"
+            "- All transaction history\n\n"
+            "This action cannot be undone!\n\n"
+            "Are you absolutely sure?"
+        )
+
+        await message.reply(warning_msg, reply_markup=confirm_buttons)
+
+    except Exception as e:
+        logger.error(f"Reset DB command error: {e}")
+        await message.reply("❌ Error processing reset command")
 @Client.on_message(filters.command("admin") & filters.user(ADMIN_USER_ID))
 async def admin_command(client: Client, message: Message):
     await AdminPanel.show_main_menu(client, message)
