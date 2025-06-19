@@ -134,51 +134,55 @@ async def get_stream_indexes(input_path: str):
         return [], [], []
 
 async def add_comprehensive_metadata(input_path: str, output_path: str, metadata_text: str) -> Tuple[bool, Optional[str]]:
-    """Enhanced metadata addition with FFmpeg that works for all stream types with multiple fallback strategies"""
+    """Robust metadata addition with FFmpeg version fallbacks and detailed error handling"""
     try:
-        # Sanitize metadata text first
+        # Sanitize metadata text
         safe_metadata = sanitize_metadata(metadata_text)
         if not safe_metadata:
             return False, "Empty metadata after sanitization"
 
-        # Define multiple strategies to try in order
+        # First check if FFmpeg is available
+        try:
+            version_check = await asyncio.create_subprocess_exec(
+                'ffmpeg', '-version',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await version_check.wait()
+            if version_check.returncode != 0:
+                return False, "FFmpeg is not properly installed"
+        except FileNotFoundError:
+            return False, "FFmpeg not found on system"
+
+        # Define strategies with version-specific approaches
         strategies = [
-            # Strategy 1: Comprehensive metadata for all stream types
+            # Strategy 1: Modern FFmpeg approach (v4.0+)
             [
                 'ffmpeg',
                 '-i', input_path,
                 '-map', '0',
-                '-c:s', 'copy',
-                '-c:a', 'copy',
-                '-c:v', 'copy',
+                '-c', 'copy',
+                '-movflags', 'use_metadata_tags',
                 '-metadata', f'title={safe_metadata}',
                 '-metadata', f'comment={safe_metadata}',
                 '-metadata', f'description={safe_metadata}',
-                '-metadata:s:s:0', f'title={safe_metadata}',
-                '-metadata:s:a:0', f'title={safe_metadata}',
-                '-metadata:s:v:0', f'title={safe_metadata}',
+                '-metadata:s:v:0', f'title=Video - {safe_metadata}',
+                '-metadata:s:a:0', f'title=Audio - {safe_metadata}',
+                '-metadata:s:s:0', f'title=Subs - {safe_metadata}',
                 '-y', output_path
             ],
-            # Strategy 2: Simplified version with just global metadata
+            # Strategy 2: Legacy compatible approach
             [
                 'ffmpeg',
                 '-i', input_path,
                 '-map', '0',
-                '-c', 'copy',
-                '-metadata', f'title={safe_metadata}',
-                '-metadata', f'comment={safe_metadata}',
-                '-y', output_path
-            ],
-            # Strategy 3: Minimal version with just title
-            [
-                'ffmpeg',
-                '-i', input_path,
-                '-map', '0',
-                '-c', 'copy',
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-c:s', 'copy',
                 '-metadata', f'title={safe_metadata}',
                 '-y', output_path
             ],
-            # Strategy 4: Even simpler version without stream mapping
+            # Strategy 3: Minimal metadata only
             [
                 'ffmpeg',
                 '-i', input_path,
@@ -188,39 +192,65 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
             ]
         ]
 
-        # Try each strategy in order
+        # Try each strategy with enhanced error detection
+        last_error = ""
         for strategy_num, cmd in enumerate(strategies, 1):
             try:
+                # Log the attempt
+                logging.info(f"Attempting Strategy {strategy_num}: {' '.join(cmd)}")
+                
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
-
+                
+                # Use a shorter timeout for faster fallthrough
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+                
+                # Check results
                 if process.returncode == 0:
-                    # Verify output file exists and has content
                     if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                         return True, None
-                    else:
-                        continue  # Try next strategy if output is invalid
-                
-                # If we get here, the strategy failed
-                error_msg = stderr.decode() if stderr else "Unknown FFmpeg error"
-                logging.warning(f"Strategy {strategy_num} failed: {error_msg[:500]}")
+                    last_error = f"Strategy {strategy_num}: Empty output file"
+                else:
+                    error_msg = stderr.decode('utf-8', errors='replace') if stderr else "No error output"
+                    last_error = f"Strategy {strategy_num} failed: {error_msg[:500]}"
+                    logging.warning(last_error)
 
             except asyncio.TimeoutError:
-                logging.warning(f"Strategy {strategy_num} timed out")
+                last_error = f"Strategy {strategy_num} timed out"
+                logging.warning(last_error)
                 continue
             except Exception as e:
-                logging.warning(f"Strategy {strategy_num} encountered exception: {str(e)}")
+                last_error = f"Strategy {strategy_num} error: {str(e)}"
+                logging.warning(last_error)
                 continue
 
-        # If all strategies failed
-        return False, "All metadata addition strategies failed"
+        # Final fallback - try atomicparsley for MP4 files if available
+        if output_path.lower().endswith('.mp4'):
+            try:
+                result = await asyncio.create_subprocess_exec(
+                    'AtomicParsley',
+                    input_path,
+                    '--title', safe_metadata,
+                    '--comment', safe_metadata,
+                    '--description', safe_metadata,
+                    '-o', output_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await result.wait()
+                if result.returncode == 0:
+                    return True, None
+            except Exception as e:
+                logging.info(f"AtomicParsley fallback failed: {str(e)}")
+
+        return False, f"All strategies failed. Last error: {last_error}"
 
     except Exception as e:
-        return False, f"Unexpected error: {str(e)}"
+        logging.error(f"Metadata addition crashed: {str(e)}", exc_info=True)
+        return False, f"Critical error: {str(e)}"
 
 async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
     """Enhanced dump channel sender"""
