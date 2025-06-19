@@ -1002,7 +1002,7 @@ async def generate_hd_screenshots(video_path: str, output_dir: str, count=5) -> 
         process = await asyncio.create_subprocess_exec(*cmd)
         await process.wait()
         
-        return sorted(glob.glob(os.path.join(output_dir, 'hd_*.png'))[:count]
+        return sorted(glob.glob(os.path.join(output_dir, 'hd_*.png')))[:count]
     except Exception as e:
         logger.error(f"HD generation error: {str(e)}")
         return []
