@@ -844,7 +844,29 @@ class Database:
         except Exception as e:
             logger.error(f"Error adding points to {user_id}: {e}")
             return False
-
+    async def safe_increment_points(self, user_id: int, amount: int) -> bool:
+        """Safely increment points regardless of current format"""
+        try:
+            user = await self.users.find_one({"_id": user_id})
+            if not user:
+                return False
+                
+            if isinstance(user.get("points"), dict):
+                # New format
+                await self.users.update_one(
+                    {"_id": user_id},
+                    {"$inc": {"points.balance": amount}}
+                )
+            else:
+                # Old format
+                await self.users.update_one(
+                    {"_id": user_id},
+                    {"$inc": {"points": amount}}
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Error incrementing points: {e}")
+            return False
     async def deduct_points(self, user_id: int, points: int, reason: str = "system") -> bool:
         """Deduct points from user's balance with validation."""
         try:
