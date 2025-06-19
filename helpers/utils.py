@@ -110,8 +110,18 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
 
     # Global control: Only update once every 1.5 seconds per message
     last = last_progress_edit.get(message.chat.id, 0)
-    if now - last < 2.5 and current != total:
+    
+    # Dynamic delay: adjust based on file size
+    if total >= 1024 * 1024 * 1024:         # ≥ 1 GB
+        delay = 10
+    elif total >= 500 * 1024 * 1024:        # 500 MB – 1 GB
+        delay = 5
+    else:                                   # < 500 MB
+        delay = 2.5
+    
+    if now - last < delay and current != total:
         return
+
     last_progress_edit[message.chat.id] = now
 
     try:
