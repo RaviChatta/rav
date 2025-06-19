@@ -134,71 +134,93 @@ async def get_stream_indexes(input_path: str):
         return [], [], []
 
 async def add_comprehensive_metadata(input_path: str, output_path: str, metadata_text: str) -> Tuple[bool, Optional[str]]:
-    """Enhanced metadata addition with FFmpeg that works for all stream types"""
+    """Enhanced metadata addition with FFmpeg that works for all stream types with multiple fallback strategies"""
     try:
         # Sanitize metadata text first
         safe_metadata = sanitize_metadata(metadata_text)
         if not safe_metadata:
             return False, "Empty metadata after sanitization"
 
-        # Build comprehensive metadata command
-        cmd = [
-            'ffmpeg',
-            '-i', input_path,
-            '-map', '0',  # Include all streams
-            '-c:s', 'copy',  # Copy subtitles
-            '-c:a', 'copy',  # Copy audio
-            '-c:v', 'copy',  # Copy video
-            '-metadata', f'title={safe_metadata}',
-            '-metadata', f'comment={safe_metadata}',
-            '-metadata', f'description={safe_metadata}',
-            '-metadata:s:s:0', f'title={safe_metadata}',  # For subtitle streams
-            '-metadata:s:a:0', f'title={safe_metadata}',  # For audio streams
-            '-metadata:s:v:0', f'title={safe_metadata}',  # For video streams
-            '-y',  # Overwrite output file
-            output_path
+        # Define multiple strategies to try in order
+        strategies = [
+            # Strategy 1: Comprehensive metadata for all stream types
+            [
+                'ffmpeg',
+                '-i', input_path,
+                '-map', '0',
+                '-c:s', 'copy',
+                '-c:a', 'copy',
+                '-c:v', 'copy',
+                '-metadata', f'title={safe_metadata}',
+                '-metadata', f'comment={safe_metadata}',
+                '-metadata', f'description={safe_metadata}',
+                '-metadata:s:s:0', f'title={safe_metadata}',
+                '-metadata:s:a:0', f'title={safe_metadata}',
+                '-metadata:s:v:0', f'title={safe_metadata}',
+                '-y', output_path
+            ],
+            # Strategy 2: Simplified version with just global metadata
+            [
+                'ffmpeg',
+                '-i', input_path,
+                '-map', '0',
+                '-c', 'copy',
+                '-metadata', f'title={safe_metadata}',
+                '-metadata', f'comment={safe_metadata}',
+                '-y', output_path
+            ],
+            # Strategy 3: Minimal version with just title
+            [
+                'ffmpeg',
+                '-i', input_path,
+                '-map', '0',
+                '-c', 'copy',
+                '-metadata', f'title={safe_metadata}',
+                '-y', output_path
+            ],
+            # Strategy 4: Even simpler version without stream mapping
+            [
+                'ffmpeg',
+                '-i', input_path,
+                '-c', 'copy',
+                '-metadata', f'title={safe_metadata}',
+                '-y', output_path
+            ]
         ]
 
-        # Execute the command
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+        # Try each strategy in order
+        for strategy_num, cmd in enumerate(strategies, 1):
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
-        if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            return True, None
+                if process.returncode == 0:
+                    # Verify output file exists and has content
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                        return True, None
+                    else:
+                        continue  # Try next strategy if output is invalid
+                
+                # If we get here, the strategy failed
+                error_msg = stderr.decode() if stderr else "Unknown FFmpeg error"
+                logging.warning(f"Strategy {strategy_num} failed: {error_msg[:500]}")
 
-        # If failed, try simpler version
-        simpler_cmd = [
-            'ffmpeg',
-            '-i', input_path,
-            '-map', '0',
-            '-c', 'copy',
-            '-metadata', f'title={safe_metadata}',
-            '-y',
-            output_path
-        ]
+            except asyncio.TimeoutError:
+                logging.warning(f"Strategy {strategy_num} timed out")
+                continue
+            except Exception as e:
+                logging.warning(f"Strategy {strategy_num} encountered exception: {str(e)}")
+                continue
 
-        process = await asyncio.create_subprocess_exec(
-            *simpler_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+        # If all strategies failed
+        return False, "All metadata addition strategies failed"
 
-        if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            return True, None
-
-        # If all attempts failed
-        error_msg = stderr.decode() if stderr else "Unknown FFmpeg error"
-        return False, error_msg[:500]  # Return first 500 chars of error message
-
-    except asyncio.TimeoutError:
-        return False, "FFmpeg timed out after 5 minutes"
     except Exception as e:
-        return False, str(e)
+        return False, f"Unexpected error: {str(e)}"
 
 async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
     """Enhanced dump channel sender"""
@@ -873,120 +895,125 @@ async def show_leaderboard(client: Client, message: Message):
         except:
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
-async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
-    """Generate random screenshots from video with same quality"""
-    try:
-        os.makedirs(output_dir, exist_ok=True)
-        screenshots = []
-        
-        # Get video duration
-        probe = await asyncio.create_subprocess_exec(
-            'ffprobe', '-v', 'error',
-            '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
-            video_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, _ = await probe.communicate()
-        duration = float(stdout.decode().strip())
-        
-        # Generate random timestamps
-        timestamps = sorted([random.uniform(0, duration) for _ in range(count)])
-        
-        # Generate screenshots
-        for i, timestamp in enumerate(timestamps):
-            output_path = os.path.join(output_dir, f'screenshot_{i+1}.jpg')
-            cmd = [
-                'ffmpeg',
-                '-ss', str(timestamp),
-                '-i', video_path,
-                '-vframes', '1',
-                '-q:v', '2',  # Quality (2-31, lower is better)
-                '-y',
-                output_path
-            ]
-            
-            process = await asyncio.create_subprocess_exec(*cmd)
-            await process.wait()
-            
-            if os.path.exists(output_path):
-                screenshots.append(output_path)
-        
-        return screenshots
-    
-    except Exception as e:
-        logger.error(f"Error generating screenshots: {e}")
-        return []
-
+# INSTANT (No Download) - Fast but lower quality
 @Client.on_message(filters.command("ss"))
-async def generate_screenshots_command(client: Client, message: Message):
-    """Generate and send screenshots from a video file."""
+async def instant_screenshots(client: Client, message: Message):
+    """Instant screenshots using Telegram's thumbnails (~3 sec)"""
+    temp_dir = None
     try:
-        if not message.reply_to_message or not (
-            message.reply_to_message.video or message.reply_to_message.document
-        ):
-            return await message.reply_text("Please reply to a video file to generate screenshots")
+        if not message.reply_to_message or not message.reply_to_message.video:
+            return await message.reply_text("Reply to a video message")
 
-        user_id = message.from_user.id
-        media = message.reply_to_message.video or message.reply_to_message.document
-
-        # Check points
-        points_config = await hyoshcoder.get_config("points_config", {})
-        screenshot_cost = points_config.get("screenshot_cost", 5)
-        user_points = await hyoshcoder.get_points(user_id)
-
-        if user_points < screenshot_cost:
-            return await message.reply_text(
-                f"❌ You need {screenshot_cost} points to generate screenshots!",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Free points", callback_data="freepoints")]]
-                )
-            )
-
-        processing_msg = await message.reply_text("🔄 Generating screenshots...")
-
-        # Download video
-        temp_dir = f"temp_screenshots_{user_id}"
-        os.makedirs(temp_dir, exist_ok=True)
-        video_path = os.path.join(temp_dir, "video.mp4")
-
-        await client.download_media(media, file_name=video_path)
-
-        # Generate screenshots
-        screenshot_paths = await generate_screenshots(video_path, temp_dir)
-
+        processing_msg = await message.reply_text("⚡ Generating instant previews...")
+        screenshot_paths, temp_dir = await generate_telegram_thumbnails(client, message.reply_to_message)
+        
         if not screenshot_paths:
-            await processing_msg.edit_text("❌ Failed to generate screenshots")
+            await processing_msg.edit_text("❌ Failed to generate previews")
             return
-
-        # Create album (max 10 screenshots)
-        media_group = [
-            InputMediaPhoto(media=path, caption=f"Screenshot {i+1}" if i == 0 else "")
-            for i, path in enumerate(screenshot_paths[:10])
-        ]
 
         await client.send_media_group(
             chat_id=message.chat.id,
-            media=media_group
+            media=[InputMediaPhoto(media=p) for p in screenshot_paths],
+            reply_to_message_id=message.reply_to_message.id
         )
-
-        # Deduct points
-        await hyoshcoder.users.update_one(
-            {"_id": user_id},
-            {"$inc": {"points.balance": -screenshot_cost}}
-        )
-
-        await processing_msg.edit_text(f"✅ {len(screenshot_paths)} screenshots generated! (-{screenshot_cost} points)")
-
-    except Exception as e:
-        logger.error(f"Error in screenshot command: {e}")
-        await message.reply_text("❌ Failed to generate screenshots")
+        await processing_msg.edit_text(f"✅ {len(screenshot_paths)} instant previews generated!")
 
     finally:
-        # Cleanup
+        if temp_dir: await cleanup(temp_dir)
+
+# HD QUALITY (Download + FFmpeg) - Slower but pristine quality
+@Client.on_message(filters.command("hdss"))
+async def hd_screenshots(client: Client, message: Message):
+    """Ultra HD screenshots with perfect frame accuracy (~20 sec)"""
+    temp_dir = None
+    try:
+        if not message.reply_to_message or not message.reply_to_message.video:
+            return await message.reply_text("Reply to a video message")
+
+        processing_msg = await message.reply_text("🔄 Generating HD screenshots (this takes 15-20 seconds)...")
+        
+        # Download video
+        temp_dir = f"temp/hdss_{message.from_user.id}_{int(time.time())}"
+        video_path = os.path.join(temp_dir, "source.mp4")
+        await message.reply_to_message.download(video_path)
+        
+        # Generate HD screenshots
+        screenshot_paths = await generate_hd_screenshots(video_path, temp_dir)
+        
+        if not screenshot_paths:
+            await processing_msg.edit_text("❌ Failed to generate HD screenshots")
+            return
+
+        await client.send_media_group(
+            chat_id=message.chat.id,
+            media=[InputMediaPhoto(media=p) for p in screenshot_paths],
+            reply_to_message_id=message.reply_to_message.id
+        )
+        await processing_msg.edit_text(f"🎬 {len(screenshot_paths)} cinema-quality screenshots generated!")
+
+    finally:
+        if temp_dir: await cleanup(temp_dir)
+
+# Core Generation Functions
+async def generate_telegram_thumbnails(client: Client, message: Message, count=5) -> Tuple[List[str], str]:
+    """Generate screenshots using Telegram's thumbnail system"""
+    temp_dir = f"temp/thumb_{message.from_user.id}_{int(time.time())}"
+    os.makedirs(temp_dir, exist_ok=True)
+    screenshots = []
+    
+    try:
+        duration = message.video.duration
+        timestamps = [duration * (i+0.5)/count for i in range(count)]  # Distributed points
+        
+        for i, ts in enumerate(timestamps, 1):
+            path = os.path.join(temp_dir, f"preview_{i}.jpg")
+            await client.download_media(message, file_name=path, thumb=f"{ts}")
+            if os.path.exists(path): screenshots.append(path)
+            
+        return screenshots, temp_dir
+    except Exception as e:
+        logger.error(f"Thumbnail error: {str(e)}")
+        return [], temp_dir
+
+async def generate_hd_screenshots(video_path: str, output_dir: str, count=5) -> List[str]:
+    """Generate lossless HD screenshots with FFmpeg"""
+    try:
+        # Get video metadata
+        probe = await asyncio.create_subprocess_exec(
+            'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,duration', '-of', 'csv=p=0',
+            video_path, stdout=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await probe.communicate()
+        width, height, duration = map(float, stdout.decode().strip().split(','))
+        
+        # Generate timestamps avoiding keyframe issues
+        timestamps = [duration * (i+0.5)/count for i in range(count)]
+        
+        # Single FFmpeg command for all screenshots (faster)
+        cmd = [
+            'ffmpeg', '-hide_banner', '-loglevel', 'error',
+            '-ss', str(timestamps[0]), '-i', video_path,
+            '-vsync', '0', '-frames:v', str(count),
+            '-vf', f"select='between(t,{timestamps[0]},{timestamps[-1]})',fps=1/{duration/count}",
+            '-q:v', '1', '-f', 'image2', os.path.join(output_dir, 'hd_%02d.png')
+        ]
+        
+        process = await asyncio.create_subprocess_exec(*cmd)
+        await process.wait()
+        
+        return sorted(glob.glob(os.path.join(output_dir, 'hd_*.png'))[:count]
+    except Exception as e:
+        logger.error(f"HD generation error: {str(e)}")
+        return []
+
+# Universal Cleanup
+async def cleanup(path: str, retries=3):
+    for attempt in range(retries):
         try:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-        except Exception as cleanup_error:
-            logger.warning(f"Cleanup failed: {cleanup_error}")
+            shutil.rmtree(path)
+            break
+        except Exception as e:
+            if attempt == retries-1:
+                logger.error(f"Failed to cleanup {path}: {str(e)}")
+            await asyncio.sleep(1)
