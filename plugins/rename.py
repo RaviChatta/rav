@@ -7,6 +7,9 @@ import os
 import time
 import re
 import asyncio
+import random
+import shutil
+from pyrogram.types import InputMediaPhoto
 import uuid
 import logging
 import json
