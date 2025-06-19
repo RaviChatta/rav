@@ -1511,7 +1511,39 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting config {key}: {e}")
             return default
-
+    async def reset_database(self, admin_id: int) -> Dict[str, int]:
+        """Completely reset all bot-related collections (admin only)"""
+        try:
+            # Get counts before deletion
+            user_count = await self.users.count_documents({})
+            file_stats_count = await self.file_stats.count_documents({})
+            token_links_count = await self.token_links.count_documents({})
+            
+            # Delete all documents in each collection
+            await self.users.delete_many({})
+            await self.file_stats.delete_many({})
+            await self.token_links.delete_many({})
+            await self.transactions.delete_many({})
+            await self.leaderboards.delete_many({})
+            await self.sequences.delete_many({})
+            
+            # Recreate indexes
+            await self._create_indexes()
+            
+            # Re-add the admin who executed the command
+            if admin_id:
+                await self.add_user(admin_id)
+            
+            return {
+                "users_deleted": user_count,
+                "files_deleted": file_stats_count,
+                "tokens_deleted": token_links_count,
+                "status": "Database reset complete"
+            }
+            
+        except Exception as e:
+            logger.error(f"Database reset failed: {e}")
+            return {"error": str(e)}
 # Initialize database instance with retry logic
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
 
