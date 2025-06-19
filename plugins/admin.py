@@ -1127,26 +1127,7 @@ class AdminPanel:
             elif data == "admin_main":
                 await AdminPanel.show_main_menu(client, callback)
             elif data == "points_menu":
-                # ... rest of your existing callback handling
-                
-            await callback.answer()
-        except Exception as e:
-            logger.error(f"Error in admin callback {data}: {e}")
-            await callback.answer("❌ An error occurred", show_alert=True)
 
-    # ========================
-    # Callback Handlers
-    # ========================
-    
-    @staticmethod
-    async def handle_admin_callbacks(client: Client, callback: CallbackQuery):
-        """Central callback handler for all admin actions"""
-        data = callback.data
-        
-        try:
-            if data == "admin_main":
-                await AdminPanel.show_main_menu(client, callback)
-            elif data == "points_menu":
                 await AdminPanel.show_points_menu(client, callback)
             elif data == "user_menu":
                 await AdminPanel.show_user_menu(client, callback)
@@ -1224,6 +1205,9 @@ class AdminPanel:
                     "Enter user ID to search:",
                     reply_markup=AdminPanel.back_button("search_menu")
                 )
+            # Add this empty elif to prevent the indentation error
+            elif data.startswith("finduser_"):
+                pass  # Or implement the proper handler
             
             await callback.answer()
         except Exception as e:
