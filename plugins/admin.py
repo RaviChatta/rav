@@ -40,8 +40,7 @@ class AdminPanel:
     DEFAULT_CONFIG = {
         "points_config": {
             "rename_cost": 1,
-            "referral_bonus": 10,
-            "ad_points": {"min": 5, "max": 20, "daily_limit": 5},
+            "screenshot_cost": 5,
             "new_user_balance": 70
         },
         "premium_plans": {
@@ -69,7 +68,8 @@ class AdminPanel:
             [
                 InlineKeyboardButton("🔄 Update Config", callback_data="update_config"),
                 InlineKeyboardButton("🔍 Search", callback_data="search_menu")
-            ]
+            ],
+            [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
     
     @staticmethod
@@ -77,11 +77,9 @@ class AdminPanel:
         """Complete points configuration menu"""
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("💳 Set Rename Cost", callback_data="set_rename_cost")],
-            [InlineKeyboardButton("🎁 Referral Bonus", callback_data="set_referral_bonus")],
-            [InlineKeyboardButton("📺 Ad Points", callback_data="set_ad_points")],
-            [InlineKeyboardButton("🔗 Generate Points Link", callback_data="gen_points_link")],
-            [InlineKeyboardButton("📋 Points Links", callback_data="list_points_links")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+            [InlineKeyboardButton("📸 Set Screenshot Cost", callback_data="set_screenshot_cost")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main"),
+             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
     
     @staticmethod
@@ -100,7 +98,8 @@ class AdminPanel:
                 InlineKeyboardButton("🔍 Find User", callback_data="find_user"),
                 InlineKeyboardButton("📜 User Logs", callback_data="user_logs")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main"),
+             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
     
     @staticmethod
@@ -115,7 +114,8 @@ class AdminPanel:
                 InlineKeyboardButton("📝 Check Status", callback_data="check_premium"),
                 InlineKeyboardButton("📊 Plans", callback_data="premium_plans")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main"),
+             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
     
     @staticmethod
@@ -130,7 +130,8 @@ class AdminPanel:
                 InlineKeyboardButton("📊 Stats Only", callback_data="stats_broadcast"),
                 InlineKeyboardButton("🎯 Targeted", callback_data="targeted_broadcast")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main"),
+             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
     
     @staticmethod
@@ -145,14 +146,16 @@ class AdminPanel:
                 InlineKeyboardButton("📅 By Join Date", callback_data="search_join_date"),
                 InlineKeyboardButton("🪙 By Points", callback_data="search_points")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main"),
+             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
     
     @staticmethod
     def back_button(target: str = "admin_main") -> InlineKeyboardMarkup:
         """Dynamic back button"""
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back", callback_data=target)]
+            [InlineKeyboardButton("🔙 Back", callback_data=target),
+             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
         ])
 
     # ========================
@@ -261,7 +264,8 @@ class AdminPanel:
                 [
                     InlineKeyboardButton("✅ Confirm", callback_data=confirm_data),
                     InlineKeyboardButton("❌ Cancel", callback_data=cancel_data)
-                ]
+                ],
+                [InlineKeyboardButton("❌ Close", callback_data="close_admin")]
             ])
         )
 
@@ -287,9 +291,7 @@ class AdminPanel:
         text = (
             "⚙️ <b>Points Configuration</b>\n\n"
             f"• Rename Cost: {config.get('rename_cost', 1)} point(s)\n"
-            f"• Referral Bonus: {config.get('referral_bonus', 10)} points\n"
-            f"• Ad Points: {config.get('ad_points', {}).get('min', 5)}-{config.get('ad_points', {}).get('max', 20)}\n"
-            f"• Daily Ad Limit: {config.get('ad_points', {}).get('daily_limit', 5)}\n"
+            f"• Screenshot Cost: {config.get('screenshot_cost', 5)} points\n"
             f"• New User Balance: {config.get('new_user_balance', 70)}"
         )
         
@@ -386,189 +388,46 @@ class AdminPanel:
             )
     
     @staticmethod
-    async def handle_set_referral_bonus(client: Client, target: Union[Message, CallbackQuery]) -> Message:
-        """Handle referral bonus configuration"""
+    async def handle_set_screenshot_cost(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Handle screenshot cost configuration"""
         config = await AdminPanel.get_config("points_config")
-        current_bonus = config.get("referral_bonus", 10)
+        current_cost = config.get("screenshot_cost", 5)
         
         return await AdminPanel._edit_or_reply(
             target,
-            "🎁 <b>Set Referral Bonus</b>\n\n"
-            f"Current bonus: {current_bonus} points\n\n"
-            "Enter new bonus amount:\n"
-            "<code>/setreferral [amount]</code>\n\n"
-            "Example: <code>/setreferral 15</code>",
+            "📸 <b>Set Screenshot Cost</b>\n\n"
+            f"Current cost: {current_cost} points\n\n"
+            "Enter new cost (in points):\n"
+            "<code>/setscreenshot [amount]</code>\n\n"
+            "Example: <code>/setscreenshot 10</code>",
             reply_markup=AdminPanel.back_button("points_menu")
         )
     
     @staticmethod
-    async def process_set_referral(client: Client, message: Message) -> Message:
-        """Process referral bonus change"""
+    async def process_set_screenshot_cost(client: Client, message: Message) -> Message:
+        """Process screenshot cost change command"""
         try:
-            bonus = int(message.text.split()[1])
-            if bonus < 0:
-                raise ValueError("Bonus cannot be negative")
+            cost = int(message.text.split()[1])
+            if cost < 0:
+                raise ValueError("Cost cannot be negative")
                 
-            success = await AdminPanel.update_config("referral_bonus", bonus)
+            success = await AdminPanel.update_config("screenshot_cost", cost)
             if not success:
                 raise Exception("Failed to update config")
             
             return await AdminPanel._edit_or_reply(
                 message,
-                f"✅ Referral bonus set to {bonus} points",
+                f"✅ Screenshot cost set to {cost} points",
                 reply_markup=AdminPanel.back_button("points_menu")
             )
         except (IndexError, ValueError, Exception) as e:
             return await AdminPanel._edit_or_reply(
                 message,
                 f"❌ Error: {str(e)}\n\n"
-                "Usage: <code>/setreferral [amount]</code>\n"
-                "Example: <code>/setreferral 15</code>",
+                "Usage: <code>/setscreenshot [amount]</code>\n"
+                "Example: <code>/setscreenshot 10</code>",
                 reply_markup=AdminPanel.back_button("points_menu")
             )
-    
-    @staticmethod
-    async def generate_points_link_ui(client: Client, callback: CallbackQuery) -> Message:
-        """Show points link generation UI"""
-        return await AdminPanel._edit_or_reply(
-            callback,
-            "🔗 <b>Generate Points Link</b>\n\n"
-            "Enter command:\n"
-            "<code>/genlink points uses expires</code>\n\n"
-            "<b>Example:</b> <code>/genlink 50 10 24h</code>\n"
-            "<b>Expires formats:</b> 24h, 7d, 30m",
-            reply_markup=AdminPanel.back_button("points_menu")
-        )
-    
-    @staticmethod
-    async def process_gen_link(client: Client, message: Message) -> Message:
-        """Process points link generation"""
-        try:
-            parts = message.text.split()
-            if len(parts) < 4:
-                raise ValueError("Missing parameters")
-            
-            points = int(parts[1])
-            max_uses = int(parts[2])
-            expires_in = parts[3]
-            
-            if points <= 0 or max_uses <= 0:
-                raise ValueError("Points and uses must be positive")
-            
-            expires_delta = AdminPanel._parse_duration(expires_in)
-            expires_at = datetime.now() + expires_delta
-            
-            code = secrets.token_urlsafe(8)
-            bot_username = (await client.get_me()).username
-            link = f"https://t.me/{bot_username}?start=points_{code}"
-            
-            await hyoshcoder.point_links.insert_one({
-                "code": code,
-                "points": points,
-                "max_uses": max_uses,
-                "uses_left": max_uses,
-                "expires_at": expires_at,
-                "created_at": datetime.now(),
-                "created_by": message.from_user.id
-            })
-            
-            return await AdminPanel._edit_or_reply(
-                message,
-                f"🔗 <b>Points Link Created</b>\n\n"
-                f"🪙 Points: {points}\n"
-                f"🔢 Uses: {max_uses}\n"
-                f"⏳ Expires: {expires_in} ({expires_at.strftime('%Y-%m-%d %H:%M')})\n\n"
-                f"📌 Code: <code>{code}</code>\n"
-                f"🔗 Link: {link}",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🗑 Delete", callback_data=f"del_link_{code}")],
-                    [InlineKeyboardButton("🔙 Back", callback_data="points_menu")]
-                ])
-            )
-            
-        except Exception as e:
-            return await AdminPanel._edit_or_reply(
-                message,
-                f"❌ Error: {str(e)}\n\n"
-                "Usage: <code>/genlink points uses expires</code>\n"
-                "Example: <code>/genlink 50 10 24h</code>",
-                reply_markup=AdminPanel.back_button("points_menu")
-            )
-    
-    @staticmethod
-    async def list_points_links(client: Client, callback: CallbackQuery) -> Message:
-        """List all active points links"""
-        try:
-            links = await hyoshcoder.point_links.find({
-                "expires_at": {"$gt": datetime.now()},
-                "uses_left": {"$gt": 0}
-            }).sort("created_at", -1).to_list(length=20)
-            
-            if not links:
-                return await AdminPanel._edit_or_reply(
-                    callback,
-                    "🔗 <b>Points Links</b>\n\n"
-                    "No active points links found.",
-                    reply_markup=AdminPanel.back_button("points_menu")
-                )
-            
-            text = "🔗 <b>Active Points Links</b>\n\n"
-            for link in links:
-                creator = await client.get_users(link["created_by"])
-                text += (
-                    f"🪙 <b>{link['points']} points</b>\n"
-                    f"🔢 Uses: {link['uses_left']}/{link['max_uses']}\n"
-                    f"⏳ Expires: {link['expires_at'].strftime('%Y-%m-%d %H:%M')}\n"
-                    f"👤 Created by: {creator.mention}\n"
-                    f"🔗 <code>https://t.me/{(await client.get_me()).username}?start=points_{link['code']}</code>\n\n"
-                )
-            
-            return await AdminPanel._edit_or_reply(
-                callback,
-                text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🗑 Delete All", callback_data="del_all_links")],
-                    [InlineKeyboardButton("🔙 Back", callback_data="points_menu")]
-                ])
-            )
-            
-        except Exception as e:
-            return await AdminPanel._edit_or_reply(
-                callback,
-                f"❌ Error listing links: {str(e)}",
-                reply_markup=AdminPanel.back_button("points_menu")
-            )
-    
-    @staticmethod
-    async def delete_points_link(client: Client, callback: CallbackQuery, code: str) -> Message:
-        """Delete a points link"""
-        try:
-            result = await hyoshcoder.point_links.delete_one({"code": code})
-            if result.deleted_count:
-                await callback.answer("✅ Link deleted")
-                return await AdminPanel.list_points_links(client, callback)
-            else:
-                await callback.answer("❌ Link not found")
-                return await callback.message.edit_reply_markup(
-                    reply_markup=AdminPanel.back_button("points_menu")
-                )
-        except Exception as e:
-            await callback.answer(f"❌ Error: {str(e)}")
-            return await AdminPanel.show_points_menu(client, callback)
-    
-    @staticmethod
-    async def delete_all_points_links(client: Client, callback: CallbackQuery) -> Message:
-        """Delete all points links"""
-        try:
-            result = await hyoshcoder.point_links.delete_many({
-                "expires_at": {"$gt": datetime.now()},
-                "uses_left": {"$gt": 0}
-            })
-            await callback.answer(f"✅ Deleted {result.deleted_count} links")
-            return await AdminPanel.list_points_links(client, callback)
-        except Exception as e:
-            await callback.answer(f"❌ Error: {str(e)}")
-            return await AdminPanel.show_points_menu(client, callback)
 
     # ========================
     # User Management Handlers
@@ -800,7 +659,8 @@ class AdminPanel:
                     InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{user_id}"),
                     InlineKeyboardButton("✅ Unban User", callback_data=f"unban_{user_id}")
                 ],
-                [InlineKeyboardButton("🔙 Back", callback_data="user_menu")]
+                [InlineKeyboardButton("🔙 Back", callback_data="user_menu"),
+                 InlineKeyboardButton("❌ Close", callback_data="close_admin")]
             ]
             
             return await AdminPanel._edit_or_reply(
@@ -1087,7 +947,8 @@ class AdminPanel:
             text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📢 Send Stats", callback_data="confirm_stats_broadcast")],
-                [InlineKeyboardButton("🔙 Back", callback_data="broadcast_menu")]
+                [InlineKeyboardButton("🔙 Back", callback_data="broadcast_menu"),
+                 InlineKeyboardButton("❌ Close", callback_data="close_admin")]
             ])
         )
     
@@ -1241,27 +1102,15 @@ class AdminPanel:
                 await AdminPanel.show_stats(client, callback)
             elif data == "search_menu":
                 await AdminPanel.show_search_menu(client, callback)
+            elif data == "close_admin":
+                await callback.message.delete()
+                return
             
             # Points system
             elif data == "set_rename_cost":
                 await AdminPanel.handle_set_rename_cost(client, callback)
-            elif data == "set_referral_bonus":
-                await AdminPanel.handle_set_referral_bonus(client, callback)
-            elif data == "gen_points_link":
-                await AdminPanel.generate_points_link_ui(client, callback)
-            elif data == "list_points_links":
-                await AdminPanel.list_points_links(client, callback)
-            elif data.startswith("del_link_"):
-                code = data.split("_")[2]
-                await AdminPanel.delete_points_link(client, callback, code)
-            elif data == "del_all_links":
-                await AdminPanel._confirm_action(
-                    client, callback, 
-                    "delete all points links", 
-                    "confirm_del_all_links"
-                )
-            elif data == "confirm_del_all_links":
-                await AdminPanel.delete_all_points_links(client, callback)
+            elif data == "set_screenshot_cost":
+                await AdminPanel.handle_set_screenshot_cost(client, callback)
             
             # User management
             elif data == "add_points":
@@ -1337,13 +1186,9 @@ async def admin_command(client: Client, message: Message):
 async def set_cost_command(client: Client, message: Message):
     await AdminPanel.process_set_cost(client, message)
 
-@Client.on_message(filters.command("setreferral") & filters.user(ADMIN_USER_ID))
-async def set_referral_command(client: Client, message: Message):
-    await AdminPanel.process_set_referral(client, message)
-
-@Client.on_message(filters.command("genlink") & filters.user(ADMIN_USER_ID))
-async def gen_link_command(client: Client, message: Message):
-    await AdminPanel.process_gen_link(client, message)
+@Client.on_message(filters.command("setscreenshot") & filters.user(ADMIN_USER_ID))
+async def set_screenshot_cost_command(client: Client, message: Message):
+    await AdminPanel.process_set_screenshot_cost(client, message)
 
 @Client.on_message(filters.command("addpoints") & filters.user(ADMIN_USER_ID))
 async def add_points_command(client: Client, message: Message):
