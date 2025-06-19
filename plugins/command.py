@@ -139,7 +139,79 @@ async def addthumbs(client: Client, message: Message):
             delete_after=15
         )
 
+@Client.on_message(filters.command("resetdb") & filters.private)
+async def reset_database_command(client: Client, message: Message):
+    """Admin command to completely reset the database"""
+    try:
+        # Check if user is admin (replace with your admin ID check)
+        if message.from_user.id not in settings.ADMINS:
+            await message.reply("❌ This command is restricted to bot admins!")
+            return
 
+        # Confirmation button
+        confirm_buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚠️ CONFIRM RESET", callback_data="confirm_db_reset")],
+            [InlineKeyboardButton("Cancel", callback_data="cancel_db_reset")]
+        ])
+
+        warning_msg = (
+            "🚨 **DATABASE RESET WARNING** 🚨\n\n"
+            "This will PERMANENTLY DELETE:\n"
+            "- All user accounts\n"
+            "- All file statistics\n"
+            "- All point tokens\n"
+            "- All transaction history\n\n"
+            "This action cannot be undone!\n\n"
+            "Are you absolutely sure?"
+        )
+
+        msg = await message.reply(
+            warning_msg,
+            reply_markup=confirm_buttons
+        )
+        
+        # Store the message for callback handling
+        client.reset_db_msg = msg
+
+    except Exception as e:
+        logger.error(f"Reset DB command error: {e}")
+        await message.reply("❌ Error processing reset command")
+
+@Client.on_callback_query(filters.regex(r"^(confirm|cancel)_db_reset$"))
+async def handle_reset_confirmation(client: Client, callback_query: CallbackQuery):
+    try:
+        action = callback_query.data.split("_")[0]
+        
+        if action == "cancel":
+            await callback_query.message.edit_text("✅ Database reset cancelled")
+            await callback_query.answer()
+            return
+            
+        # Show "working" message
+        await callback_query.message.edit_text("🔄 Resetting database... This may take a moment")
+        
+        # Perform the reset
+        result = await hyoshcoder.reset_database(callback_query.from_user.id)
+        
+        if "error" in result:
+            await callback_query.message.edit_text(f"❌ Reset failed: {result['error']}")
+        else:
+            reset_report = (
+                "✅ **Database Reset Complete**\n\n"
+                f"🗑 Deleted:\n"
+                f"- {result['users_deleted']} users\n"
+                f"- {result['files_deleted']} file records\n"
+                f"- {result['tokens_deleted']} token links\n\n"
+                "The bot now has a fresh database!"
+            )
+            await callback_query.message.edit_text(reset_report)
+            
+        await callback_query.answer()
+        
+    except Exception as e:
+        logger.error(f"Reset confirmation error: {e}")
+        await callback_query.message.edit_text("❌ Error during database reset")
+        await callback_query.answer()
 async def handle_point_redemption(client: Client, message: Message, point_id: str):
     user_id = message.from_user.id
 
@@ -731,16 +803,16 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
         # Handle referral code (e.g. /start ref_ABC123)
         if arg.startswith("ref_"):
             referral_code = arg[4:]
-            referrer = await hyoshcoder.col.find_one({"referral_code": referral_code})
-    
+            referrer = await hyoshcoder.users.find_one({"referral_code": referral_code})
+            
             if referrer and referrer["_id"] != user_id:
-                updated = await hyoshcoder.col.update_one(
+                updated = await hyoshcoder.users.update_one(
                     {"_id": referrer["_id"]},
-                    {"$addToSet": {"referrals": user_id}}
+                    {"$addToSet": {"referral.referred_users": user_id}}
                 )
     
                 if updated.modified_count > 0:
-                    await hyoshcoder.col.update_one(
+                    await hyoshcoder.users.update_one(
                         {"_id": referrer["_id"]},
                         {"$inc": {"points": settings.REFER_POINT_REWARD}}  # <-- changed to points
                     )
