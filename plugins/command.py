@@ -137,6 +137,46 @@ async def addthumbs(client: Client, message: Message):
             delete_after=15
         )
 
+
+async def handle_point_redemption(client: Client, message: Message, point_id: str):
+    user_id = message.from_user.id
+
+    try:
+        point_data = await hyoshcoder.get_point_link(point_id)
+
+        if not point_data:
+            return await message.reply("**Iɴᴠᴀʟɪᴅ ᴏʀ ᴇxᴘɪʀᴇᴅ ʟɪɴᴋ...**")
+
+        if point_data['used']:
+            return await message.reply("**Tʜɪs ʟɪɴᴋ ʜᴀs ᴀʟʀᴇᴀᴅʏ ʙᴇᴇɴ ᴜsᴇᴅ...**")
+
+        expiry_utc = point_data['expiry'].replace(tzinfo=pytz.UTC)
+
+        if datetime.now(pytz.UTC) > expiry_utc:
+            return await message.reply("**Pᴏɪɴᴛ ʟɪɴᴋ ᴇxᴘɪʀᴇᴅ...**")
+
+        if point_data['user_id'] != user_id:
+            return await message.reply("**Tʜɪs ʟɪɴᴋ ʙᴇʟᴏɴɢs ᴛᴏ ᴀɴᴏᴛʜᴇʀ ᴜsᴇʀ...**")
+
+        await hyoshcoder.users.update_one(
+            {"_id": user_id},
+            {
+                "$inc": {
+                    "points.balance": point_data['points'],
+                    "points.total_earned": point_data['points']
+                }
+            }
+        )
+
+
+        await hyoshcoder.mark_point_used(point_id)
+
+        await message.reply(f"✅ Sᴜᴄᴄᴇss! {point_data['points']} ᴘᴏɪɴᴛs ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ!")
+
+    except Exception as e:
+        logging.error(f"Error during point redemption: {e}")
+        await message.reply("**Aɴ ᴇʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.**")
+			
 @Client.on_message(filters.command("mystats") & filters.private)
 async def mystats_command(client: Client, message: Message):
     """Handle /mystats command to show user statistics."""
@@ -680,18 +720,40 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
     """Handle start command with referral and point redemption."""
     user = message.from_user
     user_id = user.id
-    
-    # Add user to database
-    await hyoshcoder.add_user(user_id)
-    
-    # Handle referral or point redemption if args exist
-    if args:
-        arg = args[0]
-        if arg.startswith("ref_"):
-            await handle_referral(client, user, arg[4:])
-        else:
-            await handle_point_redemption(client, message, arg)
-        return
+  # Add user to database
+	await hyoshcoder.add_user(user_id)
+	
+	if args:
+	    arg = args[0]
+	
+	    # Handle referral code (e.g. /start ref_ABC123)
+	    if arg.startswith("ref_"):
+	        referral_code = arg[4:]
+	        referrer = await hyoshcoder.col.find_one({"referral_code": referral_code})
+	
+	        if referrer and referrer["_id"] != user_id:
+	            updated = await hyoshcoder.col.update_one(
+	                {"_id": referrer["_id"]},
+	                {"$addToSet": {"referrals": user_id}}
+	            )
+	
+	            if updated.modified_count > 0:
+	                await hyoshcoder.col.update_one(
+	                    {"_id": referrer["_id"]},
+	                    {"$inc": {"points": settings.REFER_POINT_REWARD}}  # <-- changed to points
+	                )
+	                try:
+	                    await client.send_message(
+	                        referrer["_id"],
+	                        f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
+	                    )
+	                except Exception:
+	                    pass
+	
+	    # Handle point redemption link (e.g. /start XYZ123)
+	    else:
+	        await handle_point_redemption(client, message, arg)
+	        return
 
     # Send welcome message
     m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
@@ -735,92 +797,6 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
             reply_markup=buttons
         )
 
-async def handle_referral(client: Client, user: User, referral_code: str):
-    """Handle referral registration."""
-    referrer = await hyoshcoder.users.find_one({"referral_code": referral_code})
-    if referrer and referrer["_id"] != user.id:
-        # Update referrer's stats
-        updated = await hyoshcoder.users.update_one(
-            {"_id": referrer["_id"]},
-            {
-                "$addToSet": {"referrals": user.id},
-                "$inc": {"points.balance": settings.REFER_POINT_REWARD}
-            }
-        )
-        
-        if updated.modified_count > 0:
-            try:
-                await client.send_message(
-                    referrer["_id"],
-                    f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
-                )
-            except Exception:
-                pass
-
-async def handle_point_redemption(client: Client, message: Message, point_id: str):
-    """Handle point link redemption."""
-    try:
-        user_id = message.from_user.id
-        point_data = await hyoshcoder.get_point_link(point_id)
-
-        if not point_data:
-            return await send_auto_delete_message(
-                client,
-                message.chat.id,
-                "**Invalid or expired link...**",
-                delete_after=30
-            )
-
-        if point_data['used']:
-            return await send_auto_delete_message(
-                client,
-                message.chat.id,
-                "**This link has already been used...**",
-                delete_after=30
-            )
-
-        if datetime.utcnow() > point_data['expires_at']:
-            return await send_auto_delete_message(
-                client,
-                message.chat.id,
-                "**Point link expired...**",
-                delete_after=30
-            )
-
-        if point_data['user_id'] != user_id:
-            return await send_auto_delete_message(
-                client,
-                message.chat.id,
-                "**This link belongs to another user...**",
-                delete_after=30
-            )
-
-        # Add points to user's account
-        await hyoshcoder.users.update_one(
-            {"_id": user_id},
-            {
-                "$inc": {
-                    "points.balance": point_data['points'],
-                    "points.total_earned": point_data['points']
-                }
-            }
-        )
-
-        # Mark link as used
-        await hyoshcoder.mark_point_used(point_id)
-        
-        msg = await message.reply(f"✅ 𝑺𝒖𝒄𝒄𝒆𝒔𝒔! {point_data['points']} 𝒑𝒐𝒊𝒏𝒕𝒔 𝒂𝒅𝒅𝒆𝒅 𝒕𝒐 𝒚𝒐𝒖𝒓 𝒂𝒄𝒄𝒐𝒖𝒏𝒕!")
-        asyncio.create_task(auto_delete_message(msg, 30))
-        asyncio.create_task(auto_delete_message(message, 30))
-
-    except Exception as e:
-        logger.error(f"Error during point redemption: {e}")
-        await send_auto_delete_message(
-            client,
-            message.chat.id,
-            "**An error occurred. Please try again.**",
-            delete_after=30
-        )
 
 async def handle_autorename(client: Client, message: Message, args: List[str]):
     """Handle the /autorename command to set rename template."""
