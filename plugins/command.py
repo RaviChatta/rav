@@ -599,7 +599,56 @@ async def freepoints(client: Client, message: Message):
             "❌ Failed to generate free points. Try again.",
             delete_after=30
         )
+@Client.on_message(filters.command(["referralboard", "reftop"]) & filters.private)
+async def referral_leaderboard(client: Client, message: Message):
+    """Show top 10 users by referral count"""
+    try:
+        # Get top 10 referrers
+        top_referrers = await hyoshcoder.users.aggregate([
+            {"$match": {"referral.referred_count": {"$gt": 0}}},
+            {"$sort": {"referral.referred_count": -1}},
+            {"$limit": 10},
+            {"$project": {
+                "username": 1,
+                "count": "$referral.referred_count",
+                "earnings": "$referral.referral_earnings",
+                "is_premium": "$premium.is_premium"
+            }}
+        ]).to_list(length=10)
 
+        if not top_referrers:
+            return await message.reply("No referral data available yet.")
+
+        # Build leaderboard message
+        leaderboard = ["🏆 <b>TOP 10 REFERRERS</b> 🏆\n"]
+        for idx, user in enumerate(top_referrers, start=1):
+            username = user.get("username", "Unknown")
+            if user.get("is_premium"):
+                username = f"⭐ {username}"
+            leaderboard.append(
+                f"{idx}. {username}: "
+                f"{user['count']} referrals • "
+                f"{user.get('earnings', 0)} points"
+            )
+
+        # Add footer with user's position if applicable
+        user_data = await hyoshcoder.get_user(message.from_user.id)
+        if user_data and user_data.get("referral", {}).get("referred_count", 0) > 0:
+            leaderboard.append(
+                f"\nYour position: {user_data['referral']['referred_count']} referrals "
+                f"• {user_data['referral'].get('referral_earnings', 0)} points"
+            )
+
+        await message.reply_text(
+            "\n".join(leaderboard),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="help_back")]
+            ])
+        )
+
+    except Exception as e:
+        logger.error(f"Referral leaderboard error: {e}")
+        await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
 @Client.on_message(filters.command(["view_dump", "viewdump"]) & filters.private)
 async def view_dump_channel(client: Client, message: Message):
     """View current dump channel setting."""
