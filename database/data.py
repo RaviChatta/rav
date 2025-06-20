@@ -267,52 +267,61 @@ class Database:
             return False
 
     async def process_referral(self, referrer_code: str, referred_id: int) -> bool:
-        """Process referral with global duplicate prevention"""
-        async with await self._client.start_session() as session:
-            async with session.start_transaction():
-                # 1. Check if user was ever referred before (globally)
-                if await self.referrals.find_one({"referred_id": referred_id}, session=session):
-                    return False
+        """Process referral with proper duplicate checking"""
+        try:
+            # First check if user already has a referrer_id set
+            existing_user = await self.users.find_one(
+                {"_id": referred_id, "referral.referrer_id": {"$exists": True}}
+            )
+            if existing_user:
+                return False  # User was already referred by someone
     
-                # 2. Verify referrer exists and get their ID
-                referrer = await self.users.find_one(
-                    {"referral.referral_code": referrer_code},
-                    {"_id": 1},
-                    session=session
-                )
-                if not referrer:
-                    return False
+            # Check if this specific referral was already processed
+            existing_ref = await self.referrals.find_one({
+                "referred_id": referred_id,
+                "code_used": referrer_code
+            })
+            if existing_ref:
+                return False  # This specific referral was already processed
     
-                # 3. Record the referral
-                await self.referrals.insert_one({
-                    "referrer_id": referrer["_id"],
-                    "referred_id": referred_id,
-                    "timestamp": datetime.utcnow(),
-                    "code_used": referrer_code
-                }, session=session)
+            referrer = await self.users.find_one(
+                {"referral.referral_code": referrer_code}
+            )
+            if not referrer or referrer["_id"] == referred_id:
+                return False  # Invalid referrer or self-referral
     
-                # 4. Update referrer's stats
-                await self.users.update_one(
-                    {"_id": referrer["_id"]},
-                    {
-                        "$inc": {
-                            "referral.referred_count": 1,
-                            "referral.referral_earnings": settings.REFER_POINT_REWARD,
-                            "points.balance": settings.REFER_POINT_REWARD,
-                            "points.total_earned": settings.REFER_POINT_REWARD
-                        },
-                        "$addToSet": {"referral.referred_users": referred_id}
+            # Record the new referral
+            await self.referrals.insert_one({
+                "referrer_id": referrer["_id"],
+                "referred_id": referred_id,
+                "timestamp": datetime.utcnow(),
+                "code_used": referrer_code,
+                "processed": True
+            })
+    
+            # Update both users
+            await self.users.update_one(
+                {"_id": referrer["_id"]},
+                {
+                    "$inc": {
+                        "referral.referred_count": 1,
+                        "referral.referral_earnings": settings.REFER_POINT_REWARD,
+                        "points.balance": settings.REFER_POINT_REWARD
                     },
-                    session=session
-                )
+                    "$addToSet": {"referral.referred_users": referred_id}
+                }
+            )
     
-                # 5. Mark user as referred
-                await self.users.update_one(
-                    {"_id": referred_id},
-                    {"$set": {"referral.referrer_id": referrer["_id"]}},
-                    session=session
-                )
-                return True
+            await self.users.update_one(
+                {"_id": referred_id},
+                {"$set": {"referral.referrer_id": referrer["_id"]}}
+            )
+    
+            return True
+    
+        except Exception as e:
+            logger.error(f"Referral processing error: {e}")
+            return False
 
     async def is_user_exist(self, id: int) -> bool:
         """Check if user exists in database."""
