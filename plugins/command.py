@@ -780,26 +780,41 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
 
  # Check for referral or point link
 
-    if len(args) > 0 and args[0].startswith("ref_"):
-        referrer_code = args[0][4:]
+    # In your start command handler
+    if len(args) > 0:
+        # Handle referral link (e.g., /start ref_ABC123)
+        if args[0].startswith("ref_"):
+            referrer_code = args[0][4:]
+            
+            # Check if this is a self-referral
+            if referrer := await hyoshcoder.users.find_one({"referral.referral_code": referrer_code}):
+                if referrer["_id"] == user_id:
+                    await message.reply("❌ You cannot refer yourself!")
+                    return
     
-        if await hyoshcoder.process_referral(referrer_code, user_id):
-            # Give welcome points to new user
-            await hyoshcoder.add_points(
-                user_id,
-                settings.REFER_POINT_REWARD,
-                source="referral_welcome"
-            )
-    
-            # Notify referrer
-            referrer = await hyoshcoder.users.find_one(
-                {"referral.referral_code": referrer_code}
-            )
-            if referrer:
-                await client.send_message(
-                    referrer["_id"],
-                    f"🎉 New referral! +{settings.REFER_POINT_REWARD} points from user {user_id}"
-                )
+            # Process referral with duplicate prevention
+            try:
+                if await hyoshcoder.process_referral(referrer_code, user_id):
+                    # Give welcome points to new user
+                    await hyoshcoder.add_points(
+                        user_id,
+                        settings.REFER_POINT_REWARD,
+                        source="referral_welcome",
+                        description=f"Joined via referral {referrer_code}"
+                    )
+                    
+                    # Notify referrer
+                    if referrer:
+                        await client.send_message(
+                            referrer["_id"],
+                            f"🎉 New referral! +{settings.REFER_POINT_REWARD} points "
+                            f"from user {user.first_name} (ID: {user_id})"
+                        )
+                else:
+                    await message.reply("⚠️ You've already been referred before - only first referral counts!")
+            except Exception as e:
+                logger.error(f"Referral processing error: {e}")
+                await message.reply("❌ Error processing referral. Please try again.")
 
         # Handle point redemption link (e.g. /start XYZ123)
         else:
