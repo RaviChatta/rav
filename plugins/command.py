@@ -373,27 +373,28 @@ async def generate_point_link(client: Client, message: Message):
         )
 @Client.on_message(filters.command("refer") & filters.private)
 async def refer_command(client: Client, message: Message):
-    user = await hyoshcoder.get_user(message.from_user.id)
-    if not user:
-        return await message.reply("Please start the bot first with /start")
+    try:
+        user = await hyoshcoder.get_user(message.from_user.id)
+        if not user:
+            return await message.reply("Please start the bot first with /start")
 
-    code = user["referral"]["referral_code"]
-    link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{code}"
-    
-    await message.reply_text(
-        f"🔗 <b>Your Referral Link</b> (1 use per user)\n\n"
-        f"<code>{link}</code>\n\n"
-        f"• <b>{settings.REFER_POINT_REWARD} points</b> per successful referral\n"
-        f"• <b>{user['referral']['referred_count']}</b> users joined so far\n\n"
-        "⚠️ Users can only use ANY referral link once",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                "📤 Share", 
-                url=f"tg://msg_url?url={quote(link)}&text=Join%20{settings.BOT_USERNAME}%20with%20my%20referral!"
-            )]
-        ]),
-        disable_web_page_preview=True
-    )
+        code = user["referral"]["referral_code"]
+        link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{code}"
+        
+        await message.reply_text(
+            f"🔗 <b>Your Referral Link</b> (1 use per user)\n\n"
+            f"<code>{link}</code>\n\n"
+            f"• <b>{settings.REFER_POINT_REWARD} points</b> per successful referral\n"
+            f"• <b>{user['referral']['referred_count']}</b> users joined so far\n\n"
+            "⚠️ Users can only use ANY referral link once",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "📤 Share", 
+                    url=f"tg://msg_url?url={quote(link)}&text=Join%20{settings.BOT_USERNAME}%20with%20my%20referral!"
+                )]
+            ]),
+            disable_web_page_preview=True
+        )
 
     except Exception as e:
         logger.error(f"Error in refer command: {e}")
