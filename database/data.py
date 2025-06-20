@@ -60,6 +60,7 @@ class Database:
             self.sequences = self.db["active_sequences"]
             self.users_sequence = self.db["users_sequence"]
             self.token_links = self.db["token_links"]
+            self.global_referrals = self.db["global_referrals"]  # Add this line
             self.transactions = self.db.transactions
             self.rewards = self.db.rewards
             self.leaderboards = self.db.leaderboards
@@ -67,6 +68,7 @@ class Database:
             self.referrals = self.db.referrals
             self.config = self.db.config
             self._is_connected = True
+            
 
             # Create indexes
             await self._create_indexes()
@@ -315,7 +317,98 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error getting user {id}: {e}")
             return None
-
+    async def create_referral_code(self, user_id: int) -> str:
+        """Generate and store a unique referral code for a user."""
+        while True:
+            code = secrets.token_hex(3).upper()  # 6-character code
+            existing = await self.users.find_one({"referral.referral_code": code})
+            if not existing:
+                await self.users.update_one(
+                    {"_id": user_id},
+                    {"$set": {"referral.referral_code": code}},
+                    upsert=True
+                )
+                return code
+    
+    async def process_referral(self, referrer_id: int, referred_id: int) -> bool:
+        """
+        Process a referral in a transactional way.
+        Returns True if successful, False if referral already exists or failed.
+        """
+        try:
+            async with await self._client.start_session() as session:
+                async with session.start_transaction():
+                    # Check if referral already exists
+                    existing = await self.global_referrals.find_one(
+                        {"referrer_id": referrer_id, "referred_id": referred_id},
+                        session=session
+                    )
+                    if existing:
+                        return False
+    
+                    # Record the referral
+                    await self.global_referrals.insert_one(
+                        {
+                            "referrer_id": referrer_id,
+                            "referred_id": referred_id,
+                            "timestamp": datetime.now(),
+                            "status": "pending"
+                        },
+                        session=session
+                    )
+    
+                    # Update both users' records
+                    await self.users.update_one(
+                        {"_id": referred_id},
+                        {"$set": {"referral.referrer_id": referrer_id}},
+                        session=session
+                    )
+    
+                    await self.users.update_one(
+                        {"_id": referrer_id},
+                        {
+                            "$inc": {
+                                "referral.referred_count": 1,
+                                "points.balance": settings.REFER_POINT_REWARD
+                            },
+                            "$addToSet": {"referral.referred_users": referred_id}
+                        },
+                        session=session
+                    )
+    
+                    # Add points to referred user
+                    await self.users.update_one(
+                        {"_id": referred_id},
+                        {"$inc": {"points.balance": settings.REFER_POINT_REWARD}},
+                        session=session
+                    )
+    
+                    # Mark referral as completed
+                    await self.global_referrals.update_one(
+                        {"referrer_id": referrer_id, "referred_id": referred_id},
+                        {"$set": {"status": "completed"}},
+                        session=session
+                    )
+    
+                    return True
+    
+        except Exception as e:
+            logger.error(f"Referral processing failed: {e}")
+            return False
+    
+    async def get_referral_info(self, user_id: int) -> dict:
+        """Get user's referral information including code and stats."""
+        user = await self.users.find_one({"_id": user_id})
+        if not user:
+            return None
+    
+        referral_data = user.get("referral", {})
+        return {
+            "code": referral_data.get("referral_code"),
+            "count": referral_data.get("referred_count", 0),
+            "earnings": referral_data.get("referral_earnings", 0),
+            "referred_users": referral_data.get("referred_users", [])
+        }
     async def verify_shortlink_click(self, user_id: int, link_type: str) -> bool:
         """Verify shortlink click and reward user"""
         try:
