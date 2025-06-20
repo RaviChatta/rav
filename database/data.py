@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, time
 from config import settings
 from pyrogram import Client
 
+Config = settings
+
 logger = logging.getLogger(__name__)
 
 class Database:
