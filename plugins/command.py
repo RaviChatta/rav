@@ -376,42 +376,44 @@ async def refer_command(client: Client, message: Message):
     try:
         user_id = message.from_user.id
         
-        # Get or create user with proper referral setup
+        # 1. First ensure the user exists in database
+        if not await hyoshcoder.is_user_exist(user_id):
+            await hyoshcoder.add_user(user_id)
+        
+        # 2. Get fresh user data with referral code
         user = await hyoshcoder.users.find_one_and_update(
             {"_id": user_id},
-            {
-                "$setOnInsert": hyoshcoder.new_user(user_id),
-                "$set": {
-                    "referral.referral_code": f"ref_{secrets.token_hex(4).upper()}"
-                }
-            },
-            upsert=True,
+            {"$set": {"referral.referral_code": f"REF_{secrets.token_hex(3).upper()}"}},
             return_document=True
         )
+        
+        if not user or "referral" not in user or "referral_code" not in user["referral"]:
+            raise Exception("Failed to generate referral code")
 
-        # Generate the proper bot deep link
+        # 3. Generate the proper link
         bot_username = (await client.get_me()).username
         referral_link = f"https://t.me/{bot_username}?start={user['referral']['referral_code']}"
         
-        await message.reply_text(
-            f"🌟 <b>Your Personal Referral Link</b> 🌟\n\n"
-            f"<code>{referral_link}</code>\n\n"
-            f"• <b>{settings.REFER_POINT_REWARD} points</b> for each new user\n"
-            f"• <b>{user['referral'].get('referred_count', 0)}</b> successful referrals\n\n"
-            "📌 <i>Each user can only be referred once</i>",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "📤 Share Referral Link", 
-                    url=f"tg://msg_url?url={quote(referral_link)}&text=Join%20{bot_username}%20with%20my%20referral%20link!"
-                )]
-            ]),
+        # 4. Send the message with proper formatting
+        await message.reply(
+            text=f"🎯 <b>Your Referral Link</b>\n\n"
+                 f"<code>{referral_link}</code>\n\n"
+                 f"• <b>{settings.REFER_POINT_REWARD} points</b> per successful referral\n"
+                 f"• <b>{user['referral'].get('referred_count', 0)}</b> users joined so far\n\n"
+                 "⚠️ Note: Each user can only be referred once",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "📤 Share Link",
+                    url=f"tg://msg_url?url={quote(referral_link)}&text=Join%20{bot_username}%20using%20my%20referral%20link!"
+                )
+            ]]),
             disable_web_page_preview=True
         )
 
     except Exception as e:
-        logger.error(f"Refer command error: {e}", exc_info=True)
-        await message.reply_text(
-            "❌ Could not generate referral link. Please try again later.",
+        logger.error(f"Referral generation failed: {str(e)}", exc_info=True)
+        await message.reply(
+            "❌ Failed to generate referral link. Please try /start first.",
             quote=True
         )
 @Client.on_message(filters.command("freepoints") & filters.private)
