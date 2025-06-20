@@ -727,90 +727,61 @@ async def set_media_preference_handler(client: Client, callback_query: CallbackQ
         )
 
 async def handle_start_command(client: Client, message: Message, args: List[str]):
-    """Handle start command with global referral tracking."""
+    """Handle start command with referral and point redemption."""
     user = message.from_user
     user_id = user.id
     
-    try:
-        # Check if user exists, if not add them
-        user_data = await hyoshcoder.get_user(user_id)
-        if not user_data:
-            await hyoshcoder.add_user(user_id)
-            user_data = await hyoshcoder.get_user(user_id)
+    # Add user to database if not exists
+    if not await hyoshcoder.get_user(user_id):
+        await hyoshcoder.add_user(user_id)
 
-        # Check for referral link
-        if len(args) > 0 and args[0].startswith("ref_"):
-            referral_code = args[0][4:]
-            
-            # Prevent self-referral
-            if user_data.get("referral", {}).get("referral_code") == referral_code:
-                await message.reply_text("❌ You cannot refer yourself!")
-                return
-                
-            referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
-            
-            if referrer and referrer["_id"] != user_id:
-                # Check if user already has a referrer
-                if user_data.get("referral", {}).get("referrer_id"):
-                    await message.reply_text(
-                        "ℹ️ You already used a referral link before. "
-                        "Only one referral is allowed per account."
-                    )
-                    return
-                    
-                # Check if this referral already exists in global records
-                existing = await hyoshcoder.global_referrals.find_one({
-                    "referrer_id": referrer["_id"],
-                    "referred_id": user_id
-                })
-                
-                if existing:
-                    await message.reply_text(
-                        "ℹ️ This referral has already been processed. "
-                        "Each referral link can only be used once."
-                    )
-                    return
-                    
-                # Record the referral first (prevents race conditions)
-                await hyoshcoder.global_referrals.insert_one({
-                    "referrer_id": referrer["_id"],
-                    "referred_id": user_id,
-                    "referral_code": referral_code,
-                    "timestamp": datetime.datetime.now(),
-                    "points_awarded": settings.REFER_POINT_REWARD,
-                    "status": "processing"
-                })
-                
-                try:
-                    # Process the referral in a transaction
-                    await process_referral(client, referrer["_id"], user_id, referral_code)
-                    
-                    # Update status
-                    await hyoshcoder.global_referrals.update_one(
-                        {"referrer_id": referrer["_id"], "referred_id": user_id},
-                        {"$set": {"status": "completed"}}
-                    )
-                    
-                    await message.reply_text(
-                        f"🎉 You received {settings.REFER_POINT_REWARD} points "
-                        f"for joining via referral!"
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Referral processing failed: {e}")
-                    await hyoshcoder.global_referrals.update_one(
-                        {"referrer_id": referrer["_id"], "referred_id": user_id},
-                        {"$set": {"status": "failed", "error": str(e)}}
-                    )
-                    await message.reply_text(
-                        "❌ Failed to process referral. Please try again."
-                    )
-                    return
+    # Check for referral link
+    if len(args) > 0 and args[0].startswith("ref_"):
+        referral_code = args[0][4:]
         
-        # Handle point redemption link
-        elif len(args) > 0:
-            await handle_point_redemption(client, message, args[0])
-            return
+        # Get referrer's user_id from code
+        referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
+        
+        if referrer and referrer["_id"] != user_id:
+            # Check if user already has a referrer
+            user_data = await hyoshcoder.get_user(user_id)
+            if user_data.get("referral", {}).get("referrer_id"):
+                await message.reply_text(
+                    "ℹ️ You were already referred by another user. "
+                    "Referral codes can only be used once per account."
+                )
+                return
+            
+            # Process the referral
+            success = await hyoshcoder.process_referral(referrer["_id"], user_id)
+            
+            if success:
+                # Notify both users
+                try:
+                    await client.send_message(
+                        referrer["_id"],
+                        f"🎉 New referral! You received {settings.REFER_POINT_REWARD} "
+                        f"points for {user.mention} joining with your link."
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify referrer: {e}")
+                
+                await message.reply_text(
+                    f"🎉 You received {settings.REFER_POINT_REWARD} points "
+                    f"for joining via referral!"
+                )
+            else:
+                await message.reply_text(
+                    "❌ Failed to process referral. Please try again."
+                )
+        else:
+            await message.reply_text("❌ Invalid referral code")
+    
+    # Handle point redemption link
+    elif len(args) > 0:
+        await handle_point_redemption(client, message, args[0])
+        return
+
 
     # Standard welcome message
     m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9bZ1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
@@ -856,50 +827,7 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
             reply_markup=buttons
         )
 
-async def process_referral(client: Client, referrer_id: int, user_id: int, referral_code: str):
-    """Process a referral transaction atomically."""
-    async with await hyoshcoder.client.start_session() as session:
-        async with session.start_transaction():
-            # 1. Set the referrer for the new user
-            await hyoshcoder.users.update_one(
-                {"_id": user_id},
-                {"$set": {"referral.referrer_id": referrer_id}},
-                session=session
-            )
-            
-            # 2. Update referrer's stats and add points
-            await hyoshcoder.users.update_one(
-                {"_id": referrer_id},
-                {
-                    "$inc": {
-                        "referral.referred_count": 1,
-                        "referral.referral_earnings": settings.REFER_POINT_REWARD,
-                        "points": settings.REFER_POINT_REWARD
-                    },
-                    "$addToSet": {"referral.referred_users": user_id}
-                },
-                session=session
-            )
-            
-            # 3. Add points to referred user
-            await hyoshcoder.users.update_one(
-                {"_id": user_id},
-                {"$inc": {"points": settings.REFER_POINT_REWARD}},
-                session=session
-            )
-            
-            # 4. Send notification to referrer
-            try:
-                user = await client.get_users(user_id)
-                await client.send_message(
-                    referrer_id,
-                    f"🎉 New referral! You received {settings.REFER_POINT_REWARD} "
-                    f"points for {user.mention} joining with your link."
-                )
-            except Exception as e:
-                logger.error(f"Failed to notify referrer: {e}")
-                # Notification failure shouldn't fail the transaction
-                pass
+
 async def handle_autorename(client: Client, message: Message, args: List[str]):
     """Handle the /autorename command to set rename template."""
     if not args:
