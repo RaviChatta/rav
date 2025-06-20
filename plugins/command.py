@@ -377,34 +377,43 @@ async def refer(client: Client, message: Message):
     """Generate referral link for users."""
     try:
         user_id = message.from_user.id
-        user = await hyoshcoder.users.find_one({"_id": user_id})
+        user = await hyoshcoder.get_user(user_id)
+        
+        if not user:
+            await hyoshcoder.add_user(user_id)
+            user = await hyoshcoder.get_user(user_id)
         
         # Generate or get referral code
-        if not user or not user.get("referral_code"):
-            referral_code = secrets.token_hex(4)
+        referral_code = user.get("referral", {}).get("referral_code")
+        if not referral_code:
+            referral_code = secrets.token_hex(4).upper()
             await hyoshcoder.users.update_one(
                 {"_id": user_id},
-                {"$set": {"referral_code": referral_code}},
+                {"$set": {"referral.referral_code": referral_code}},
                 upsert=True
             )
-        else:
-            referral_code = user["referral_code"]
 
         # Get referral count
-        referrals = user.get("referrals", []) if user else []
-        count = len(referrals)
-
+        referred_count = user.get("referral", {}).get("referred_count", 0)
+        
         # Create referral link
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
         
         # Send message with auto-delete
         msg = await message.reply_text(
-            f"**Your Referral Link:**\n{refer_link}\n\n"
-            f"**Total Referrals:** {count}\n"
-            f"**You get {settings.REFER_POINT_REWARD} points for every successful referral!**"
+            f"🌟 <b>Your Referral Program</b>\n\n"
+            f"🔗 <b>Your Referral Link:</b>\n<code>{refer_link}</code>\n\n"
+            f"📊 <b>Stats:</b>\n"
+            f"┣ Total Referrals: <code>{referred_count}</code>\n"
+            f"┗ Points per Referral: <code>{settings.REFER_POINT_REWARD}</code>\n\n"
+            f"💡 <b>How it works:</b>\n"
+            f"1. Share your link with friends\n"
+            f"2. When they join using your link\n"
+            f"3. You both get <code>{settings.REFER_POINT_REWARD}</code> points!",
+            disable_web_page_preview=True
         )
         
-        asyncio.create_task(auto_delete_message(msg, 60))
+        asyncio.create_task(auto_delete_message(msg, 120))
 
     except Exception as e:
         logger.error(f"Error in refer command: {e}")
@@ -414,7 +423,6 @@ async def refer(client: Client, message: Message):
             "❌ Failed to generate referral link. Please try again.",
             delete_after=30
         )
-
 @Client.on_message(filters.command("freepoints") & filters.private)
 async def freepoints(client: Client, message: Message):
     """Handle free points generation."""
@@ -725,36 +733,51 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
      # Add user to database
     await hyoshcoder.add_user(user_id)
 
-    # In your handle_start_command function, update the referral section:
-    if arg.startswith("ref_"):
-        referral_code = arg[4:]
-        referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
-    
-        if referrer and referrer["_id"] != user_id:
-            # Add points to referrer's balance
-            await hyoshcoder.add_points(
-                referrer["_id"], 
-                settings.REFER_POINT_REWARD,
-                source="referral",
-                description=f"Referral bonus for user {user_id}"
-            )
-            
-            # Update referral stats
-            await hyoshcoder.users.update_one(
-                {"_id": referrer["_id"]},
-                {
-                    "$inc": {"referral.referred_count": 1},
-                    "$addToSet": {"referral.referred_users": user_id}
-                }
-            )
-            
-            try:
-                await client.send_message(
-                    referrer["_id"],
-                    f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
+ # Check for referral or point link
+    if len(args) > 0:
+        arg = args[0]
+        
+        # Handle referral link (e.g. /start ref_ABC123)
+        if arg.startswith("ref_"):
+            referral_code = arg[4:]
+            referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
+        
+            if referrer and referrer["_id"] != user_id:
+                # Add points to referrer's balance
+                await hyoshcoder.add_points(
+                    referrer["_id"], 
+                    settings.REFER_POINT_REWARD,
+                    source="referral",
+                    description=f"Referral bonus for user {user_id}"
                 )
-            except Exception:
-                pass
+                
+                # Update referral stats
+                await hyoshcoder.users.update_one(
+                    {"_id": referrer["_id"]},
+                    {
+                        "$inc": {
+                            "referral.referred_count": 1,
+                            "referral.referral_earnings": settings.REFER_POINT_REWARD
+                        },
+                        "$addToSet": {"referral.referred_users": user_id}
+                    }
+                )
+                
+                try:
+                    await client.send_message(
+                        referrer["_id"],
+                        f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
+                    )
+                except Exception:
+                    pass
+                
+                # Also give points to the new user for being referred
+                await hyoshcoder.add_points(
+                    user_id,
+                    settings.REFER_POINT_REWARD,
+                    source="referral",
+                    description=f"Signup bonus from referral {referrer['_id']}"
+                )
     
         # Handle point redemption link (e.g. /start XYZ123)
         else:
