@@ -267,34 +267,31 @@ class Database:
             return False
 
     async def process_referral(self, referrer_code: str, referred_id: int) -> bool:
-        """Process a referral ensuring one-time only per user globally"""
+        """Process referral with global duplicate prevention"""
         async with await self._client.start_session() as session:
             async with session.start_transaction():
-                # Check if user was ever referred by anyone
-                existing_ref = await self.referrals.find_one(
-                    {"referred_id": referred_id},
-                    session=session
-                )
-                if existing_ref:
+                # 1. Check if user was ever referred before (globally)
+                if await self.referrals.find_one({"referred_id": referred_id}, session=session):
                     return False
-
-                # Get referrer
+    
+                # 2. Verify referrer exists and get their ID
                 referrer = await self.users.find_one(
                     {"referral.referral_code": referrer_code},
+                    {"_id": 1},
                     session=session
                 )
-                if not referrer or referrer["_id"] == referred_id:
+                if not referrer:
                     return False
-
-                # Record referral
+    
+                # 3. Record the referral
                 await self.referrals.insert_one({
                     "referrer_id": referrer["_id"],
                     "referred_id": referred_id,
                     "timestamp": datetime.utcnow(),
                     "code_used": referrer_code
                 }, session=session)
-
-                # Update referrer's stats
+    
+                # 4. Update referrer's stats
                 await self.users.update_one(
                     {"_id": referrer["_id"]},
                     {
@@ -304,13 +301,12 @@ class Database:
                             "points.balance": settings.REFER_POINT_REWARD,
                             "points.total_earned": settings.REFER_POINT_REWARD
                         },
-                        "$addToSet": {"referral.referred_users": referred_id},
-                        "$set": {"referral.last_referral": datetime.utcnow()}
+                        "$addToSet": {"referral.referred_users": referred_id}
                     },
                     session=session
                 )
-
-                # Mark user as referred
+    
+                # 5. Mark user as referred
                 await self.users.update_one(
                     {"_id": referred_id},
                     {"$set": {"referral.referrer_id": referrer["_id"]}},
