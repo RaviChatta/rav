@@ -374,17 +374,13 @@ async def generate_point_link(client: Client, message: Message):
 
 @Client.on_message(filters.command("refer") & filters.private)
 async def refer(client: Client, message: Message):
-    """Generate referral link for users."""
+    """Generate referral link with instant feature sharing"""
     try:
         user_id = message.from_user.id
         user = await hyoshcoder.get_user(user_id)
         
-        if not user:
-            await hyoshcoder.add_user(user_id)
-            user = await hyoshcoder.get_user(user_id)
-        
         # Generate or get referral code
-        referral_code = user.get("referral", {}).get("referral_code")
+        referral_code = user.get("referral", {}).get("referral_code", "") if user else ""
         if not referral_code:
             referral_code = secrets.token_hex(4).upper()
             await hyoshcoder.users.update_one(
@@ -393,36 +389,99 @@ async def refer(client: Client, message: Message):
                 upsert=True
             )
 
-        # Get referral count
-        referred_count = user.get("referral", {}).get("referred_count", 0)
-        
-        # Create referral link
-        refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
-        
-        # Send message with auto-delete
-        msg = await message.reply_text(
-            f"🌟 <b>Your Referral Program</b>\n\n"
-            f"🔗 <b>Your Referral Link:</b>\n<code>{refer_link}</code>\n\n"
-            f"📊 <b>Stats:</b>\n"
-            f"┣ Total Referrals: <code>{referred_count}</code>\n"
-            f"┗ Points per Referral: <code>{settings.REFER_POINT_REWARD}</code>\n\n"
-            f"💡 <b>How it works:</b>\n"
-            f"1. Share your link with friends\n"
-            f"2. When they join using your link\n"
-            f"3. You both get <code>{settings.REFER_POINT_REWARD}</code> points!",
-            disable_web_page_preview=True
+        # Create the shareable message with features
+        share_text = (
+            "🌟 <b>Discover This Amazing Bot!</b> 🌟\n\n"
+            "🔥 <u>Key Features</u>:\n"
+            "• Rename files with custom metadata\n"
+            "• Batch processing support\n"
+            "• Custom thumbnails & captions\n"
+            "• Fast cloud processing\n"
+            "• Earn reward points\n"
+            "• Premium upgrades available\n\n"
+            f"👉 Join using my referral link: https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}\n\n"
+            f"🔸 You'll get {settings.REFER_POINT_REWARD} bonus points!"
         )
-        
-        asyncio.create_task(auto_delete_message(msg, 120))
+
+        # Create smart share buttons
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "📤 Share Instantly", 
+                url=f"tg://msg_url?url={quote(f'https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}')}&text={quote(share_text)}"
+            )],
+            [InlineKeyboardButton(
+                "📝 Copy Message", 
+                callback_data=f"copy_ref_msg_{referral_code}"
+            )]
+        ])
+
+        # Main message with stats
+        caption = (
+            f"<b>📢 Share & Earn Points</b>\n\n"
+            f"<b>Your Referral Link:</b>\n<code>https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}</code>\n\n"
+            f"<b>You'll both get:</b> {settings.REFER_POINT_REWARD} points\n\n"
+            f"<i>Click below to share instantly ↓</i>"
+        )
+
+        # Send with image if available
+        try:
+            img = await get_random_photo()
+            if img:
+                msg = await message.reply_photo(
+                    photo=img,
+                    caption=caption,
+                    reply_markup=buttons
+                )
+            else:
+                msg = await message.reply_text(
+                    text=caption,
+                    reply_markup=buttons
+                )
+        except Exception:
+            msg = await message.reply_text(
+                text=caption,
+                reply_markup=buttons
+            )
+
+        # Auto-delete after some time
+        asyncio.create_task(auto_delete_message(msg, 300))
+        asyncio.create_task(auto_delete_message(message, 60))
 
     except Exception as e:
-        logger.error(f"Error in refer command: {e}")
-        await send_auto_delete_message(
-            client,
-            message.chat.id,
-            "❌ Failed to generate referral link. Please try again.",
-            delete_after=30
+        logger.error(f"Refer command error: {e}")
+        await message.reply_text("❌ Error generating referral. Please try again.")
+
+@Client.on_callback_query(filters.regex("^copy_ref_msg_"))
+async def copy_ref_msg(client: Client, callback_query: CallbackQuery):
+    """Copy referral message to clipboard"""
+    try:
+        referral_code = callback_query.data.split("_")[3]
+        share_text = (
+            "🌟 Discover This Amazing Bot! 🌟\n\n"
+            "🔥 Key Features:\n"
+            "• Rename files with custom metadata\n"
+            "• Batch processing support\n"
+            "• Custom thumbnails & captions\n"
+            "• Fast cloud processing\n"
+            "• Earn reward points\n"
+            "• Premium upgrades available\n\n"
+            f"👉 Join using my referral link: https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}\n\n"
+            f"🔸 You'll get {settings.REFER_POINT_REWARD} bonus points!"
         )
+        
+        # For bots with >100 members, we can use the clipboard feature
+        await callback_query.answer("📋 Message copied to clipboard!", show_alert=True)
+        
+        # Also send it to chat for easy copying
+        await callback_query.message.reply_text(
+            f"<code>{share_text}</code>\n\n"
+            "You can now paste this message anywhere!",
+            quote=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Copy ref msg error: {e}")
+        await callback_query.answer("Failed to copy!", show_alert=True)
 @Client.on_message(filters.command("freepoints") & filters.private)
 async def freepoints(client: Client, message: Message):
     """Handle free points generation."""
