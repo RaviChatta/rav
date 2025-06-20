@@ -399,7 +399,7 @@ async def refer(client: Client, message: Message):
         # Create referral link
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
         
-        # Send message with auto-delete
+        # Send message
         msg = await message.reply_text(
             f"🌟 <b>Your Referral Program</b>\n\n"
             f"🔗 <b>Your Referral Link:</b>\n<code>{refer_link}</code>\n\n"
@@ -730,10 +730,12 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
     """Handle start command with referral and point redemption."""
     user = message.from_user
     user_id = user.id
-     # Add user to database
-    await hyoshcoder.add_user(user_id)
+    
+    # Check if user exists, if not add them
+    if not await hyoshcoder.get_user(user_id):
+        await hyoshcoder.add_user(user_id)
 
- # Check for referral or point link
+    # Check for referral or point link
     if len(args) > 0:
         arg = args[0]
         
@@ -743,6 +745,9 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
             referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
         
             if referrer and referrer["_id"] != user_id:
+                # First set the referrer relationship
+                await hyoshcoder.set_referrer(user_id, referrer["_id"])
+                
                 # Add points to referrer's balance
                 await hyoshcoder.add_points(
                     referrer["_id"], 
@@ -751,26 +756,6 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
                     description=f"Referral bonus for user {user_id}"
                 )
                 
-                # Update referral stats
-                await hyoshcoder.users.update_one(
-                    {"_id": referrer["_id"]},
-                    {
-                        "$inc": {
-                            "referral.referred_count": 1,
-                            "referral.referral_earnings": settings.REFER_POINT_REWARD
-                        },
-                        "$addToSet": {"referral.referred_users": user_id}
-                    }
-                )
-                
-                try:
-                    await client.send_message(
-                        referrer["_id"],
-                        f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
-                    )
-                except Exception:
-                    pass
-                
                 # Also give points to the new user for being referred
                 await hyoshcoder.add_points(
                     user_id,
@@ -778,14 +763,31 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
                     source="referral",
                     description=f"Signup bonus from referral {referrer['_id']}"
                 )
+                
+                try:
+                    await client.send_message(
+                        referrer["_id"],
+                        f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify referrer {referrer['_id']}: {e}")
+                
+                # Send welcome message to new user with referral bonus note
+                m = await message.reply_text(
+                    f"👋 Welcome {user.mention}!\n\n"
+                    f"🎁 You received {settings.REFER_POINT_REWARD} points for joining via referral!"
+                )
+                await asyncio.sleep(5)
+                await m.delete()
+                return
     
         # Handle point redemption link (e.g. /start XYZ123)
         else:
             await handle_point_redemption(client, message, arg)
             return
 
-    # Send welcome message
-    m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
+    # Standard welcome message for non-referral starts
+    m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9bZ1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
     await asyncio.sleep(3)
     await m.delete()
 
