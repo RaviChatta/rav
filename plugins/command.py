@@ -791,9 +791,10 @@ async def handle_start_command(client: Client, message: Message, args: List[str]
                     logger.error(f"Could not notify referrer: {e}")
 
           # Handle point redemption link (e.g. /start XYZ123)
-          else:
-              await handle_point_redemption(client, message, arg)
-              return
+    else:
+      await handle_point_redemption(client, message, arg)
+      return
+
 
     # Send welcome message
     m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9Z1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
