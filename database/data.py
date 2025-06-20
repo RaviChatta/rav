@@ -9,12 +9,11 @@ from bson.objectid import ObjectId
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, ConnectionFailure
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, time  # Include `time`
+from datetime import datetime, timedelta, time
 from config import settings
 from pyrogram import Client
 
 logger = logging.getLogger(__name__)
-Config = settings
 
 class Database:
     def __init__(self, uri: str, database_name: str):
@@ -33,6 +32,7 @@ class Database:
         self.leaderboards = None
         self.file_stats = None
         self.config = None
+        self.referrals = None  # Added for referral tracking
 
     async def connect(self, max_pool_size: int = 100, min_pool_size: int = 10, max_idle_time_ms: int = 30000):
         """Establish database connection with enhanced settings and error handling."""
@@ -64,7 +64,7 @@ class Database:
             self.rewards = self.db.rewards
             self.leaderboards = self.db.leaderboards
             self.file_stats = self.db.file_stats
-            self.referrals = self.db.referrals
+            self.referrals = self.db.referrals  # Initialize referrals collection
             self.config = self.db.config
             self._is_connected = True
 
@@ -111,9 +111,10 @@ class Database:
             ("file_stats", [("timestamp", -1)]),  # For time-based queries
             ("file_stats", [("date", 1)]),  # For daily aggregations
             
-            # Referral tracking (if using separate collection)
-            ("referrals", [("referrer_id", 1), ("joined_at", -1)]),
-            ("referrals", [("joined_at", -1)]),
+            # Referral tracking
+            ("referrals", [("referred_id", 1)], {"unique": True}),  # Critical for one-time referrals
+            ("referrals", [("referrer_id", 1)]),
+            ("referrals", [("timestamp", -1)]),
             
             # Leaderboard cache
             ("leaderboards", [("period", 1), ("type", 1), ("updated_at", -1)]),  # Compound index
@@ -128,6 +129,7 @@ class Database:
             # Additional performance indexes
             ("users", [("username", 1)]),  # For username lookups
             ("users", [("settings.leaderboard_period", 1), ("settings.leaderboard_type", 1)]),
+            ("users", [("referral.referral_code", 1)], {"unique": True, "sparse": True}),
         ]
         for entry in indexes:
             collection_name, keys, *options = entry if len(entry) > 2 else [*entry, {}]
@@ -195,16 +197,17 @@ class Database:
                 "until": None,
                 "plan": None,
                 "payment_method": None,
-                "ad_multiplier": 1.0  # New field for ad point multipliers
+                "ad_multiplier": 1.0
             },
 
             # Referral system (compatible with ad campaigns)
             "referral": {
+                "referral_code": secrets.token_hex(4).upper(),  # Added unique referral code
                 "referrer_id": None,
                 "referred_count": 0,
                 "referral_earnings": 0,
                 "referred_users": [],
-                "ad_codes": []  # New field for tracking shared ad links
+                "ad_codes": []
             },
 
             # User settings
@@ -216,7 +219,7 @@ class Database:
                 "notifications": True,
                 "leaderboard_period": "weekly",
                 "leaderboard_type": "points",
-                "ad_notifications": True  # New field for ad notifications
+                "ad_notifications": True
             },
 
             # Activity tracking (enhanced for ads)
@@ -225,9 +228,9 @@ class Database:
                 "total_files_renamed": 0,
                 "daily_usage": 0,
                 "last_usage_date": None,
-                "ad_views": 0,  # New field
-                "ad_earnings": 0,  # New field
-                "last_ad_view": None  # New field
+                "ad_views": 0,
+                "ad_earnings": 0,
+                "last_ad_view": None
             },
 
             # Security
@@ -235,15 +238,15 @@ class Database:
                 "two_factor": False,
                 "last_login": None,
                 "login_history": [],
-                "ad_ratelimit": None  # New field for rate limiting ads
+                "ad_ratelimit": None
             },
 
             # System flags
             "deleted": False,
             "deleted_at": None,
             "flags": {
-                "ad_verified": False,  # New field for ad verification status
-                "ad_ban": False  # New field for ad abuse prevention
+                "ad_verified": False,
+                "ad_ban": False
             }
         }
 
@@ -260,44 +263,58 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error adding user {id}: {e}")
             return False
-    # Create a point link (valid for 24 hours, one-time use)
-    async def create_point_link(self, user_id: int, point_id: str, points: int):
-        expiry = datetime.utcnow().replace(tzinfo=pytz.UTC) + timedelta(hours=24)
-        try:
-            await self.token_links.update_one(
-                {"_id": point_id},
-                {
-                    "$set": {
-                        "user_id": user_id,
-                        "points": points,
-                        "used": False,
-                        "expiry": expiry
-                    }
-                },
-                upsert=True
-            )
-            logging.info(f"Point link created for user {user_id} with ID {point_id}.")
-        except Exception as e:
-            logging.error(f"Error creating point link: {e}")
-    
-    # Fetch a point link by ID
-    async def get_point_link(self, point_id: str):
-        try:
-            return await self.token_links.find_one({"_id": point_id})
-        except Exception as e:
-            logging.error(f"Error fetching point link for ID {point_id}: {e}")
-            return None
-    
-    # Mark a point link as used
-    async def mark_point_used(self, point_id: str):
-        try:
-            await self.token_links.update_one(
-                {"_id": point_id},
-                {"$set": {"used": True}}
-            )
-            logging.info(f"Point link {point_id} marked as used.")
-        except Exception as e:
-            logging.error(f"Error marking point link as used: {e}")
+
+    async def process_referral(self, referrer_code: str, referred_id: int) -> bool:
+        """Process a referral ensuring one-time only per user globally"""
+        async with await self._client.start_session() as session:
+            async with session.start_transaction():
+                # Check if user was ever referred by anyone
+                existing_ref = await self.referrals.find_one(
+                    {"referred_id": referred_id},
+                    session=session
+                )
+                if existing_ref:
+                    return False
+
+                # Get referrer
+                referrer = await self.users.find_one(
+                    {"referral.referral_code": referrer_code},
+                    session=session
+                )
+                if not referrer or referrer["_id"] == referred_id:
+                    return False
+
+                # Record referral
+                await self.referrals.insert_one({
+                    "referrer_id": referrer["_id"],
+                    "referred_id": referred_id,
+                    "timestamp": datetime.utcnow(),
+                    "code_used": referrer_code
+                }, session=session)
+
+                # Update referrer's stats
+                await self.users.update_one(
+                    {"_id": referrer["_id"]},
+                    {
+                        "$inc": {
+                            "referral.referred_count": 1,
+                            "referral.referral_earnings": settings.REFER_POINT_REWARD,
+                            "points.balance": settings.REFER_POINT_REWARD,
+                            "points.total_earned": settings.REFER_POINT_REWARD
+                        },
+                        "$addToSet": {"referral.referred_users": referred_id},
+                        "$set": {"referral.last_referral": datetime.utcnow()}
+                    },
+                    session=session
+                )
+
+                # Mark user as referred
+                await self.users.update_one(
+                    {"_id": referred_id},
+                    {"$set": {"referral.referrer_id": referrer["_id"]}},
+                    session=session
+                )
+                return True
 
     async def is_user_exist(self, id: int) -> bool:
         """Check if user exists in database."""
@@ -308,6 +325,7 @@ class Database:
             logger.error(f"Error checking if user {id} exists: {e}")
             return False
 
+    # ... (keep all your other existing methods exactly as they were) ...
     async def get_user(self, id: int) -> Optional[Dict[str, Any]]:
         """Get user document by ID with proper error handling."""
         try:
