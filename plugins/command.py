@@ -727,69 +727,137 @@ async def set_media_preference_handler(client: Client, callback_query: CallbackQ
         )
 
 async def handle_start_command(client: Client, message: Message, args: List[str]):
-    """Handle start command with referral and point redemption."""
+    """Handle start command with global referral tracking."""
     user = message.from_user
     user_id = user.id
     
     # Check if user exists, if not add them
-    if not await hyoshcoder.get_user(user_id):
+    user_data = await hyoshcoder.get_user(user_id)
+    if not user_data:
         await hyoshcoder.add_user(user_id)
+        user_data = await hyoshcoder.get_user(user_id)
 
-    # Check for referral or point link
-    if len(args) > 0:
-        arg = args[0]
+    # Check for referral link
+    if len(args) > 0 and args[0].startswith("ref_"):
+        referral_code = args[0][4:]
         
-        # Handle referral link (e.g. /start ref_ABC123)
-        if arg.startswith("ref_"):
-            referral_code = arg[4:]
-            referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
+        # Prevent self-referral
+        if user_data.get("referral", {}).get("referral_code") == referral_code:
+            await message.reply_text("❌ You cannot refer yourself!")
+            return
+            
+        referrer = await hyoshcoder.users.find_one({"referral.referral_code": referral_code})
         
-            if referrer and referrer["_id"] != user_id:
-                # First set the referrer relationship
-                await hyoshcoder.set_referrer(user_id, referrer["_id"])
+        if referrer and referrer["_id"] != user_id:
+            # Check if this user was already referred by someone
+            existing_referrer = user_data.get("referral", {}).get("referrer_id")
+            if existing_referrer:
+                await message.reply_text(
+                    f"ℹ️ You were already referred by another user. "
+                    f"Referral codes can only be used once per account."
+                )
+                return
                 
-                # Add points to referrer's balance
-                await hyoshcoder.add_points(
-                    referrer["_id"], 
-                    settings.REFER_POINT_REWARD,
-                    source="referral",
-                    description=f"Referral bonus for user {user_id}"
+            # Check if this referrer-user pair already exists in global referrals
+            existing_referral = await hyoshcoder.global_referrals.find_one({
+                "referrer_id": referrer["_id"],
+                "referred_id": user_id
+            })
+            
+            if existing_referral:
+                await message.reply_text(
+                    "ℹ️ You've already used this referral link before. "
+                    "Each referral can only be used once."
+                )
+                return
+                
+            # Record the global referral first (prevents race conditions)
+            await hyoshcoder.global_referrals.insert_one({
+                "referrer_id": referrer["_id"],
+                "referred_id": user_id,
+                "referral_code": referral_code,
+                "timestamp": datetime.datetime.now(),
+                "points_awarded": settings.REFER_POINT_REWARD,
+                "completed": False
+            })
+            
+            try:
+                # Process the referral
+                await process_referral(client, referrer["_id"], user_id, referral_code)
+                
+                # Mark referral as completed
+                await hyoshcoder.global_referrals.update_one(
+                    {"referrer_id": referrer["_id"], "referred_id": user_id},
+                    {"$set": {"completed": True}}
                 )
                 
-                # Also give points to the new user for being referred
-                await hyoshcoder.add_points(
-                    user_id,
-                    settings.REFER_POINT_REWARD,
-                    source="referral",
-                    description=f"Signup bonus from referral {referrer['_id']}"
+                await message.reply_text(
+                    f"🎉 You received {settings.REFER_POINT_REWARD} points "
+                    f"for joining via referral!"
                 )
                 
-                try:
-                    await client.send_message(
-                        referrer["_id"],
-                        f"🎉 You received {settings.REFER_POINT_REWARD} points for referring {user.mention}!"
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to notify referrer {referrer['_id']}: {e}")
-                
-                # Send welcome message to new user with referral bonus note
-                m = await message.reply_text(
-                    f"👋 Welcome {user.mention}!\n\n"
-                    f"🎁 You received {settings.REFER_POINT_REWARD} points for joining via referral!"
+            except Exception as e:
+                logger.error(f"Referral processing failed: {e}")
+                await message.reply_text(
+                    "❌ Failed to process referral. Please try again."
                 )
-                await asyncio.sleep(5)
-                await m.delete()
                 return
     
-        # Handle point redemption link (e.g. /start XYZ123)
-        else:
-            await handle_point_redemption(client, message, arg)
-            return
+    # Handle point redemption link
+    elif len(args) > 0:
+        await handle_point_redemption(client, message, args[0])
+        return
 
-    # Standard welcome message for non-referral starts
+    # Standard welcome message
     m = await message.reply_sticker("CAACAgIAAxkBAAI0WGg7NBOpULx2heYfHhNpqb9bZ1ikvAAL6FQACgb8QSU-cnfCjPKF6HgQ")
     await asyncio.sleep(3)
     await m.delete()
+
+async def process_referral(client: Client, referrer_id: int, user_id: int, referral_code: str):
+    """Process a referral transaction atomically."""
+    # Start a database session for atomic operations
+    async with await hyoshcoder.client.start_session() as session:
+        async with session.start_transaction():
+            # Set the referrer for the new user
+            await hyoshcoder.users.update_one(
+                {"_id": user_id},
+                {"$set": {"referral.referrer_id": referrer_id}},
+                session=session
+            )
+            
+            # Update referrer's stats and add points
+            await hyoshcoder.users.update_one(
+                {"_id": referrer_id},
+                {
+                    "$inc": {
+                        "referral.referred_count": 1,
+                        "referral.referral_earnings": settings.REFER_POINT_REWARD,
+                        "points": settings.REFER_POINT_REWARD
+                    },
+                    "$addToSet": {"referral.referred_users": user_id}
+                },
+                session=session
+            )
+            
+            # Add points to referred user
+            await hyoshcoder.users.update_one(
+                {"_id": user_id},
+                {"$inc": {"points": settings.REFER_POINT_REWARD}},
+                session=session
+            )
+            
+            # Send notification to referrer
+            try:
+                user = await client.get_users(user_id)
+                await client.send_message(
+                    referrer_id,
+                    f"🎉 New referral! You received {settings.REFER_POINT_REWARD} "
+                    f"points for {user.mention} joining with your link."
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify referrer: {e}")
+                # Don't fail the transaction if notification fails
+                pass
 
     # Prepare buttons
     buttons = InlineKeyboardMarkup([
