@@ -204,7 +204,7 @@ class Database:
 
             # Referral system (compatible with ad campaigns)
             "referral": {
-                "referral_code": secrets.token_hex(4).upper(),  # Added unique referral code
+                "referral_code": f"REF_{secrets.token_hex(3).upper()}",
                 "referrer_id": None,
                 "referred_count": 0,
                 "referral_earnings": 0,
