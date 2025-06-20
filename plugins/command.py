@@ -372,103 +372,100 @@ async def generate_point_link(client: Client, message: Message):
             delete_after=30
         )
 
-@Client.on_message(filters.command(["referral", "ref"]) & filters.private)
-async def referral_system(client: Client, message: Message):
-    """One-time referral system with leaderboard"""
+@Client.on_message(filters.command("refer") & filters.private)
+async def refer(client: Client, message: Message):
+    """Generate unique referral link that only works once per user"""
     try:
         user_id = message.from_user.id
         user = await hyoshcoder.get_user(user_id)
         
-        # Generate or get unique referral code
-        if not user or not user.get("referral_code"):
+        # Generate or get referral code
+        if not user or not user.get("referral", {}).get("referral_code"):
             referral_code = secrets.token_hex(4).upper()
             await hyoshcoder.users.update_one(
                 {"_id": user_id},
-                {"$set": {"referral_code": referral_code}},
+                {"$set": {"referral.referral_code": referral_code}},
                 upsert=True
             )
         else:
-            referral_code = user["referral_code"]
+            referral_code = user["referral"]["referral_code"]
 
         # Create the one-time referral link
         refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
         
-        # Get referral stats
-        ref_stats = await hyoshcoder.referrals.aggregate([
-            {"$match": {"referrer_id": user_id}},
-            {"$group": {
-                "_id": None,
-                "total": {"$sum": 1},
-                "earnings": {"$sum": "$points_earned"}
-            }}
-        ]).to_list(length=1)
+        # Get current referral count
+        referred_count = user.get("referral", {}).get("referred_count", 0)
         
-        total_refs = ref_stats[0]["total"] if ref_stats else 0
-        total_earned = ref_stats[0]["earnings"] if ref_stats else 0
-
-        # Get top 10 referrers
-        top_referrers = await hyoshcoder.referrals.aggregate([
-            {"$group": {
-                "_id": "$referrer_id",
-                "count": {"$sum": 1},
-                "earnings": {"$sum": "$points_earned"}
-            }},
-            {"$sort": {"count": -1}},
-            {"$limit": 10},
-            {"$lookup": {
-                "from": "users",
-                "localField": "_id",
-                "foreignField": "_id",
-                "as": "user"
-            }},
-            {"$unwind": "$user"},
-            {"$project": {
-                "username": "$user.username",
-                "count": 1,
-                "earnings": 1,
-                "is_premium": "$user.premium.is_premium"
-            }}
-        ]).to_list(length=10)
-
-        # Build leaderboard text
-        leaderboard = ["🏆 <b>TOP REFERRERS</b> 🏆"]
-        for idx, ref in enumerate(top_referrers, 1):
-            prefix = "⭐ " if ref.get("is_premium") else ""
-            leaderboard.append(
-                f"{idx}. {prefix}{ref['username']}: "
-                f"{ref['count']} refs • "
-                f"{ref['earnings']} pts"
-            )
-
-        # Create share buttons
+        # Create buttons
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📤 Share Referral Link", 
-              url=f"tg://msg_url?url={quote(refer_link)}&text=Join%20{settings.BOT_USERNAME}%20with%20my%20referral%20link!")],
-            [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_refs")]
+            [InlineKeyboardButton("📤 Share Link", 
+              url=f"tg://msg_url?url={quote(refer_link)}&text=Join%20me%20on%20{settings.BOT_USERNAME}%20using%20my%20referral%20link!")],
+            [InlineKeyboardButton("📊 My Referrals", callback_data="my_refs")]
         ])
 
-        # Send complete message
+        # Send message
         await message.reply_text(
-            f"🔗 <b>Your Referral Link</b> (1-time use per user):\n"
+            f"🔗 <b>Your One-Time Referral Link</b>\n\n"
             f"<code>{refer_link}</code>\n\n"
-            f"💰 <b>Your Stats:</b>\n"
-            f"• Successful referrals: {total_refs}\n"
-            f"• Total points earned: {total_earned}\n"
-            f"• Points per referral: {settings.REFER_POINT_REWARD}\n\n"
-            + "\n".join(leaderboard),
+            f"• Each new user can only use this once\n"
+            f"• You get {settings.REFER_POINT_REWARD} points per unique referral\n"
+            f"• Your current referrals: {referred_count}\n\n"
+            "⚠️ Note: Duplicate referrals won't count!",
             reply_markup=buttons,
             disable_web_page_preview=True
         )
 
     except Exception as e:
-        logger.error(f"Referral error: {e}")
-        await message.reply_text("❌ Error loading referral data")
+        logger.error(f"Refer command error: {e}")
+        await message.reply_text("❌ Error generating referral link")
 
-@Client.on_callback_query(filters.regex("^refresh_refs$"))
-async def refresh_referrals(client: Client, callback_query: CallbackQuery):
-    """Refresh referral data"""
-    await callback_query.answer("Refreshing...")
-    await referral_system(client, callback_query.message)
+# In your start command handler where you process referrals:
+async def handle_referral(user_id, referrer_id):
+    """Process a referral ensuring one-time only"""
+    # Check if this user was already referred by anyone
+    existing_user = await hyoshcoder.get_user(user_id)
+    if existing_user and existing_user.get("referral", {}).get("referrer_id"):
+        return False  # Already referred by someone
+    
+    # Check if this specific referrer already credited for this user
+    existing_ref = await hyoshcoder.referrals.find_one({
+        "referrer_id": referrer_id,
+        "referred_id": user_id
+    })
+    if existing_ref:
+        return False
+        
+    # Record new referral
+    await hyoshcoder.referrals.insert_one({
+        "referrer_id": referrer_id,
+        "referred_id": user_id,
+        "timestamp": datetime.utcnow(),
+        "points_earned": settings.REFER_POINT_REWARD
+    })
+    
+    # Update referrer's stats (only once)
+    await hyoshcoder.users.update_one(
+        {"_id": referrer_id},
+        {
+            "$inc": {
+                "referral.referred_count": 1,
+                "referral.referral_earnings": settings.REFER_POINT_REWARD,
+                "points.balance": settings.REFER_POINT_REWARD,
+                "points.total_earned": settings.REFER_POINT_REWARD
+            },
+            "$set": {
+                "referral.last_referral": datetime.utcnow()
+            }
+        }
+    )
+    
+    # Mark user as referred
+    await hyoshcoder.users.update_one(
+        {"_id": user_id},
+        {"$set": {"referral.referrer_id": referrer_id}}
+    )
+    
+    return True
 @Client.on_message(filters.command("freepoints") & filters.private)
 async def freepoints(client: Client, message: Message):
     """Handle free points generation."""
