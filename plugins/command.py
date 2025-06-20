@@ -374,18 +374,33 @@ async def generate_point_link(client: Client, message: Message):
 @Client.on_message(filters.command("refer") & filters.private)
 async def refer_command(client: Client, message: Message):
     try:
-        user = await hyoshcoder.get_user(message.from_user.id)
-        if not user:
-            return await message.reply("Please start the bot first with /start")
+        user_id = message.from_user.id
+        user = await hyoshcoder.get_user(user_id)
+        
+        # Initialize user if not exists or missing referral data
+        if not user or "referral" not in user or "referral_code" not in user["referral"]:
+            # Create new user or update existing one with referral code
+            referral_code = secrets.token_hex(4).upper()
+            await hyoshcoder.users.update_one(
+                {"_id": user_id},
+                {
+                    "$setOnInsert": hyoshcoder.new_user(user_id),
+                    "$set": {"referral.referral_code": referral_code}
+                },
+                upsert=True
+            )
+            user = await hyoshcoder.get_user(user_id)  # Refresh user data
 
         code = user["referral"]["referral_code"]
         link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{code}"
+        
+        referred_count = user["referral"].get("referred_count", 0)
         
         await message.reply_text(
             f"🔗 <b>Your Referral Link</b> (1 use per user)\n\n"
             f"<code>{link}</code>\n\n"
             f"• <b>{settings.REFER_POINT_REWARD} points</b> per successful referral\n"
-            f"• <b>{user['referral']['referred_count']}</b> users joined so far\n\n"
+            f"• <b>{referred_count}</b> users joined so far\n\n"
             "⚠️ Users can only use ANY referral link once",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
@@ -397,7 +412,7 @@ async def refer_command(client: Client, message: Message):
         )
 
     except Exception as e:
-        logger.error(f"Error in refer command: {e}")
+        logger.error(f"Error in refer command: {e}", exc_info=True)
         await send_auto_delete_message(
             client,
             message.chat.id,
