@@ -1461,17 +1461,22 @@ class Database:
     async def set_referrer(self, user_id: int, referrer_id: int) -> bool:
         """Set referrer for a user."""
         try:
+            # First set the referrer for the new user
             await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"referral.referrer_id": referrer_id}}
+                {"$set": {"referral.referrer_id": referrer_id}},
+                upsert=True
             )
-
+    
             # Update referrer's stats
             await self.users.update_one(
                 {"_id": referrer_id},
                 {
-                    "$inc": {"referral.referred_count": 1},
-                    "$push": {"referral.referred_users": user_id}
+                    "$inc": {
+                        "referral.referred_count": 1,
+                        "referral.referral_earnings": settings.REFER_POINT_REWARD
+                    },
+                    "$addToSet": {"referral.referred_users": user_id}
                 }
             )
             return True
