@@ -1507,11 +1507,12 @@ class Database:
     async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
         """Set user's dump channel ID."""
         try:
-            await self.users.update_one(
+            result = await self.users.update_one(
                 {"_id": user_id},
-                {"$set": {"settings.user_channel": channel_id}}
+                {"$set": {"settings.user_channel": channel_id}},
+                upsert=True
             )
-            return True
+            return result.acknowledged
         except Exception as e:
             logger.error(f"Error setting user channel for {user_id}: {e}")
             return False
