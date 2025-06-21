@@ -526,10 +526,10 @@ async def end_sequence(client: Client, message: Message):
         return await message.reply_text("**No files received in this sequence!**")
 
     try:
-        # Processing message with animation
-        processing_msg = await message.reply_animation(
-            animation="https://telegra.ph/file/1e7f8b3b3b3b3b3b3b3b3.mp4",
-            caption="🔃 **Sorting and organizing your files...**"
+        # Processing message with static text instead of animation
+        processing_msg = await message.reply_text(
+            "🔃 **Sorting and organizing your files...**\n"
+            "Please wait while I process your sequence..."
         )
 
         # Extract metadata and sort files
@@ -567,20 +567,20 @@ async def end_sequence(client: Client, message: Message):
         # Send files with delay to avoid flooding
         for file_data in sorted_files:
             if user_id in cancel_operations and cancel_operations[user_id]:
-                return await message.reply_text("❌ Sequence processing was canceled!")
+                await message.reply_text("❌ Sequence processing was canceled!")
+                return
 
             try:
                 file = file_data["file"]
-                file_name = file['file_name']
+                file_name = file['file_name'].replace('*', '×').replace('_', ' ').replace('`', "'")
                 
                 # Send file to user with simple caption
                 await client.send_document(
-                    message.chat.id,
-                    file["file_id"],
-                    caption=f'"{file_name}"',
+                    chat_id=message.chat.id,
+                    document=file["file_id"],
+                    caption=f'<b><blockquote>{html.escape(file["file_name"])}</blockquote></b>',
                     parse_mode=ParseMode.HTML
                 )
-                
                 # Send to dump channel if configured
                 try:
                     dump_channel = await hyoshcoder.get_user_channel(user_id)
@@ -611,52 +611,49 @@ async def end_sequence(client: Client, message: Message):
                 except Exception as e:
                     logger.error(f"Failed to send to dump channel: {e}")
 
-                # Small delay between files
-                await asyncio.sleep(1)
+                # Small delay between files (0.5-1.5 seconds)
+                await asyncio.sleep(random.uniform(0.5, 1.5))
                 
             except FloodWait as e:
                 await asyncio.sleep(e.value + 1)
             except Exception as e:
                 logger.error(f"Error sending file {file['file_name']}: {e}")
+                missing_files.append(file['file_name'])
 
-        # Build success message
-        success_msg = (
-            f"✨ **SEQUENCE COMPLETED** ✨\n\n"
-            f"▫️ **Total Files Processed:** `{len(sorted_files)}`\n"
+        # Prepare success message
+        success_message = (
+            f"🎉 **SEQUENCE COMPLETED** 🎉\n\n"
+            f"▫️ **Total Files Sent:** `{len(sorted_files)}`\n"
             f"▫️ **Time Taken:** `{time_str}`\n"
         )
 
         # Add missing files info if any
         if missing_files:
-            success_msg += (
-                f"\n⚠️ **Missing Files:** `{len(missing_files)}`\n"
-                f"▫️ First missing: `{missing_files[0][:30]}...`\n"
+            success_message += (
+                f"\n❌ **Missing Files:** `{len(missing_files)}`\n"
+                f"`{', '.join(missing_files[:3])}`"
             )
-            if len(missing_files) > 1:
-                success_msg += f"▫️ Last missing: `{missing_files[-1][:30]}...`\n"
+            if len(missing_files) > 3:
+                success_message += f" +{len(missing_files)-3} more"
 
-        # Add first/last file info
-        if sorted_files:
-            success_msg += (
-                f"\n▫️ **First File:** `{sorted_files[0]['file']['file_name'][:30]}...`\n"
-                f"▫️ **Last File:** `{sorted_files[-1]['file']['file_name'][:30]}...`\n\n"
-                f"✅ All files sent successfully!"
-            )
-
-        # Send final success message
-        await message.reply_text(success_msg)
+        # Send final success message after all files are sent
+        await message.reply_text(success_message)
 
         # Clean up messages
         if delete_messages:
-            await client.delete_messages(message.chat.id, delete_messages)
+            try:
+                await client.delete_messages(message.chat.id, delete_messages)
+            except Exception as e:
+                logger.error(f"Error deleting messages: {e}")
 
     except Exception as e:
         logger.error(f"Sequence processing failed: {e}")
-        await message.reply_text(
+        error_message = (
             "❌ **Failed to process sequence!**\n"
-            f"Error: `{str(e)[:200]}`\n\n"
             "Please try again with fewer files or check your filenames."
         )
+        # Avoid showing technical errors to users
+        await message.reply_text(error_message)
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
@@ -917,18 +914,13 @@ async def auto_rename_files(client: Client, message: Message):
             # Create caption with proper HTML formatting
             if custom_caption:
                 formatted_text = custom_caption.format(
-                    filename=renamed_file_name,
+                    filename=html.escape(renamed_file_name),
                     filesize=file_size_human,
                     duration=duration
                 )
-                caption = f"""<blockquote>
-            <b>{formatted_text}</b>
-            </blockquote>"""
+                caption = f"""<b><blockquote>{formatted_text}</blockquote></b>"""
             else:
-                caption = f"""<blockquote>
-            <b>{renamed_file_name}</b>
-            </blockquote>"""
-            
+                caption = f"""<b><blockquote>{html.escape(renamed_file_name)}</blockquote></b>"""
             # Handle thumbnail
             if custom_thumb:
                 thumb_path = await client.download_media(custom_thumb)
@@ -1121,7 +1113,6 @@ async def handle_media_group_completion(client: Client, message: Message):
             pass
 
 
-
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
     """Mobile-optimized leaderboard with toggle between renames/sequences"""
@@ -1133,8 +1124,8 @@ async def show_leaderboard(client: Client, message: Message):
         )
 
         # Default values
-        time_range = "week"
         view_type = "renames"
+        time_range = "week"
 
         # Get leaderboard data
         now = datetime.now()
@@ -1154,7 +1145,7 @@ async def show_leaderboard(client: Client, message: Message):
                 {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
                 {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
                 {"$sort": {"total": -1}},
-                {"$limit": 8}  # Reduced for mobile
+                {"$limit": 8}
             ]
             icon = "📝"
             title = "TOP RENAMERS"
@@ -1163,7 +1154,7 @@ async def show_leaderboard(client: Client, message: Message):
                 {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
                 {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
                 {"$sort": {"total": -1}},
-                {"$limit": 8}  # Reduced for mobile
+                {"$limit": 8}
             ]
             icon = "🎬"
             title = "TOP SEQUENCERS"
@@ -1171,15 +1162,8 @@ async def show_leaderboard(client: Client, message: Message):
         top_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(length=8)
         
         # Build compact leaderboard
-        time_range_titles = {
-            "day": "Today",
-            "week": "Week",
-            "month": "Month",
-            "all": "All Time"
-        }
-        
         leaderboard_text = f"""
-<b>🏆 {title} • {time_range_titles[time_range]}</b>
+<b>🏆 {title}</b>
 {icon} <i>Most active users</i>
 ━━━━━━━━━━
 
@@ -1191,24 +1175,13 @@ async def show_leaderboard(client: Client, message: Message):
             try:
                 user_obj = await client.get_users(user["_id"])
                 username = user_obj.username or user_obj.first_name
-                leaderboard_text += (
-                    f"{emoji_ranks[i]} <code>{escape(username[:12])}</code> "
-                    f"→ {user['total']}\n"
-                )
+                leaderboard_text += f"{emoji_ranks[i]} <code>{username[:12]}</code> → {user['total']}\n"
             except:
                 leaderboard_text += f"{emoji_ranks[i]} Anonymous → {user['total']}\n"
 
-        # Calculate total stats
-        total_pipeline = [
-            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-            {"$group": {"_id": None, "total": {"$sum": 1}}}
-        ]
-        total_result = await hyoshcoder.file_stats.aggregate(total_pipeline).to_list(length=1)
-        total_files = total_result[0]["total"] if total_result else 0
-
         leaderboard_text += f"""
 ━━━━━━━━━━
-📊 <b>Total:</b> {total_files}
+📊 <b>Total:</b> {sum(u['total'] for u in top_users)}
 🕒 <i>{now.strftime('%d/%m %H:%M')}</i>
 """
 
@@ -1225,17 +1198,11 @@ async def show_leaderboard(client: Client, message: Message):
 
         # Send final leaderboard
         await loading_msg.delete()
-        leaderboard_msg = await message.reply_text(
+        await message.reply_text(
             leaderboard_text,
             reply_markup=InlineKeyboardMarkup(buttons),
             disable_web_page_preview=True
         )
-
-        # Store current view type in message
-        await hyoshcoder.save_message_state(leaderboard_msg.id, {
-            "view_type": view_type,
-            "time_range": time_range
-        })
 
     except Exception as e:
         logger.error(f"Leaderboard error: {str(e)}")
@@ -1255,38 +1222,23 @@ async def handle_leaderboard_buttons(client, callback_query):
         action = callback_query.matches[0].group(1)
         view_type = callback_query.matches[0].group(2) if callback_query.matches[0].group(2) != "leaderboard" else None
         
-        # Get current state
-        state = await hyoshcoder.get_message_state(callback_query.message.id) or {
-            "view_type": "renames",
-            "time_range": "week"
-        }
-
-        # Update view type if toggling
+        # Default values
+        current_view = "renames"
         if action == "toggle":
-            state["view_type"] = view_type
-            await hyoshcoder.save_message_state(callback_query.message.id, state)
+            current_view = view_type
         
         # Animation while loading
         await callback_query.message.edit_text(
             "🔄 <b>Updating leaderboard...</b>"
         )
 
-        # Get leaderboard data with current state
+        # Get leaderboard data
         now = datetime.now()
-        date_filter = {}
+        date_filter = {"$gte": datetime(now.year, now.month, 1)}  # Default to monthly
         
-        if state["time_range"] == "day":
-            date_filter = {"$gte": datetime(now.year, now.month, now.day)}
-        elif state["time_range"] == "week":
-            start_of_week = now - timedelta(days=now.weekday())
-            date_filter = {"$gte": datetime(start_of_week.year, start_of_week.month, start_of_week.day)}
-        elif state["time_range"] == "month":
-            date_filter = {"$gte": datetime(now.year, now.month, 1)}
-        
-        # Get data based on view type
-        if state["view_type"] == "renames":
+        if current_view == "renames":
             pipeline = [
-                {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
+                {"$match": {"timestamp": date_filter}},
                 {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
                 {"$sort": {"total": -1}},
                 {"$limit": 8}
@@ -1295,7 +1247,7 @@ async def handle_leaderboard_buttons(client, callback_query):
             title = "TOP RENAMERS"
         else:
             pipeline = [
-                {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
+                {"$match": {"type": "sequence_completed", "timestamp": date_filter}},
                 {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
                 {"$sort": {"total": -1}},
                 {"$limit": 8}
@@ -1307,53 +1259,32 @@ async def handle_leaderboard_buttons(client, callback_query):
         
         # Build updated leaderboard
         leaderboard_text = f"""
-<b>🏆 {title} • {state['time_range'].title()}</b>
+<b>🏆 {title}</b>
 {icon} <i>Most active users</i>
 ━━━━━━━━━━
 
 """
         
-        emoji_ranks = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"]
-
         for i, user in enumerate(top_users[:8]):
             try:
                 user_obj = await client.get_users(user["_id"])
                 username = user_obj.username or user_obj.first_name
-                leaderboard_text += (
-                    f"{emoji_ranks[i]} <code>{escape(username[:12])}</code> "
-                    f"→ {user['total']}\n"
-                )
+                leaderboard_text += f"{['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'][i]} <code>{username[:12]}</code> → {user['total']}\n"
             except:
-                leaderboard_text += f"{emoji_ranks[i]} Anonymous → {user['total']}\n"
-
-        # Calculate total stats
-        total_pipeline = [
-            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-            {"$group": {"_id": None, "total": {"$sum": 1}}}
-        ]
-        total_result = await hyoshcoder.file_stats.aggregate(total_pipeline).to_list(length=1)
-        total_files = total_result[0]["total"] if total_result else 0
+                leaderboard_text += f"{['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'][i]} Anonymous → {user['total']}\n"
 
         leaderboard_text += f"""
 ━━━━━━━━━━
-📊 <b>Total:</b> {total_files}
+📊 <b>Total:</b> {sum(u['total'] for u in top_users)}
 🕒 <i>{now.strftime('%d/%m %H:%M')}</i>
 """
 
-        # Update buttons based on current view
-        if state["view_type"] == "renames":
-            toggle_buttons = [
+        # Update buttons
+        buttons = [
+            [
                 InlineKeyboardButton("📝 Renames", callback_data="toggle_renames"),
                 InlineKeyboardButton("🎬 Sequences", callback_data="toggle_sequences")
-            ]
-        else:
-            toggle_buttons = [
-                InlineKeyboardButton("🎬 Sequences", callback_data="toggle_sequences"),
-                InlineKeyboardButton("📝 Renames", callback_data="toggle_renames")
-            ]
-
-        buttons = [
-            toggle_buttons,
+            ],
             [
                 InlineKeyboardButton("🔄 Refresh", callback_data="refresh_leaderboard")
             ]
@@ -1366,7 +1297,7 @@ async def handle_leaderboard_buttons(client, callback_query):
             disable_web_page_preview=True
         )
         
-        await callback_query.answer(f"Showing {state['view_type']}")
+        await callback_query.answer(f"Showing {current_view}")
 
     except Exception as e:
         logger.error(f"Leaderboard button error: {str(e)}")
