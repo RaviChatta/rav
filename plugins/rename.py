@@ -252,48 +252,100 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
         logging.error(f"Metadata addition crashed: {str(e)}", exc_info=True)
         return False, f"Critical error: {str(e)}"
 
-async def send_to_dump_channel(client: Client, user_id: int, file_path: str, caption: str, thumb_path: Optional[str] = None) -> bool:
-    """Enhanced dump channel sender"""
-    try:
-        dump_channel = await hyoshcoder.get_user_channel(user_id)
-        if not dump_channel:
-            return False
-
-        try:
-            chat = await client.get_chat(dump_channel)
-            if chat.type not in ["channel", "supergroup"]:
-                return False
-        except Exception:
-            return False
-
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext in ('.mp4', '.mkv', '.avi', '.mov'):
-            await client.send_video(
-                chat_id=dump_channel,
-                video=file_path,
-                caption=caption[:1024],
-                thumb=thumb_path,
-                supports_streaming=True
-            )
-        elif ext in ('.mp3', '.flac', '.m4a'):
-            await client.send_audio(
-                chat_id=dump_channel,
-                audio=file_path,
-                caption=caption[:1024],
-                thumb=thumb_path
-            )
-        else:
-            await client.send_document(
-                chat_id=dump_channel,
-                document=file_path,
-                caption=caption[:1024],
-                thumb=thumb_path
-            )
-        return True
-    except Exception as e:
-        logger.error(f"Dump channel error: {e}", exc_info=True)
+async def send_to_dump_channel(
+    client: Client,
+    user_id: int,
+    file_path: str,
+    caption: str = "",
+    thumb_path: Optional[str] = None,
+    **kwargs
+) -> bool:
+    """
+    Send media to user's dump channel with enhanced reliability.
+    
+    Args:
+        client: Pyrogram Client
+        user_id: User ID to lookup dump channel
+        file_path: Path to media file
+        caption: Caption text (max 1024 chars)
+        thumb_path: Path to thumbnail image
+        **kwargs: Additional send_* method parameters
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
         return False
 
+    try:
+        # Get and validate dump channel
+        dump_channel = await hyoshcoder.get_user_channel(user_id)
+        if not dump_channel:
+            logger.debug(f"No dump channel set for user {user_id}")
+            return False
+
+        # Verify channel exists and bot has permissions
+        try:
+            chat = await client.get_chat(int(dump_channel))
+            if chat.type not in ("channel", "supergroup"):
+                logger.warning(f"Invalid chat type {chat.type} for {dump_channel}")
+                return False
+        except (PeerIdInvalid, ChannelInvalid, ChannelPrivate):
+            logger.warning(f"Can't access channel {dump_channel}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected channel validation error: {e}")
+            return False
+
+        # Prepare common parameters
+        send_params = {
+            "chat_id": dump_channel,
+            "caption": caption[:1024],
+            "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+            **kwargs
+        }
+
+        # Determine media type and send appropriately
+        ext = os.path.splitext(file_path)[1].lower()
+        try:
+            if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm'):
+                await client.send_video(
+                    video=file_path,
+                    supports_streaming=True,
+                    **send_params
+                )
+            elif ext in ('.mp3', '.flac', '.m4a', '.wav', '.ogg'):
+                await client.send_audio(
+                    audio=file_path,
+                    **send_params
+                )
+            elif ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                await client.send_photo(
+                    photo=file_path,
+                    **{k: v for k, v in send_params.items() if k != "thumb"}
+                )
+            else:
+                await client.send_document(
+                    document=file_path,
+                    **send_params
+                )
+            
+            logger.info(f"Successfully sent {file_path} to {dump_channel}")
+            return True
+
+        except FileIdInvalid:
+            logger.error(f"Invalid file format for {file_path}")
+        except MediaEmpty:
+            logger.error(f"Empty/corrupt media file: {file_path}")
+        except Exception as send_error:
+            logger.error(f"Failed to send media: {send_error}")
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Unexpected error in send_to_dump_channel: {e}", exc_info=True)
+        return False
 async def get_user_rank(user_id: int) -> Tuple[Optional[int], int]:
     """Get user's global rank and total renames"""
     try:
