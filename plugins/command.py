@@ -808,14 +808,6 @@ async def delete_dump_channel(client: Client, message: Message):
             asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
 
-    except Exception as e:
-        logger.error(f"Error deleting dump channel: {e}")
-        await send_auto_delete_message(
-            client,
-            message.chat.id,
-            "❌ Failed to remove dump channel. Please try again.",
-            delete_after=30
-        )
 
 async def handle_set_dump(client: Client, message: Message, args: List[str]):
     """Handle setting dump channel with proper validation."""
