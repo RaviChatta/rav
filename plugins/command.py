@@ -1278,8 +1278,6 @@ async def command_dispatcher(client: Client, message: Message):
             await generate_point_link(client, message)
         elif cmd == "refer":
             await refer(client, message)
-	elif cmd == "referralboard":
-            await referral_leaderboard(client, message)
         elif cmd in ["premium", "donate"]:
             await handle_premium(client, message)
 
