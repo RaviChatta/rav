@@ -35,7 +35,8 @@ class Settings():
     ADMINS = [7259016766]  # Replace with your Telegram user ID
     # Liste des canaux pour le force subscribe (séparés par une virgule)
     FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', ' ').split(',')
-    
+    ADMIN_USAGE_MODE = True
+
         
     # Récupération et conversion sécurisée des IDs de chat
     def safe_int(var_name, default=None):
