@@ -1114,13 +1114,13 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Working leaderboard with functional toggle button"""
+    """Fully working leaderboard with toggle"""
     try:
         # Initial view type
         view_type = "renames"
         
         # Get leaderboard data
-        leaderboard_text = await build_leaderboard_data(client, message.from_user.id, view_type)
+        leaderboard_text = await build_complete_leaderboard(client, message.from_user.id, view_type)
         
         # Send message with working button
         msg = await message.reply_text(
@@ -1128,7 +1128,7 @@ async def show_leaderboard(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     "🔁 Switch to Sequences", 
-                    callback_data=f"lb_toggle:{view_type}"
+                    callback_data=f"leaderboard_toggle:{view_type}"
                 )]
             ]),
             disable_web_page_preview=True
@@ -1145,16 +1145,16 @@ async def show_leaderboard(client: Client, message: Message):
         logger.error(f"Leaderboard error: {str(e)}")
         await message.reply_text("🚨 Failed to load leaderboard!")
 
-@Client.on_callback_query(filters.regex(r"^lb_toggle:(renames|sequences)$"))
+@Client.on_callback_query(filters.regex(r"^leaderboard_toggle:(renames|sequences)$"))
 async def handle_leaderboard_toggle(client, callback_query):
-    """Handle the toggle button press"""
+    """Handle leaderboard toggle"""
     try:
         # Get current view type from callback data
         current_type = callback_query.matches[0].group(1)
         new_type = "sequences" if current_type == "renames" else "renames"
         
         # Regenerate leaderboard with new type
-        leaderboard_text = await build_leaderboard_data(
+        leaderboard_text = await build_complete_leaderboard(
             client, 
             callback_query.from_user.id, 
             new_type
@@ -1169,7 +1169,7 @@ async def handle_leaderboard_toggle(client, callback_query):
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     button_text, 
-                    callback_data=f"lb_toggle:{new_type}"
+                    callback_data=f"leaderboard_toggle:{new_type}"
                 )]
             ]),
             disable_web_page_preview=True
@@ -1182,19 +1182,28 @@ async def handle_leaderboard_toggle(client, callback_query):
         logger.error(f"Toggle error: {str(e)}")
         await callback_query.answer("Error updating leaderboard", show_alert=True)
 
-async def build_leaderboard_data(client: Client, user_id: int, view_type: str) -> str:
-    """Build the leaderboard content"""
+async def build_complete_leaderboard(client: Client, user_id: int, view_type: str) -> str:
+    """Build complete leaderboard with proper data"""
     # Get top users based on view type
     if view_type == "renames":
-        top_users = await get_top_renames()
+        top_users = await hyoshcoder.file_stats.aggregate([
+            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+            {"$sort": {"total": -1}},
+            {"$limit": 20}
+        ]).to_list(length=20)
         title = "🏆 TOP RENAMERS"
-        user_rank, user_count = await get_user_rename_stats(user_id)
+        user_rank, user_count = await get_user_rank_count(user_id, is_sequence=False)
     else:
-        top_users = await get_top_sequences()
+        top_users = await hyoshcoder.file_stats.aggregate([
+            {"$match": {"type": "sequence"}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
+            {"$sort": {"total": -1}},
+            {"$limit": 20}
+        ]).to_list(length=20)
         title = "🏆 TOP SEQUENCERS"
-        user_rank, user_count = await get_user_sequence_stats(user_id)
+        user_rank, user_count = await get_user_rank_count(user_id, is_sequence=True)
     
-    # Build the leaderboard text
+    # Build leaderboard text with premium styling
     text = f"""
 ✨ <b>PREMIUM LEADERBOARD</b> ✨
 {title}
@@ -1210,12 +1219,11 @@ async def build_leaderboard_data(client: Client, user_id: int, view_type: str) -
             name = user_obj.first_name
             if user_obj.username:
                 name = f"@{user_obj.username}"
-            count = user["total"]
-            text += f"{rank_emojis[i]} <b>{name[:15]}</b> → <code>{count}</code> {'files' if view_type == 'sequences' else ''}\n"
+            text += f"{rank_emojis[i]} <b>{name[:15]}</b> → <code>{user['total']}</code>\n"
         except:
             text += f"{rank_emojis[i]} <b>Anonymous</b> → <code>{user['total']}</code>\n"
     
-    # Add user's rank
+    # Add current user's rank
     text += f"""
 ━━━━━━━━━━━━━━━━
 <b>🌟 YOUR RANK:</b> <code>#{user_rank if user_rank else 'N/A'}</code> (<code>{user_count}</code> {view_type})
@@ -1224,46 +1232,26 @@ async def build_leaderboard_data(client: Client, user_id: int, view_type: str) -
     
     return text
 
-async def get_top_renames():
-    """Get top 20 users by rename count"""
-    return await hyoshcoder.file_stats.aggregate([
-        {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
-        {"$sort": {"total": -1}},
-        {"$limit": 20}
-    ]).to_list(length=20)
-
-async def get_top_sequences():
-    """Get top 20 users by sequence file count"""
-    return await hyoshcoder.file_stats.aggregate([
-        {"$match": {"type": "sequence"}},
-        {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
-        {"$sort": {"total": -1}},
-        {"$limit": 20}
-    ]).to_list(length=20)
-
-async def get_user_rename_stats(user_id: int):
-    """Get user's rename rank and count"""
-    users = await hyoshcoder.file_stats.aggregate([
-        {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
-        {"$sort": {"total": -1}}
-    ]).to_list(None)
+async def get_user_rank_count(user_id: int, is_sequence: bool) -> Tuple[Optional[int], int]:
+    """Get user's rank and count for either renames or sequences"""
+    if is_sequence:
+        pipeline = [
+            {"$match": {"type": "sequence"}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
+            {"$sort": {"total": -1}}
+        ]
+    else:
+        pipeline = [
+            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+            {"$sort": {"total": -1}}
+        ]
     
-    for index, user in enumerate(users, start=1):
+    all_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(None)
+    
+    for index, user in enumerate(all_users, start=1):
         if user["_id"] == user_id:
             return index, user["total"]
-    return None, 0
-
-async def get_user_sequence_stats(user_id: int):
-    """Get user's sequence rank and file count"""
-    users = await hyoshcoder.file_stats.aggregate([
-        {"$match": {"type": "sequence"}},
-        {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
-        {"$sort": {"total": -1}}
-    ]).to_list(None)
     
-    for index, user in enumerate(users, start=1):
-        if user["_id"] == user_id:
-            return index, user["total"]
     return None, 0
 # SCREENSHOT GENERATOR (MAX 4K)
 
