@@ -1114,13 +1114,13 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Simplified premium leaderboard with auto-delete"""
+    """Simplified working leaderboard with toggle"""
     try:
         # Initial view type
         view_type = "renames"
         
         # Get leaderboard data
-        leaderboard_text = await build_simple_leaderboard(client, view_type)
+        leaderboard_text = await build_working_leaderboard(client, message.from_user.id, view_type)
         
         # Send message with auto-delete
         msg = await message.reply_text(
@@ -1128,7 +1128,7 @@ async def show_leaderboard(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     "🔁 Switch to Sequences", 
-                    callback_data="toggle_leaderboard"
+                    callback_data=f"toggle_lb_{view_type}"
                 )]
             ]),
             disable_web_page_preview=True
@@ -1142,28 +1142,27 @@ async def show_leaderboard(client: Client, message: Message):
         logger.error(f"Leaderboard error: {str(e)}")
         await message.reply_text("🚨 Failed to load leaderboard!")
 
-@Client.on_callback_query(filters.regex(r"^toggle_leaderboard$"))
-async def toggle_leaderboard(client, callback_query):
+@Client.on_callback_query(filters.regex(r"^toggle_lb_(renames|sequences)$"))
+async def toggle_leaderboard_view(client, callback_query):
     """Toggle between renames and sequences"""
     try:
-        # Get current message text
-        current_text = callback_query.message.text
+        current_type = callback_query.matches[0].group(1)
+        new_type = "sequences" if current_type == "renames" else "renames"
         
-        # Determine current view type
-        if "TOP RENAMERS" in current_text:
-            new_type = "sequences"
-            button_text = "🔁 Switch to Renames"
-        else:
-            new_type = "renames"
-            button_text = "🔁 Switch to Sequences"
+        # Get updated leaderboard
+        leaderboard_text = await build_working_leaderboard(
+            client, 
+            callback_query.from_user.id, 
+            new_type
+        )
         
-        # Update leaderboard
-        new_text = await build_simple_leaderboard(client, new_type)
+        # Update button text
+        button_text = "🔁 Switch to Renames" if new_type == "sequences" else "🔁 Switch to Sequences"
         
         await callback_query.message.edit_text(
-            new_text,
+            leaderboard_text,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(button_text, callback_data="toggle_leaderboard")]
+                [InlineKeyboardButton(button_text, callback_data=f"toggle_lb_{new_type}")]
             ]),
             disable_web_page_preview=True
         )
@@ -1174,9 +1173,9 @@ async def toggle_leaderboard(client, callback_query):
         logger.error(f"Toggle error: {str(e)}")
         await callback_query.answer("Error updating leaderboard", show_alert=True)
 
-async def build_simple_leaderboard(client: Client, view_type: str) -> str:
-    """Build simplified leaderboard text"""
-    # Get top 20 users
+async def build_working_leaderboard(client: Client, user_id: int, view_type: str) -> str:
+    """Build working leaderboard with proper data"""
+    # Get top 20 users based on view type
     if view_type == "renames":
         top_users = await hyoshcoder.file_stats.aggregate([
             {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
@@ -1184,6 +1183,7 @@ async def build_simple_leaderboard(client: Client, view_type: str) -> str:
             {"$limit": 20}
         ]).to_list(length=20)
         title = "🏆 TOP RENAMERS"
+        user_rank, user_total = await get_user_rank_count(user_id, False)
     else:
         top_users = await hyoshcoder.file_stats.aggregate([
             {"$match": {"type": "sequence"}},
@@ -1192,18 +1192,19 @@ async def build_simple_leaderboard(client: Client, view_type: str) -> str:
             {"$limit": 20}
         ]).to_list(length=20)
         title = "🏆 TOP SEQUENCERS"
+        user_rank, user_total = await get_user_rank_count(user_id, True)
     
-    # Build leaderboard text with premium styling
+    # Build leaderboard text
     text = f"""
-✨ <b> LEADERBOARD</b> ✨
+✨ <b>PREMIUM LEADERBOARD</b> ✨
 {title}
 ━━━━━━━━━━━━━━━━
 
 """
     
-    # Add top users with emoji ranks
+    # Add top users
     rank_emojis = ["🥇", "🥈", "🥉"] + [f"{i}️⃣" for i in range(4, 21)]
-    for i, user in enumerate(top_users):
+    for i, user in enumerate(top_users[:20]):  # Ensure only top 20
         try:
             user_obj = await client.get_users(user["_id"])
             name = user_obj.first_name
@@ -1214,9 +1215,6 @@ async def build_simple_leaderboard(client: Client, view_type: str) -> str:
             text += f"{rank_emojis[i]} <b>Anonymous</b> → <code>{user['total']}</code>\n"
     
     # Add current user's rank
-    user_id = (await client.get_me()).id
-    user_rank, user_total = await get_user_rank_simple(user_id, view_type)
-    
     text += f"""
 ━━━━━━━━━━━━━━━━
 <b>🌟 YOUR RANK:</b> <code>#{user_rank if user_rank else 'N/A'}</code> (<code>{user_total}</code> {view_type})
@@ -1224,17 +1222,17 @@ async def build_simple_leaderboard(client: Client, view_type: str) -> str:
     
     return text
 
-async def get_user_rank_simple(user_id: int, view_type: str) -> Tuple[Optional[int], int]:
-    """Get simplified user rank"""
-    if view_type == "renames":
+async def get_user_rank_count(user_id: int, is_sequence: bool) -> Tuple[Optional[int], int]:
+    """Get user's rank and total count for either renames or sequences"""
+    if is_sequence:
         pipeline = [
-            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+            {"$match": {"type": "sequence"}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
             {"$sort": {"total": -1}}
         ]
     else:
         pipeline = [
-            {"$match": {"type": "sequence"}},
-            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
             {"$sort": {"total": -1}}
         ]
     
