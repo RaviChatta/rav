@@ -528,22 +528,27 @@ async def end_sequence(client: Client, message: Message):
     try:
         # Processing message with animation
         processing_msg = await message.reply_animation(
-            animation="https://files.catbox.moe/uog5fx.mp4",
+            animation="https://telegra.ph/file/1e7f8b3b3b3b3b3b3b3b3.mp4",
             caption="🔃 **Sorting and organizing your files...**"
         )
 
         # Extract metadata and sort files
         file_metadata = []
+        missing_files = []
         for file in file_list:
-            season = await extract_season(file["file_name"])
-            episode = await extract_episode(file["file_name"])
-            quality = await extract_quality(file["file_name"])
-            file_metadata.append({
-                "file": file,
-                "season": season or "0",
-                "episode": episode or "0", 
-                "quality": quality or "unknown"
-            })
+            try:
+                season = await extract_season(file["file_name"])
+                episode = await extract_episode(file["file_name"])
+                quality = await extract_quality(file["file_name"])
+                file_metadata.append({
+                    "file": file,
+                    "season": season or "0",
+                    "episode": episode or "0", 
+                    "quality": quality or "unknown"
+                })
+            except Exception as e:
+                missing_files.append(file["file_name"])
+                logger.error(f"Error processing file {file['file_name']}: {e}")
 
         # Sort files
         sorted_files = sorted(
@@ -559,34 +564,21 @@ async def end_sequence(client: Client, message: Message):
         # Delete processing message
         await processing_msg.delete()
 
-        # Send completion message with nice formatting
-        completion_msg = await message.reply_text(
-            f"✨ **SEQUENCE COMPLETED SUCCESSFULLY** ✨\n\n"
-            f"▫️ **Total Files Sorted:** `{len(sorted_files)}`\n"
-            f"▫️ **Time Taken:** `{time_str}`\n"
-            f"▫️ **Sort Order:** Season → Episode → Quality\n\n"
-            f"📤 **Sending files in order...**",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📊 View Sequence Stats", callback_data="sequence_stats")]
-            ])
-        )
-
         # Send files with delay to avoid flooding
-        for index, file_data in enumerate(sorted_files, start=1):
+        for file_data in sorted_files:
             if user_id in cancel_operations and cancel_operations[user_id]:
-                await completion_msg.edit_text("❌ Sequence processing was canceled!")
-                return
+                return await message.reply_text("❌ Sequence processing was canceled!")
 
             try:
                 file = file_data["file"]
-                file_name = file['file_name'].replace('*', '×').replace('_', ' ').replace('`', "'")
+                file_name = file['file_name']
                 
-                # Send file to user
+                # Send file to user with simple caption
                 await client.send_document(
                     message.chat.id,
                     file["file_id"],
-                    caption=f"`{index}.` {file_name}",
-                    parse_mode=None
+                    caption=f'"{file_name}"',
+                    parse_mode=ParseMode.HTML
                 )
                 
                 # Send to dump channel if configured
@@ -619,26 +611,40 @@ async def end_sequence(client: Client, message: Message):
                 except Exception as e:
                     logger.error(f"Failed to send to dump channel: {e}")
 
-                # Small delay between files (0.5-1.5 seconds)
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+                # Small delay between files
+                await asyncio.sleep(1)
                 
             except FloodWait as e:
                 await asyncio.sleep(e.value + 1)
             except Exception as e:
                 logger.error(f"Error sending file {file['file_name']}: {e}")
 
-        # Final update to completion message
-        await completion_msg.edit_text(
-            f"🎉 **SEQUENCE COMPLETED** 🎉\n\n"
-            f"▫️ **Total Files Sent:** `{len(sorted_files)}`\n"
+        # Build success message
+        success_msg = (
+            f"✨ **SEQUENCE COMPLETED** ✨\n\n"
+            f"▫️ **Total Files Processed:** `{len(sorted_files)}`\n"
             f"▫️ **Time Taken:** `{time_str}`\n"
-            f"▫️ **First File:** `{sorted_files[0]['file']['file_name'][:20]}...`\n"
-            f"▫️ **Last File:** `{sorted_files[-1]['file']['file_name'][:20]}...`\n\n"
-            f"✅ All files sent in perfect order!",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔄 Start New Sequence", callback_data="new_sequence")]
-            ])
         )
+
+        # Add missing files info if any
+        if missing_files:
+            success_msg += (
+                f"\n⚠️ **Missing Files:** `{len(missing_files)}`\n"
+                f"▫️ First missing: `{missing_files[0][:30]}...`\n"
+            )
+            if len(missing_files) > 1:
+                success_msg += f"▫️ Last missing: `{missing_files[-1][:30]}...`\n"
+
+        # Add first/last file info
+        if sorted_files:
+            success_msg += (
+                f"\n▫️ **First File:** `{sorted_files[0]['file']['file_name'][:30]}...`\n"
+                f"▫️ **Last File:** `{sorted_files[-1]['file']['file_name'][:30]}...`\n\n"
+                f"✅ All files sent successfully!"
+            )
+
+        # Send final success message
+        await message.reply_text(success_msg)
 
         # Clean up messages
         if delete_messages:
