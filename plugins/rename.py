@@ -538,7 +538,7 @@ async def end_sequence(client: Client, message: Message):
                     message.chat.id,
                     file["file_id"],
                     caption=f">>> {file_name}",
-                    parse_mode="markdown"
+                    parse_mode=None
                 )
                 
                 if settings.DUMP_CHANNEL:
@@ -564,7 +564,7 @@ async def end_sequence(client: Client, message: Message):
                                 f"Premium: {premium_status}\n"
                                 f"File: `{file['file_name']}`"
                             ),
-                            parse_mode="markdown"
+                            parse_mode=None
                         )
                     except Exception as e:
                         logger.error(f"Dump failed for sequence file: {e}")
@@ -902,7 +902,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 caption=caption,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode="html"  # Changed to uppercase HTML
+                                parse_mode=None  # Changed to uppercase HTML
                             )
                         elif media_type == "video":
                             await client.send_video(
@@ -914,7 +914,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 supports_streaming=True,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode="html"  # Changed to uppercase html
+                                parse_mode=None  # Changed to uppercase html
                             )
                         elif media_type == "audio":
                             await client.send_audio(
@@ -925,7 +925,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 duration=message.audio.duration if message.audio else 0,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode="html"  # Changed to uppercase HTML
+                                parse_mode=None  # Changed to uppercase HTML
                             )
 
                     # Track the operation (only if not already processed)
