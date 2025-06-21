@@ -871,7 +871,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 thumb=thumb_path,
                                 caption=caption,
                                 progress=progress_for_pyrogram,
-                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
                                 parse_mode="html"
                             )
                         elif media_type == "video":
