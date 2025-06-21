@@ -1096,7 +1096,7 @@ async def show_leaderboard(client: Client, message: Message):
     try:
         # Send loading animation
         loading_msg = await message.reply_animation(
-            animation="https://telegra.ph/file/5e8a8b7229a5a9b5b9b9b.mp4",
+            animation="https://files.catbox.moe/uog5fx.mp4",
             caption="<b>🌀 Loading Premium Leaderboard...</b>"
         )
 
