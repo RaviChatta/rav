@@ -14,12 +14,20 @@ import uuid
 import logging
 import json
 from typing import Optional, Tuple, Dict, List, Set
-from html import escape
 # Database imports
 from database.data import hyoshcoder
 from config import settings
 from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
+from html import escape as html_escape
+from pyrogram.utils import escape_markdown
 
+def escape_html(text: str) -> str:
+    """Escape text for HTML parse mode"""
+    return html_escape(text, quote=False)
+
+def escape_markdown(text: str) -> str:
+    """Escape text for Markdown parse mode"""
+    return escape_markdown(text)
 logger = logging.getLogger(__name__)
 
 # Global variables to manage operations
@@ -526,7 +534,7 @@ async def end_sequence(client: Client, message: Message):
                     message.chat.id,
                     file["file_id"],
                     caption=f">>> {file_name}",
-                    parse_mode="MarkdownV2"
+                    parse_mode="Markdown"
                 )
                 
                 if settings.DUMP_CHANNEL:
@@ -552,7 +560,7 @@ async def end_sequence(client: Client, message: Message):
                                 f"Premium: {premium_status}\n"
                                 f"File: `{file['file_name']}`"
                             ),
-                            parse_mode="MarkdownV2"
+                            parse_mode="Markdown"
                         )
                     except Exception as e:
                         logger.error(f"Dump failed for sequence file: {e}")
