@@ -1044,228 +1044,231 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Enhanced leaderboard with time range options and sequence stats"""
+    """Premium animated leaderboard with sequence tracking"""
     try:
-        args = message.command[1:] if len(message.command) > 1 else []
-        time_range = args[0].lower() if args else "month"
-        view_type = args[1].lower() if len(args) > 1 else "renames"
-        
-        valid_ranges = ["day", "week", "month", "all"]
-        if time_range not in valid_ranges:
-            time_range = "month"
-            
-        valid_views = ["renames", "sequences"]
-        if view_type not in valid_views:
-            view_type = "renames"
+        # Animation loading message
+        loading_animation = await message.reply_animation(
+            animation="https://telegra.ph/file/d6c1d6b991d72f6d368e4.mp4",
+            caption="🚀 <b>Launching Galactic Leaderboard...</b>"
+        )
 
-        loading_msg = await message.reply_text(f"🔄 Loading {time_range} leaderboard...")
+        # Get leaderboard type from command
+        args = message.text.split()[1:] if len(message.text.split()) > 1 else []
+        leaderboard_type = args[0].lower() if args else "renames"
         
-        # Get leaderboard data
-        now = datetime.now()
-        date_filter = {}
-        
-        if time_range == "day":
-            date_filter = {"$gte": datetime(now.year, now.month, now.day)}
-        elif time_range == "week":
-            start_of_week = now - timedelta(days=now.weekday())
-            date_filter = {"$gte": datetime(start_of_week.year, start_of_week.month, start_of_week.day)}
-        elif time_range == "month":
-            date_filter = {"$gte": datetime(now.year, now.month, 1)}
-        
-        # Get data based on view type
-        if view_type == "renames":
-            pipeline = [
-                {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-                {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
-                {"$sort": {"total": -1}},
-                {"$limit": 20}
-            ]
-            collection = hyoshcoder.file_stats
-            stat_name = "files"
-        else:
-            pipeline = [
-                {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
-                {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
-                {"$sort": {"total": -1}},
-                {"$limit": 20}
-            ]
-            collection = hyoshcoder.file_stats
-            stat_name = "files in sequences"
-        
-        top_users = await collection.aggregate(pipeline).to_list(length=20)
-        
-        # Calculate total files
-        total_pipeline = [
-            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-            {"$group": {"_id": None, "total": {"$sum": 1}}}
-        ]
-        total_result = await hyoshcoder.file_stats.aggregate(total_pipeline).to_list(length=1)
-        total_files = total_result[0]["total"] if total_result else 0
-        
-        # Build leaderboard text
-        time_range_titles = {
-            "day": "TODAY",
-            "week": "WEEKLY",
-            "month": "MONTHLY",
-            "all": "ALL TIME"
+        valid_types = ["renames", "sequences"]
+        if leaderboard_type not in valid_types:
+            leaderboard_type = "renames"
+
+        # Time period selection
+        time_periods = {
+            "today": "Today",
+            "week": "This Week", 
+            "month": "This Month",
+            "all": "All Time"
         }
         
-        text = f"# LEADERBOARD: {time_range_titles[time_range].upper()}\n\n"
-        text += f"## Top 20 Users With Most {view_type.capitalize()}:\n\n"
+        # Get leaderboard data with animation
+        await loading_animation.edit_caption("📊 <b>Crunching cosmic data...</b>")
         
-        # Top Users
-        for i, user in enumerate(top_users, start=1):
+        # Get data based on type
+        if leaderboard_type == "renames":
+            pipeline = [
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 15}
+            ]
+            title = "🏆 <b>TOP RENAMERS</b>"
+            icon = "📝"
+        else:
+            pipeline = [
+                {"$match": {"type": "sequence"}},
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 15}
+            ]
+            title = "🎬 <b>TOP SEQUENCERS</b>"
+            icon = "🎥"
+
+        top_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(length=15)
+
+        # Build beautiful leaderboard
+        leaderboard_text = f"""
+✨ <b>{title}</b> ✨
+{icon} <i>Most active file warriors</i>
+━━━━━━━━━━━━━━
+
+"""
+        
+        emoji_ranks = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
+                      "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣", "1️⃣4️⃣", "1️⃣5️⃣"]
+
+        for i, user in enumerate(top_users[:15]):  # Show top 15
             try:
-                user_data = await client.get_users(user["_id"])
-                username = user_data.username if user_data.username else user_data.first_name
-                # Format username with special characters like in the image
-                formatted_name = f"« {username} »»" if i != 1 else f"<< {username.upper()} >>"
-                text += f"{i}. **{formatted_name}** {user['total']}\n"
+                user_obj = await client.get_users(user["_id"])
+                username = user_obj.username or user_obj.first_name
+                leaderboard_text += (
+                    f"{emoji_ranks[i]} <a href='tg://user?id={user['_id']}'>{username}</a> "
+                    f"<b>→</b> {user['count']} {icon}\n"
+                )
             except:
-                text += f"{i}. **« Anonymous »»** {user['total']}\n"
-        
-        text += f"\n---\n\n### Total {stat_name.capitalize()}: {total_files}\n"
-        text += f"{now.strftime('%H:%M')}\n\n"
-        
-        # Create inline keyboard for navigation
-        keyboard = [
+                leaderboard_text += f"{emoji_ranks[i]} Anonymous → {user['count']} {icon}\n"
+
+        # Footer with timestamp
+        leaderboard_text += f"""
+━━━━━━━━━━━━━━
+⏰ <i>Updated: {datetime.now().strftime('%d %b %Y %H:%M')}</i>
+"""
+
+        # Create interactive buttons
+        buttons = [
             [
-                InlineKeyboardButton("TODAY", callback_data=f"leaderboard_day_{view_type}"),
-                InlineKeyboardButton("WEEKLY", callback_data=f"leaderboard_week_{view_type}"),
+                InlineKeyboardButton(
+                    "🔄 Renames", 
+                    callback_data=f"leaderboard_renames"
+                ),
+                InlineKeyboardButton(
+                    "🎬 Sequences", 
+                    callback_data=f"leaderboard_sequences"
+                )
             ],
             [
-                InlineKeyboardButton("MONTHLY", callback_data=f"leaderboard_month_{view_type}"),
-                InlineKeyboardButton("ALL TIME", callback_data=f"leaderboard_all_{view_type}"),
-            ],
-            [
-                InlineKeyboardButton("SWITCH TO RENAMES", callback_data=f"leaderboard_{time_range}_renames") if view_type == "sequences" else 
-                InlineKeyboardButton("SWITCH TO SEQUENCES", callback_data=f"leaderboard_{time_range}_sequences"),
+                InlineKeyboardButton(
+                    "🗓 Time Period", 
+                    callback_data="leaderboard_timeperiod"
+                )
             ]
         ]
-        
-        await loading_msg.delete()
-        msg = await message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
+
+        # Send final leaderboard
+        await loading_animation.delete()
+        leaderboard_msg = await message.reply_text(
+            leaderboard_text,
+            reply_markup=InlineKeyboardMarkup(buttons),
             disable_web_page_preview=True
         )
-        
-        # Auto-delete after 1 minute
+
+        # Auto-delete after 60 seconds
         await asyncio.sleep(60)
         try:
-            await msg.delete()
+            await leaderboard_msg.delete()
         except:
             pass
-        
-    except Exception as e:
-        logger.error(f"Error generating leaderboard: {e}")
-        try:
-            await loading_msg.delete()
-        except:
-            pass
-        await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
 
-@Client.on_callback_query(filters.regex(r"^leaderboard_(day|week|month|all)_(renames|sequences)$"))
+    except Exception as e:
+        logger.error(f"Leaderboard error: {str(e)}")
+        try:
+            await loading_animation.delete()
+        except:
+            pass
+        await message.reply_text("🚨 <b>Leaderboard crashed!</b>\n<i>Try again later...</i>")
+
+@Client.on_callback_query(filters.regex("^leaderboard_(renames|sequences|timeperiod)$"))
 async def leaderboard_callback(client, callback_query):
-    """Handle leaderboard time range and view type selection"""
+    """Handle leaderboard interactions"""
     try:
-        time_range = callback_query.matches[0].group(1)
-        view_type = callback_query.matches[0].group(2)
+        action = callback_query.data.split("_")[1]
         
-        # Get leaderboard data
-        now = datetime.now()
-        date_filter = {}
-        
-        if time_range == "day":
-            date_filter = {"$gte": datetime(now.year, now.month, now.day)}
-        elif time_range == "week":
-            start_of_week = now - timedelta(days=now.weekday())
-            date_filter = {"$gte": datetime(start_of_week.year, start_of_week.month, start_of_week.day)}
-        elif time_range == "month":
-            date_filter = {"$gte": datetime(now.year, now.month, 1)}
-        
-        # Get data based on view type
-        if view_type == "renames":
-            pipeline = [
-                {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-                {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
-                {"$sort": {"total": -1}},
-                {"$limit": 20}
-            ]
-            collection = hyoshcoder.file_stats
-            stat_name = "files"
-        else:
-            pipeline = [
-                {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
-                {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
-                {"$sort": {"total": -1}},
-                {"$limit": 20}
-            ]
-            collection = hyoshcoder.file_stats
-            stat_name = "files in sequences"
-        
-        top_users = await collection.aggregate(pipeline).to_list(length=20)
-        
-        # Calculate total files
-        total_pipeline = [
-            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-            {"$group": {"_id": None, "total": {"$sum": 1}}}
-        ]
-        total_result = await hyoshcoder.file_stats.aggregate(total_pipeline).to_list(length=1)
-        total_files = total_result[0]["total"] if total_result else 0
-        
-        # Build leaderboard text
-        time_range_titles = {
-            "day": "TODAY",
-            "week": "WEEKLY",
-            "month": "MONTHLY",
-            "all": "ALL TIME"
-        }
-        
-        text = f"# LEADERBOARD: {time_range_titles[time_range].upper()}\n\n"
-        text += f"## Top 20 Users With Most {view_type.capitalize()}:\n\n"
-        
-        # Top Users
-        for i, user in enumerate(top_users, start=1):
-            try:
-                user_data = await client.get_users(user["_id"])
-                username = user_data.username if user_data.username else user_data.first_name
-                # Format username with special characters like in the image
-                formatted_name = f"« {username} »»" if i != 1 else f"<< {username.upper()} >>"
-                text += f"{i}. **{formatted_name}** {user['total']}\n"
-            except:
-                text += f"{i}. **« Anonymous »»** {user['total']}\n"
-        
-        text += f"\n---\n\n### Total {stat_name.capitalize()}: {total_files}\n"
-        text += f"{now.strftime('%H:%M')}\n\n"
-        
-        # Update the keyboard
-        keyboard = [
-            [
-                InlineKeyboardButton("TODAY", callback_data=f"leaderboard_day_{view_type}"),
-                InlineKeyboardButton("WEEKLY", callback_data=f"leaderboard_week_{view_type}"),
-            ],
-            [
-                InlineKeyboardButton("MONTHLY", callback_data=f"leaderboard_month_{view_type}"),
-                InlineKeyboardButton("ALL TIME", callback_data=f"leaderboard_all_{view_type}"),
-            ],
-            [
-                InlineKeyboardButton("SWITCH TO RENAMES", callback_data=f"leaderboard_{time_range}_renames") if view_type == "sequences" else 
-                InlineKeyboardButton("SWITCH TO SEQUENCES", callback_data=f"leaderboard_{time_range}_sequences"),
-            ]
-        ]
-        
+        # Animation while loading
         await callback_query.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            "🌀 <b>Reconfiguring leaderboard...</b>"
+        )
+
+        if action == "timeperiod":
+            # Show time period selection
+            buttons = [
+                [InlineKeyboardButton("Today", callback_data="period_today")],
+                [InlineKeyboardButton("This Week", callback_data="period_week")],
+                [InlineKeyboardButton("This Month", callback_data="period_month")],
+                [InlineKeyboardButton("All Time", callback_data="period_all")]
+            ]
+            
+            await callback_query.message.edit_text(
+                "⏳ <b>Select Time Period:</b>",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            return
+
+        # Get fresh data based on action
+        if action == "renames":
+            pipeline = [
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 15}
+            ]
+            title = "🏆 <b>TOP RENAMERS</b>"
+            icon = "📝"
+        else:  # sequences
+            pipeline = [
+                {"$match": {"type": "sequence"}},
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 15}
+            ]
+            title = "🎬 <b>TOP SEQUENCERS</b>"
+            icon = "🎥"
+
+        top_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(length=15)
+
+        # Rebuild leaderboard
+        leaderboard_text = f"""
+✨ <b>{title}</b> ✨
+{icon} <i>Most active file warriors</i>
+━━━━━━━━━━━━━━
+
+"""
+        
+        emoji_ranks = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
+                      "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣", "1️⃣4️⃣", "1️⃣5️⃣"]
+
+        for i, user in enumerate(top_users[:15]):
+            try:
+                user_obj = await client.get_users(user["_id"])
+                username = user_obj.username or user_obj.first_name
+                leaderboard_text += (
+                    f"{emoji_ranks[i]} <a href='tg://user?id={user['_id']}'>{username}</a> "
+                    f"<b>→</b> {user['count']} {icon}\n"
+                )
+            except:
+                leaderboard_text += f"{emoji_ranks[i]} Anonymous → {user['count']} {icon}\n"
+
+        leaderboard_text += f"""
+━━━━━━━━━━━━━━
+⏰ <i>Updated: {datetime.now().strftime('%d %b %Y %H:%M')}</i>
+"""
+
+        # Update buttons
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    "🔄 Renames", 
+                    callback_data=f"leaderboard_renames"
+                ),
+                InlineKeyboardButton(
+                    "🎬 Sequences", 
+                    callback_data=f"leaderboard_sequences"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🗓 Time Period", 
+                    callback_data="leaderboard_timeperiod"
+                )
+            ]
+        ]
+
+        # Update message
+        await callback_query.message.edit_text(
+            leaderboard_text,
+            reply_markup=InlineKeyboardMarkup(buttons),
             disable_web_page_preview=True
         )
         
-        await callback_query.answer(f"Showing {time_range} {view_type} leaderboard")
-        
+        await callback_query.answer(f"Showing {action} leaderboard")
+
     except Exception as e:
-        logger.error(f"Error in leaderboard callback: {e}")
-        await callback_query.answer("Failed to update leaderboard", show_alert=True)
+        logger.error(f"Leaderboard callback error: {str(e)}")
+        await callback_query.answer("❌ Error updating leaderboard", show_alert=True)
 
 # SCREENSHOT GENERATOR (MAX 4K)
 
