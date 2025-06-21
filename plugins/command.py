@@ -484,18 +484,78 @@ async def refer(client: Client, message: Message):
             delete_after=30
         )
 
-# ======================== ADDITIONAL COMMAND HANDLERS ========================
+@Client.on_message(filters.command("refer") & filters.private)
+async def refer(client: Client, message: Message):
+    """Generate referral link with quick share button."""
+    try:
+        user_id = message.from_user.id
+        user = await hyoshcoder.get_user(user_id)
+        
+        if not user:
+            await hyoshcoder.add_user(user_id)
+            user = await hyoshcoder.get_user(user_id)
+        
+        # Generate or get referral code
+        referral_code = user.get("referral", {}).get("referral_code")
+        if not referral_code:
+            referral_code = secrets.token_hex(4).upper()
+            await hyoshcoder.users.update_one(
+                {"_id": user_id},
+                {"$set": {"referral.referral_code": referral_code}},
+                upsert=True
+            )
+
+        # Get referral stats
+        referred_count = user.get("referral", {}).get("referred_count", 0)
+        referral_earnings = user.get("referral", {}).get("referral_earnings", 0)
+        
+        # Create referral link
+        refer_link = f"https://t.me/{settings.BOT_USERNAME}?start=ref_{referral_code}"
+        
+        # Create share button
+        share_button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📤 Quick Share", url=f"tg://msg_url?url={quote(refer_link)}&text=Join%20using%20my%20referral%20link%20to%20get%20{settings.REFER_POINT_REWARD}%20free%20points!")]
+        ])
+        
+        # Send message
+        msg = await message.reply_text(
+            f"🌟 <b>Your Referral Program</b>\n\n"
+            f"🔗 <b>Your Referral Link:</b>\n<code>{refer_link}</code>\n\n"
+            f"📊 <b>Stats:</b>\n"
+            f"┣ Total Referrals: <code>{referred_count}</code>\n"
+            f"┣ Earnings: <code>{referral_earnings}</code> points\n"
+            f"┗ Points per Referral: <code>{settings.REFER_POINT_REWARD}</code>\n\n"
+            f"💡 <b>How it works:</b>\n"
+            f"1. Share your link with friends\n"
+            f"2. When they join using your link\n"
+            f"3. You both get <code>{settings.REFER_POINT_REWARD}</code> points!",
+            reply_markup=share_button,
+            disable_web_page_preview=True
+        )
+        
+        asyncio.create_task(auto_delete_message(msg, 60))
+
+    except Exception as e:
+        logger.error(f"Error in refer command: {e}")
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❌ Failed to generate referral link. Please try again.",
+            delete_after=30
+        )
+
 @Client.on_message(filters.command("referralboard") & filters.private)
 async def referral_leaderboard(client: Client, message: Message):
-    """Show top referrers leaderboard."""
+    """Show beautifully formatted top referrers leaderboard."""
     try:
-        # Get top 10 referrers
+        # Get top 10 referrers with usernames
         top_referrers = await hyoshcoder.users.aggregate([
             {"$match": {"referral.referred_count": {"$gt": 0}}},
             {"$sort": {"referral.referred_count": -1}},
             {"$limit": 10},
             {"$project": {
                 "username": 1,
+                "first_name": 1,
                 "referred_count": "$referral.referred_count",
                 "earnings": "$referral.referral_earnings"
             }}
@@ -504,35 +564,72 @@ async def referral_leaderboard(client: Client, message: Message):
         if not top_referrers:
             return await message.reply("No referral data available yet.")
 
-        # Format leaderboard
+        # Format leaderboard with better display names
         leaderboard = []
-        for idx, user in enumerate(top_referrers, 1):
-            username = user.get("username", "Unknown")
+        medal_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+        
+        for idx, user in enumerate(top_referrers):
+            # Get the best available display name
+            display_name = user.get("username")
+            if not display_name:
+                display_name = user.get("first_name", "Anonymous")
+            
+            # Use medal emoji for top 3, numbers for rest
+            rank_emoji = medal_emojis[idx] if idx < 3 else f"{idx+1}."
+            
             count = user.get("referred_count", 0)
             earnings = user.get("earnings", 0)
             
             leaderboard.append(
-                f"{idx}. {username}\n"
-                f"   ┣ Referrals: {count}\n"
-                f"   ┗ Earnings: {earnings} points\n"
+                f"{rank_emoji} {display_name}\n"
+                f"   ├─ Referrals: <code>{count}</code>\n"
+                f"   └─ Earnings: <code>{earnings}</code> points\n"
             )
 
         text = (
             "🏆 <b>Top Referrers Leaderboard</b>\n\n"
             f"{''.join(leaderboard)}\n"
-            f"🎯 Each referral earns you <b>{settings.REFER_POINT_REWARD}</b> points!\n"
-            f"🔗 Use /refer to get your referral link"
+            f"✨ <i>Each referral earns you {settings.REFER_POINT_REWARD} points!</i>\n\n"
+            f"🔗 Get your link with <code>/refer</code>"
         )
 
-        await message.reply_text(text, disable_web_page_preview=True)
+        # Add referral button
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Get Your Referral Link", callback_data="get_referral")]
+        ])
+
+        msg = await message.reply_text(
+            text,
+            reply_markup=buttons,
+            disable_web_page_preview=True
+        )
+        
+        asyncio.create_task(auto_delete_message(msg, 60))
 
     except Exception as e:
         logger.error(f"Error in referral leaderboard: {e}")
         await send_auto_delete_message(
             client,
             message.chat.id,
-            "❌ Failed to load referral leaderboard. Please try again.",
+            "❌ Failed to load leaderboard. Please try again.",
             delete_after=30
+        )
+
+@Client.on_callback_query(filters.regex("^get_referral$"))
+async def get_referral_callback(client: Client, callback_query: CallbackQuery):
+    """Handle referral link button from leaderboard."""
+    try:
+        # Delete the leaderboard message
+        await callback_query.message.delete()
+        
+        # Trigger the refer command
+        await refer(client, callback_query.message)
+        
+    except Exception as e:
+        logger.error(f"Error in referral callback: {e}")
+        await callback_query.answer(
+            "Failed to generate referral link",
+            show_alert=True
         )
 @Client.on_message(filters.command("freepoints") & filters.private)
 async def freepoints(client: Client, message: Message):
@@ -607,7 +704,7 @@ async def freepoints(client: Client, message: Message):
         caption = (
             "**🎁 Free Points Menu**\n\n"
             "Earn points by:\n"
-            f"1. **Referring users** – `{refer_link}`\n"
+            f"1. **Referring users** – `/refer`\n"
             f"   ➤ {settings.REFER_POINT_REWARD} points per referral\n"
             f"2. **Verify To Get Points** –\n"
             f"   ➤ {settings.SHORTENER_POINT_REWARD} points per view\n\n"
