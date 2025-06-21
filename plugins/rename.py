@@ -20,7 +20,7 @@ from database.data import hyoshcoder
 from config import settings
 from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
 from pyrogram.errors import MessageNotModified, BadRequest
-
+import html
 from html import escape as html_escape
 
 def escape_markdown(text: str) -> str:
