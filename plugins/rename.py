@@ -1134,13 +1134,6 @@ async def show_leaderboard(client: Client, message: Message):
             disable_web_page_preview=True
         )
         
-        # Auto-delete after 60 seconds
-        await asyncio.sleep(60)
-        try:
-            await msg.delete()
-        except:
-            pass
-        
     except Exception as e:
         logger.error(f"Leaderboard error: {str(e)}")
         await message.reply_text("🚨 Failed to load leaderboard!")
@@ -1150,7 +1143,7 @@ async def handle_leaderboard_toggle(client, callback_query):
     """Handle leaderboard toggle"""
     try:
         # Get current view type from callback data
-        current_type = callback_query.matches[0].group(1)
+        current_type = callback_query.data.split(":")[1]
         new_type = "sequences" if current_type == "renames" else "renames"
         
         # Regenerate leaderboard with new type
@@ -1186,34 +1179,63 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
     """Build complete leaderboard with proper data"""
     # Get top users based on view type
     if view_type == "renames":
+        # Get top users by total file renames
         top_users = await hyoshcoder.file_stats.aggregate([
             {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
             {"$sort": {"total": -1}},
-            {"$limit": 20}
-        ]).to_list(length=20)
+            {"$limit": 10}
+        ]).to_list(length=10)
+        
         title = "🏆 TOP RENAMERS"
-        user_rank, user_count = await get_user_rank_count(user_id, is_sequence=False)
+        # Get user's rank and count for renames
+        user_rank = None
+        user_count = 0
+        all_users = await hyoshcoder.file_stats.aggregate([
+            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+            {"$sort": {"total": -1}}
+        ]).to_list(None)
+        
+        for index, user in enumerate(all_users, start=1):
+            if user["_id"] == user_id:
+                user_rank = index
+                user_count = user["total"]
+                break
     else:
+        # Get top users by total sequences (counted by media_group_id operations)
+        # We'll consider each media group as a sequence
         top_users = await hyoshcoder.file_stats.aggregate([
-            {"$match": {"type": "sequence"}},
-            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
+            {"$match": {"media_group_id": {"$exists": True}}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
             {"$sort": {"total": -1}},
-            {"$limit": 20}
-        ]).to_list(length=20)
+            {"$limit": 10}
+        ]).to_list(length=10)
+        
         title = "🏆 TOP SEQUENCERS"
-        user_rank, user_count = await get_user_rank_count(user_id, is_sequence=True)
+        # Get user's rank and count for sequences
+        user_rank = None
+        user_count = 0
+        all_users = await hyoshcoder.file_stats.aggregate([
+            {"$match": {"media_group_id": {"$exists": True}}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+            {"$sort": {"total": -1}}
+        ]).to_list(None)
+        
+        for index, user in enumerate(all_users, start=1):
+            if user["_id"] == user_id:
+                user_rank = index
+                user_count = user["total"]
+                break
     
     # Build leaderboard text with premium styling
     text = f"""
-✨ <b>PREMIUM LEADERBOARD</b> ✨
-{title}
+✨ <b>{title}</b> ✨
 ━━━━━━━━━━━━━━━━
 
 """
     
     # Add top users with emoji ranks
-    rank_emojis = ["🥇", "🥈", "🥉"] + [f"{i}️⃣" for i in range(4, 21)]
-    for i, user in enumerate(top_users[:20]):
+    rank_emojis = ["🥇", "🥈", "🥉"] + [f"{i}️⃣" for i in range(4, 11)]
+    for i, user in enumerate(top_users[:10]):
         try:
             user_obj = await client.get_users(user["_id"])
             name = user_obj.first_name
@@ -1231,28 +1253,6 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
 """
     
     return text
-
-async def get_user_rank_count(user_id: int, is_sequence: bool) -> Tuple[Optional[int], int]:
-    """Get user's rank and count for either renames or sequences"""
-    if is_sequence:
-        pipeline = [
-            {"$match": {"type": "sequence"}},
-            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
-            {"$sort": {"total": -1}}
-        ]
-    else:
-        pipeline = [
-            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
-            {"$sort": {"total": -1}}
-        ]
-    
-    all_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(None)
-    
-    for index, user in enumerate(all_users, start=1):
-        if user["_id"] == user_id:
-            return index, user["total"]
-    
-    return None, 0
 # SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
