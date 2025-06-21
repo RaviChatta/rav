@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, MessageNotModified, BadRequest
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import time
 import re
@@ -13,7 +13,7 @@ from pyrogram.types import InputMediaPhoto
 import uuid
 import logging
 import json
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Set
 
 # Database imports
 from database.data import hyoshcoder
@@ -31,6 +31,10 @@ sequential_operations = {}  # For sequential mode
 file_processing_counters = {}  # Track individual file counters per user
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
+
+# Sequence handling variables
+active_sequences: Dict[int, List[Dict[str, str]]] = {}
+sequence_message_ids: Dict[int, List[int]] = {}
 
 def sanitize_metadata(metadata_text: str) -> str:
     """Sanitize metadata text to be FFmpeg-safe"""
@@ -267,7 +271,7 @@ async def send_to_dump_channel(
     **kwargs
 ) -> bool:
     """
-    Send media to user's dump channel with enhanced reliability.
+    Enhanced send to dump channel with better error handling and logging
     
     Args:
         client: Pyrogram Client
@@ -275,7 +279,6 @@ async def send_to_dump_channel(
         file_path: Path to media file
         caption: Caption text (max 1024 chars)
         thumb_path: Path to thumbnail image
-        **kwargs: Additional send_* method parameters
         
     Returns:
         bool: True if successful, False otherwise
@@ -285,7 +288,7 @@ async def send_to_dump_channel(
         return False
 
     try:
-        # Get and validate dump channel
+        # Get dump channel from database
         dump_channel = await hyoshcoder.get_user_channel(user_id)
         if not dump_channel:
             logger.debug(f"No dump channel set for user {user_id}")
@@ -293,15 +296,12 @@ async def send_to_dump_channel(
 
         # Verify channel exists and bot has permissions
         try:
-            chat = await client.get_chat(int(dump_channel))
+            chat = await client.get_chat(dump_channel)
             if chat.type not in ("channel", "supergroup"):
                 logger.warning(f"Invalid chat type {chat.type} for {dump_channel}")
                 return False
-        except (PeerIdInvalid, ChannelInvalid, ChannelPrivate):
-            logger.warning(f"Can't access channel {dump_channel}")
-            return False
         except Exception as e:
-            logger.error(f"Unexpected channel validation error: {e}")
+            logger.error(f"Can't access dump channel {dump_channel}: {e}")
             return False
 
         # Prepare common parameters
@@ -314,6 +314,7 @@ async def send_to_dump_channel(
 
         # Determine media type and send appropriately
         ext = os.path.splitext(file_path)[1].lower()
+        
         try:
             if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm'):
                 await client.send_video(
@@ -337,25 +338,32 @@ async def send_to_dump_channel(
                     **send_params
                 )
             
-            logger.info(f"Successfully sent {file_path} to {dump_channel}")
+            logger.info(f"Successfully sent {file_path} to dump channel {dump_channel}")
             return True
-
-        except FileIdInvalid:
-            logger.error(f"Invalid file format for {file_path}")
-        except MediaEmpty:
-            logger.error(f"Empty/corrupt media file: {file_path}")
-        except Exception as send_error:
-            logger.error(f"Failed to send media: {send_error}")
-
-        return False
+        except Exception as e:
+            logger.error(f"Failed to send to dump channel: {e}")
+            return False
 
     except Exception as e:
-        logger.error(f"Unexpected error in send_to_dump_channel: {e}", exc_info=True)
+        logger.error(f"Unexpected error in send_to_dump_channel: {e}")
         return False
-async def get_user_rank(user_id: int) -> Tuple[Optional[int], int]:
-    """Get user's global rank and total renames"""
+
+async def get_user_rank(user_id: int, time_range: str = "all") -> Tuple[Optional[int], int]:
+    """Get user's global rank and total renames with time range support"""
     try:
+        now = datetime.now()
+        date_filter = {}
+        
+        if time_range == "day":
+            date_filter = {"$gte": datetime(now.year, now.month, now.day)}
+        elif time_range == "week":
+            start_of_week = now - timedelta(days=now.weekday())
+            date_filter = {"$gte": datetime(start_of_week.year, start_of_week.month, start_of_week.day)}
+        elif time_range == "month":
+            date_filter = {"$gte": datetime(now.year, now.month, 1)}
+        
         pipeline = [
+            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
             {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
             {"$sort": {"total_renames": -1}}
         ]
@@ -452,10 +460,128 @@ async def cancel_processing(client: Client, message: Message):
     
     await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
+@Client.on_message(filters.command(["ssequence", "startsequence"]))
+async def start_sequence(client: Client, message: Message):
+    """Start a file sequence collection"""
+    user_id = message.from_user.id
+    
+    if settings.ADMIN_MODE and user_id not in settings.ADMINS:
+        return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
+        
+    if user_id in active_sequences:
+        return await message.reply_text("**A sequence is already active! Use /esequence to end it.**")
+    
+    active_sequences[user_id] = []
+    sequence_message_ids[user_id] = []
+    
+    msg = await message.reply_text("**Sequence has been started! Send your files...**")
+    sequence_message_ids[user_id].append(msg.id)
+
+@Client.on_message(filters.command(["esequence", "endsequence"]))
+async def end_sequence(client: Client, message: Message):
+    """End a file sequence and send sorted files"""
+    user_id = message.from_user.id
+    
+    if settings.ADMIN_MODE and user_id not in settings.ADMINS:
+        return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
+    
+    if user_id not in active_sequences:
+        return await message.reply_text("**No active sequence found!**\n**Use /ssequence to start one.**")
+
+    file_list = active_sequences.pop(user_id, [])
+    delete_messages = sequence_message_ids.pop(user_id, [])
+
+    if not file_list:
+        return await message.reply_text("**No files received in this sequence!**")
+
+    try:
+        # Sort files using our sorting key
+        sorted_files = sorted(file_list, key=lambda f: (
+            extract_season(f["file_name"]),
+            extract_episode(f["file_name"]),
+            extract_quality(f["file_name"])
+        ))
+        
+        await message.reply_text(f"**Sequence completed!\nSending {len(sorted_files)} files in order...**")
+
+        for index, file in enumerate(sorted_files):
+            try:
+                # Send each file in the sorted order
+                sent_msg = await client.send_document(
+                    message.chat.id,
+                    file["file_id"],
+                    caption=f"**{file['file_name']}**",
+                    parse_mode="markdown"
+                )
+
+                # Optional: Send to dump channel if configured
+                if settings.DUMP_CHANNEL:
+                    try:
+                        user = message.from_user
+                        full_name = user.first_name
+                        if user.last_name:
+                            full_name += f" {user.last_name}"
+                        username = f"@{user.username}" if user.username else "N/A"
+                        
+                        user_data = await hyoshcoder.read_user(user_id)
+                        is_premium = user_data.get("is_premium", False) if user_data else False
+                        premium_status = '🗸' if is_premium else '✘'
+                        
+                        dump_caption = (
+                            f"**» User Details «\n**"
+                            f"**ID: {user_id}\n**"
+                            f"**Name: {full_name}\n**"
+                            f"**Username: {username}\n**"
+                            f"**Premium: {premium_status}\n**"
+                            f"**Filename: {file['file_name']}**"
+                        )
+                        
+                        await client.send_document(
+                            settings.DUMP_CHANNEL,
+                            file["file_id"],
+                            caption=dump_caption
+                        )
+                    except Exception as e:
+                        logger.error(f"Dump failed for sequence file: {e}")
+
+                # Small delay between sends to avoid flooding
+                if index < len(sorted_files) - 1:
+                    await asyncio.sleep(0.5)
+                    
+            except FloodWait as e:
+                await asyncio.sleep(e.value + 1)
+            except Exception as e:
+                logger.error(f"Error sending file {file['file_name']}: {e}")
+
+        # Clean up sequence messages
+        if delete_messages:
+            await client.delete_messages(message.chat.id, delete_messages)
+
+    except Exception as e:
+        logger.error(f"Sequence processing failed: {e}")
+        await message.reply_text("**Failed to process sequence! Check logs for details.**")
+
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
     start_time = time.time()
+
+    # Check if this is part of a sequence
+    if user_id in active_sequences:
+        if message.document:
+            file_id = message.document.file_id
+            file_name = message.document.file_name
+        elif message.video:
+            file_id = message.video.file_id
+            file_name = f"{message.video.file_name}.mp4" if not message.video.file_name.endswith('.mp4') else message.video.file_name
+        elif message.audio:
+            file_id = message.audio.file_id
+            file_name = f"{message.audio.file_name}.mp3" if not message.audio.file_name.endswith('.mp3') else message.audio.file_name
+
+        file_info = {"file_id": file_id, "file_name": file_name if file_name else "Unknown"}
+        active_sequences[user_id].append(file_info)
+        await message.reply_text("File received in sequence...\nEnd sequence by using /esequence")
+        return
 
     # Check for cancel request
     if user_id in cancel_operations and cancel_operations[user_id]:
@@ -539,7 +665,7 @@ async def auto_rename_files(client: Client, message: Message):
         if file_id in renaming_operations:
             elapsed_time = (datetime.now() - renaming_operations[file_id]).seconds
             if elapsed_time < 10:
-                return
+                return await message.reply_text("⚠️ Please wait for your current file operation to complete.")
 
         renaming_operations[file_id] = datetime.now()
 
@@ -892,82 +1018,104 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Beautiful leaderboard with auto-deletion"""
+    """Enhanced leaderboard with time range options and sequence stats"""
     try:
-        loading_msg = await message.reply_text("🔄 𝗟𝗼𝗮𝗱𝗶𝗻𝗴 𝗹𝗲𝗮𝗱𝗲𝗿𝗯𝗼𝗮𝗿𝗱...")
+        args = message.command[1:] if len(message.command) > 1 else []
+        time_range = args[0].lower() if args else "all"
         
-        # Try to get leaderboard data with retry logic
-        max_retries = 3
-        leaderboard = []
+        valid_ranges = ["day", "week", "month", "all"]
+        if time_range not in valid_ranges:
+            time_range = "all"
+
+        loading_msg = await message.reply_text(f"🔄 Loading {time_range} leaderboard...")
         
-        for attempt in range(max_retries):
-            try:
-                pipeline = [
-                    {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
-                    {"$sort": {"total_renames": -1}},
-                    {"$limit": 10}
-                ]
-                
-                top_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(length=10)
-                
-                for user in top_users:
-                    try:
-                        # Get user details with proper error handling
-                        user_data = await client.get_users(user["_id"])
-                        username = user_data.username if user_data.username else user_data.first_name
-                        leaderboard.append({
-                            "user_id": user["_id"],
-                            "username": username,
-                            "renames": user["total_renames"]
-                        })
-                    except Exception as e:
-                        logger.error(f"Error getting user data for {user['_id']}: {e}")
-                        leaderboard.append({
-                            "user_id": user["_id"],
-                            "username": "Anonymous",
-                            "renames": user["total_renames"]
-                        })
-                        continue
-                
-                break  # Success, exit retry loop
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                await asyncio.sleep(2 ** attempt)
-                continue
+        # Get leaderboard data
+        now = datetime.now()
+        date_filter = {}
         
-        await loading_msg.delete()
+        if time_range == "day":
+            date_filter = {"$gte": datetime(now.year, now.month, now.day)}
+        elif time_range == "week":
+            start_of_week = now - timedelta(days=now.weekday())
+            date_filter = {"$gte": datetime(start_of_week.year, start_of_week.month, start_of_week.day)}
+        elif time_range == "month":
+            date_filter = {"$gte": datetime(now.year, now.month, 1)}
         
-        if not leaderboard:
-            return await message.reply_text("No rename data available yet!")
+        # Get rename stats
+        rename_pipeline = [
+            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
+            {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
+            {"$sort": {"total_renames": -1}},
+            {"$limit": 10}
+        ]
         
-        text = "✨ **Top 10 File Renamers** ✨\n\n"
+        top_renamers = await hyoshcoder.file_stats.aggregate(rename_pipeline).to_list(length=10)
+        
+        # Get sequence stats
+        sequence_pipeline = [
+            {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
+            {"$group": {"_id": "$user_id", "total_sequences": {"$sum": 1}, "total_files": {"$sum": "$file_count"}}},
+            {"$sort": {"total_files": -1}},
+            {"$limit": 10}
+        ]
+        
+        top_sequencers = await hyoshcoder.file_stats.aggregate(sequence_pipeline).to_list(length=10)
+        
+        # Build leaderboard text
+        time_range_titles = {
+            "day": "Today's",
+            "week": "Weekly",
+            "month": "Monthly",
+            "all": "All-Time"
+        }
+        
+        text = f"✨ **{time_range_titles[time_range]} Leaderboard** ✨\n\n"
+        text += "🏆 **Top Renamers**\n"
+        
         medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
         
-        for i, user in enumerate(leaderboard, start=1):
-            text += (
-                f"{medals[i-1]} **#{i}:** "
-                f"[@{user['username']}](tg://user?id={user['user_id']}) - "
-                f"`{user['renames']} files`\n"
-            )
+        # Top Renamers
+        for i, user in enumerate(top_renamers, start=1):
+            try:
+                user_data = await client.get_users(user["_id"])
+                username = user_data.username if user_data.username else user_data.first_name
+                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_renames']} files`\n"
+            except:
+                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_renames']} files`\n"
         
-        try:
-            user_rank, user_renames = await get_user_rank(message.from_user.id)
-            if user_rank:
-                if user_rank > 10:
-                    text += (
-                        f"\n📊 **Your Rank:** #{user_rank}\n"
-                        f"📝 **Your Renames:** {user_renames}\n"
-                        f"➖ You need {leaderboard[-1]['renames'] - user_renames + 1} more to reach top 10!"
-                    )
-                else:
-                    text += f"\n🎉 **You're in top 10!** Keep going!"
-        except Exception as e:
-            logger.error(f"Error getting user rank: {e}")
-            text += "\n⚠️ Couldn't load your personal stats"
-
-        # Send the full leaderboard to the chat where command was used
-        msg = await message.reply_text(text, disable_web_page_preview=True)
+        text += "\n🎬 **Top Sequencers**\n"
+        
+        # Top Sequencers
+        for i, user in enumerate(top_sequencers, start=1):
+            try:
+                user_data = await client.get_users(user["_id"])
+                username = user_data.username if user_data.username else user_data.first_name
+                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
+            except:
+                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
+        
+        # Add user's personal stats
+        user_rank, user_renames = await get_user_rank(message.from_user.id, time_range)
+        if user_rank:
+            text += f"\n📊 **Your Rank:** #{user_rank}\n"
+            text += f"📝 **Your Renames:** {user_renames}\n"
+        
+        # Create inline keyboard for time range selection
+        keyboard = [
+            [
+                InlineKeyboardButton("Day", callback_data=f"leaderboard_day"),
+                InlineKeyboardButton("Week", callback_data=f"leaderboard_week"),
+                InlineKeyboardButton("Month", callback_data=f"leaderboard_month"),
+                InlineKeyboardButton("All", callback_data=f"leaderboard_all")
+            ]
+        ]
+        
+        await loading_msg.delete()
+        msg = await message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            disable_web_page_preview=True
+        )
         
         # Auto-delete after 1 minute
         await asyncio.sleep(60)
@@ -984,7 +1132,106 @@ async def show_leaderboard(client: Client, message: Message):
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
 
-# ─── SCREENSHOT GENERATOR (MAX 4K) ────────────────────────────────────────────
+@Client.on_callback_query(filters.regex(r"^leaderboard_(day|week|month|all)$"))
+async def leaderboard_callback(client, callback_query):
+    """Handle leaderboard time range selection"""
+    try:
+        time_range = callback_query.matches[0].group(1)
+        
+        # Get leaderboard data
+        now = datetime.now()
+        date_filter = {}
+        
+        if time_range == "day":
+            date_filter = {"$gte": datetime(now.year, now.month, now.day)}
+        elif time_range == "week":
+            start_of_week = now - timedelta(days=now.weekday())
+            date_filter = {"$gte": datetime(start_of_week.year, start_of_week.month, start_of_week.day)}
+        elif time_range == "month":
+            date_filter = {"$gte": datetime(now.year, now.month, 1)}
+        
+        # Get rename stats
+        rename_pipeline = [
+            {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
+            {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
+            {"$sort": {"total_renames": -1}},
+            {"$limit": 10}
+        ]
+        
+        top_renamers = await hyoshcoder.file_stats.aggregate(rename_pipeline).to_list(length=10)
+        
+        # Get sequence stats
+        sequence_pipeline = [
+            {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
+            {"$group": {"_id": "$user_id", "total_sequences": {"$sum": 1}, "total_files": {"$sum": "$file_count"}}},
+            {"$sort": {"total_files": -1}},
+            {"$limit": 10}
+        ]
+        
+        top_sequencers = await hyoshcoder.file_stats.aggregate(sequence_pipeline).to_list(length=10)
+        
+        # Build leaderboard text
+        time_range_titles = {
+            "day": "Today's",
+            "week": "Weekly",
+            "month": "Monthly",
+            "all": "All-Time"
+        }
+        
+        text = f"✨ **{time_range_titles[time_range]} Leaderboard** ✨\n\n"
+        text += "🏆 **Top Renamers**\n"
+        
+        medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
+        
+        # Top Renamers
+        for i, user in enumerate(top_renamers, start=1):
+            try:
+                user_data = await client.get_users(user["_id"])
+                username = user_data.username if user_data.username else user_data.first_name
+                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_renames']} files`\n"
+            except:
+                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_renames']} files`\n"
+        
+        text += "\n🎬 **Top Sequencers**\n"
+        
+        # Top Sequencers
+        for i, user in enumerate(top_sequencers, start=1):
+            try:
+                user_data = await client.get_users(user["_id"])
+                username = user_data.username if user_data.username else user_data.first_name
+                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
+            except:
+                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
+        
+        # Add user's personal stats
+        user_rank, user_renames = await get_user_rank(callback_query.from_user.id, time_range)
+        if user_rank:
+            text += f"\n📊 **Your Rank:** #{user_rank}\n"
+            text += f"📝 **Your Renames:** {user_renames}\n"
+        
+        # Update the message
+        keyboard = [
+            [
+                InlineKeyboardButton("Day", callback_data=f"leaderboard_day"),
+                InlineKeyboardButton("Week", callback_data=f"leaderboard_week"),
+                InlineKeyboardButton("Month", callback_data=f"leaderboard_month"),
+                InlineKeyboardButton("All", callback_data=f"leaderboard_all")
+            ]
+        ]
+        
+        await callback_query.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            disable_web_page_preview=True
+        )
+        
+        await callback_query.answer(f"Showing {time_range} leaderboard")
+        
+    except Exception as e:
+        logger.error(f"Error in leaderboard callback: {e}")
+        await callback_query.answer("Failed to update leaderboard", show_alert=True)
+
+# SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
     """Generate screenshots at the video's native resolution using ffmpeg."""
@@ -1049,9 +1296,6 @@ async def generate_screenshots(video_path: str, output_dir: str, count: int = 10
     except Exception as e:
         logger.error(f"Error generating screenshots: {e}")
         return []
-
-
-# ─── TELEGRAM COMMAND HANDLER ─────────────────────────────────────────────────
 
 @Client.on_message(filters.command("ss"))
 async def generate_screenshots_command(client: Client, message: Message):
