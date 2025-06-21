@@ -503,12 +503,12 @@ async def end_sequence(client: Client, message: Message):
             quality = await extract_quality(file["file_name"])
             file_metadata.append({
                 "file": file,
-                "season": season or "0",  # Default to "0" if None
-                "episode": episode or "0",  # Default to "0" if None
-                "quality": quality or "unknown"  # Default to "unknown" if None
+                "season": season or "0",
+                "episode": episode or "0", 
+                "quality": quality or "unknown"
             })
 
-        # Sort files using the pre-extracted metadata
+        # Sort files
         sorted_files = sorted(
             file_metadata,
             key=lambda f: (f["season"], f["episode"], f["quality"])
@@ -519,16 +519,16 @@ async def end_sequence(client: Client, message: Message):
         for index, file_data in enumerate(sorted_files):
             try:
                 file = file_data["file"]
-                file_name = escape(file['file_name'])
+                file_name = file['file_name'].replace('*', '×').replace('_', ' ').replace('`', "'")
                 
+                # Using Markdown v2 with blockquote formatting
                 sent_msg = await client.send_document(
                     message.chat.id,
                     file["file_id"],
-                    caption=f"<blockquote><b>{file_name}</b></blockquote>",
-                    parse_mode="html"
+                    caption=f">>> {file_name}",
+                    parse_mode="MarkdownV2"
                 )
                 
-                # Optional: Send to dump channel if configured
                 if settings.DUMP_CHANNEL:
                     try:
                         user = message.from_user
@@ -541,24 +541,22 @@ async def end_sequence(client: Client, message: Message):
                         is_premium = user_data.get("is_premium", False) if user_data else False
                         premium_status = '🗸' if is_premium else '✘'
                         
-                        dump_caption = (
-                            f"**» User Details «\n**"
-                            f"**ID: {user_id}\n**"
-                            f"**Name: {full_name}\n**"
-                            f"**Username: {username}\n**"
-                            f"**Premium: {premium_status}\n**"
-                            f"**Filename: {file['file_name']}**"
-                        )
-                        
                         await client.send_document(
                             settings.DUMP_CHANNEL,
                             file["file_id"],
-                            caption=dump_caption
+                            caption=(
+                                f"**User Details**\n"
+                                f"ID: `{user_id}`\n"
+                                f"Name: {full_name}\n"
+                                f"Username: {username}\n"
+                                f"Premium: {premium_status}\n"
+                                f"File: `{file['file_name']}`"
+                            ),
+                            parse_mode="MarkdownV2"
                         )
                     except Exception as e:
                         logger.error(f"Dump failed for sequence file: {e}")
 
-                # Small delay between sends to avoid flooding
                 if index < len(sorted_files) - 1:
                     await asyncio.sleep(0.5)
                     
@@ -567,14 +565,12 @@ async def end_sequence(client: Client, message: Message):
             except Exception as e:
                 logger.error(f"Error sending file {file['file_name']}: {e}")
 
-        # Clean up sequence messages
         if delete_messages:
             await client.delete_messages(message.chat.id, delete_messages)
 
     except Exception as e:
         logger.error(f"Sequence processing failed: {e}")
         await message.reply_text("**Failed to process sequence! Check logs for details.**")
-
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
@@ -822,7 +818,7 @@ async def auto_rename_files(client: Client, message: Message):
             thumb_path = None
             custom_caption = await hyoshcoder.get_caption(message.chat.id)
             custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
-
+            
             # Get file info
             file_size_human = humanbytes(file_size)
             if message.document:
@@ -831,14 +827,22 @@ async def auto_rename_files(client: Client, message: Message):
                 duration = convert(message.video.duration or 0)
             elif message.audio:
                 duration = convert(message.audio.duration or 0)
-
-            caption = (
-                f"<blockquote><b>{custom_caption.format(filename=renamed_file_name, filesize=file_size_human, duration=duration)}</b></blockquote>"
-                if custom_caption
-                else f"<blockquote><b>{renamed_file_name}</b></blockquote>"
-            )
-
-
+            
+            # Create caption with proper HTML formatting
+            if custom_caption:
+                formatted_text = custom_caption.format(
+                    filename=renamed_file_name,
+                    filesize=file_size_human,
+                    duration=duration
+                )
+                caption = f"""<blockquote>
+            <b>{formatted_text}</b>
+            </blockquote>"""
+            else:
+                caption = f"""<blockquote>
+            <b>{renamed_file_name}</b>
+            </blockquote>"""
+            
             # Handle thumbnail
             if custom_thumb:
                 thumb_path = await client.download_media(custom_thumb)
@@ -846,7 +850,7 @@ async def auto_rename_files(client: Client, message: Message):
                 thumb_path = await client.download_media(message.video.thumbs[0].file_id)
             elif media_type == "audio" and message.audio.thumbs:
                 thumb_path = await client.download_media(message.audio.thumbs[0].file_id)
-
+            
             if thumb_path:
                 try:
                     with Image.open(thumb_path) as img:
@@ -856,7 +860,7 @@ async def auto_rename_files(client: Client, message: Message):
                 except Exception as e:
                     logger.warning(f"Thumbnail error: {e}")
                     thumb_path = None
-
+            
             # Upload flow with retry logic
             max_upload_retries = 5
             for attempt in range(max_upload_retries):
@@ -864,7 +868,7 @@ async def auto_rename_files(client: Client, message: Message):
                     if user_id in cancel_operations and cancel_operations[user_id]:
                         await queue_message.edit_text("❌ Processing canceled by user")
                         return
-
+            
                     # Try dump channel first
                     dump_success = await send_to_dump_channel(
                         client,
@@ -886,7 +890,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 caption=caption,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode="html"
+                                parse_mode="HTML"  # Changed to uppercase HTML
                             )
                         elif media_type == "video":
                             await client.send_video(
@@ -898,7 +902,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 supports_streaming=True,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode="html"
+                                parse_mode="HTML"  # Changed to uppercase HTML
                             )
                         elif media_type == "audio":
                             await client.send_audio(
@@ -909,7 +913,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 duration=message.audio.duration if message.audio else 0,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode="html"
+                                parse_mode="HTML"  # Changed to uppercase HTML
                             )
 
                     # Track the operation (only if not already processed)
