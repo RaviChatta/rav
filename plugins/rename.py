@@ -169,7 +169,13 @@ async def add_comprehensive_metadata(input_path: str, output_path: str, metadata
                 '-metadata:s:v:0', f'title=Video - {safe_metadata}',
                 '-metadata:s:a:0', f'title=Audio - {safe_metadata}',
                 '-metadata:s:s:0', f'title=Subs - {safe_metadata}',
-                '-y', output_path
+                # Additional metadata from old version
+                '-metadata', f'artist={safe_metadata}',
+                '-metadata', f'author={safe_metadata}',
+                '-metadata', f'encoded_by={safe_metadata}',
+                '-metadata', f'custom_tag={safe_metadata}',
+                '-y', 
+                output_path
             ],
             # Strategy 2: Legacy compatible approach
             [
