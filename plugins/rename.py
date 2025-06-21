@@ -495,17 +495,30 @@ async def end_sequence(client: Client, message: Message):
         return await message.reply_text("**No files received in this sequence!**")
 
     try:
-        # Sort files using our sorting key
-        sorted_files = sorted(file_list, key=lambda f: (
-            extract_season(f["file_name"]),
-            extract_episode(f["file_name"]),
-            extract_quality(f["file_name"])
-        ))
+        # Extract metadata for all files first
+        file_metadata = []
+        for file in file_list:
+            season = await extract_season(file["file_name"])
+            episode = await extract_episode(file["file_name"])
+            quality = await extract_quality(file["file_name"])
+            file_metadata.append({
+                "file": file,
+                "season": season or "0",  # Default to "0" if None
+                "episode": episode or "0",  # Default to "0" if None
+                "quality": quality or "unknown"  # Default to "unknown" if None
+            })
+
+        # Sort files using the pre-extracted metadata
+        sorted_files = sorted(
+            file_metadata,
+            key=lambda f: (f["season"], f["episode"], f["quality"])
+        )
         
         await message.reply_text(f"**Sequence completed!\nSending {len(sorted_files)} files in order...**")
 
-        for index, file in enumerate(sorted_files):
+        for index, file_data in enumerate(sorted_files):
             try:
+                file = file_data["file"]
                 file_name = escape(file['file_name'])
                 
                 sent_msg = await client.send_document(
@@ -514,6 +527,7 @@ async def end_sequence(client: Client, message: Message):
                     caption=f"<blockquote><b>{file_name}</b></blockquote>",
                     parse_mode="html"
                 )
+                
                 # Optional: Send to dump channel if configured
                 if settings.DUMP_CHANNEL:
                     try:
@@ -1021,11 +1035,16 @@ async def show_leaderboard(client: Client, message: Message):
     """Enhanced leaderboard with time range options and sequence stats"""
     try:
         args = message.command[1:] if len(message.command) > 1 else []
-        time_range = args[0].lower() if args else "all"
+        time_range = args[0].lower() if args else "month"
+        view_type = args[1].lower() if len(args) > 1 else "renames"
         
         valid_ranges = ["day", "week", "month", "all"]
         if time_range not in valid_ranges:
-            time_range = "all"
+            time_range = "month"
+            
+        valid_views = ["renames", "sequences"]
+        if view_type not in valid_views:
+            view_type = "renames"
 
         loading_msg = await message.reply_text(f"🔄 Loading {time_range} leaderboard...")
         
@@ -1041,72 +1060,74 @@ async def show_leaderboard(client: Client, message: Message):
         elif time_range == "month":
             date_filter = {"$gte": datetime(now.year, now.month, 1)}
         
-        # Get rename stats
-        rename_pipeline = [
+        # Get data based on view type
+        if view_type == "renames":
+            pipeline = [
+                {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
+                {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+                {"$sort": {"total": -1}},
+                {"$limit": 20}
+            ]
+            collection = hyoshcoder.file_stats
+            stat_name = "files"
+        else:
+            pipeline = [
+                {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
+                {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
+                {"$sort": {"total": -1}},
+                {"$limit": 20}
+            ]
+            collection = hyoshcoder.file_stats
+            stat_name = "files in sequences"
+        
+        top_users = await collection.aggregate(pipeline).to_list(length=20)
+        
+        # Calculate total files
+        total_pipeline = [
             {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-            {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
-            {"$sort": {"total_renames": -1}},
-            {"$limit": 10}
+            {"$group": {"_id": None, "total": {"$sum": 1}}}
         ]
-        
-        top_renamers = await hyoshcoder.file_stats.aggregate(rename_pipeline).to_list(length=10)
-        
-        # Get sequence stats
-        sequence_pipeline = [
-            {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
-            {"$group": {"_id": "$user_id", "total_sequences": {"$sum": 1}, "total_files": {"$sum": "$file_count"}}},
-            {"$sort": {"total_files": -1}},
-            {"$limit": 10}
-        ]
-        
-        top_sequencers = await hyoshcoder.file_stats.aggregate(sequence_pipeline).to_list(length=10)
+        total_result = await hyoshcoder.file_stats.aggregate(total_pipeline).to_list(length=1)
+        total_files = total_result[0]["total"] if total_result else 0
         
         # Build leaderboard text
         time_range_titles = {
-            "day": "Today's",
-            "week": "Weekly",
-            "month": "Monthly",
-            "all": "All-Time"
+            "day": "TODAY",
+            "week": "WEEKLY",
+            "month": "MONTHLY",
+            "all": "ALL TIME"
         }
         
-        text = f"✨ **{time_range_titles[time_range]} Leaderboard** ✨\n\n"
-        text += "🏆 **Top Renamers**\n"
+        text = f"# LEADERBOARD: {time_range_titles[time_range].upper()}\n\n"
+        text += f"## Top 20 Users With Most {view_type.capitalize()}:\n\n"
         
-        medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
-        
-        # Top Renamers
-        for i, user in enumerate(top_renamers, start=1):
+        # Top Users
+        for i, user in enumerate(top_users, start=1):
             try:
                 user_data = await client.get_users(user["_id"])
                 username = user_data.username if user_data.username else user_data.first_name
-                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_renames']} files`\n"
+                # Format username with special characters like in the image
+                formatted_name = f"« {username} »»" if i != 1 else f"<< {username.upper()} >>"
+                text += f"{i}. **{formatted_name}** {user['total']}\n"
             except:
-                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_renames']} files`\n"
+                text += f"{i}. **« Anonymous »»** {user['total']}\n"
         
-        text += "\n🎬 **Top Sequencers**\n"
+        text += f"\n---\n\n### Total {stat_name.capitalize()}: {total_files}\n"
+        text += f"{now.strftime('%H:%M')}\n\n"
         
-        # Top Sequencers
-        for i, user in enumerate(top_sequencers, start=1):
-            try:
-                user_data = await client.get_users(user["_id"])
-                username = user_data.username if user_data.username else user_data.first_name
-                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
-            except:
-                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
-        
-        # Add user's personal stats
-        user_rank, user_renames = await get_user_rank(message.from_user.id, time_range)
-        if user_rank:
-            text += f"\n📊 **Your Rank:** #{user_rank}\n"
-            text += f"📝 **Your Renames:** {user_renames}\n"
-        
-        # Create inline keyboard for time range selection
+        # Create inline keyboard for navigation
         keyboard = [
             [
-                InlineKeyboardButton("Day", callback_data=f"leaderboard_day"),
-                InlineKeyboardButton("Week", callback_data=f"leaderboard_week"),
-                InlineKeyboardButton("Month", callback_data=f"leaderboard_month"),
-                InlineKeyboardButton("All", callback_data=f"leaderboard_all")
+                InlineKeyboardButton("TODAY", callback_data=f"leaderboard_day_{view_type}"),
+                InlineKeyboardButton("WEEKLY", callback_data=f"leaderboard_week_{view_type}"),
+            ],
+            [
+                InlineKeyboardButton("MONTHLY", callback_data=f"leaderboard_month_{view_type}"),
+                InlineKeyboardButton("ALL TIME", callback_data=f"leaderboard_all_{view_type}"),
+            ],
+            [
+                InlineKeyboardButton("SWITCH TO RENAMES", callback_data=f"leaderboard_{time_range}_renames") if view_type == "sequences" else 
+                InlineKeyboardButton("SWITCH TO SEQUENCES", callback_data=f"leaderboard_{time_range}_sequences"),
             ]
         ]
         
@@ -1132,11 +1153,12 @@ async def show_leaderboard(client: Client, message: Message):
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
 
-@Client.on_callback_query(filters.regex(r"^leaderboard_(day|week|month|all)$"))
+@Client.on_callback_query(filters.regex(r"^leaderboard_(day|week|month|all)_(renames|sequences)$"))
 async def leaderboard_callback(client, callback_query):
-    """Handle leaderboard time range selection"""
+    """Handle leaderboard time range and view type selection"""
     try:
         time_range = callback_query.matches[0].group(1)
+        view_type = callback_query.matches[0].group(2)
         
         # Get leaderboard data
         now = datetime.now()
@@ -1150,72 +1172,74 @@ async def leaderboard_callback(client, callback_query):
         elif time_range == "month":
             date_filter = {"$gte": datetime(now.year, now.month, 1)}
         
-        # Get rename stats
-        rename_pipeline = [
+        # Get data based on view type
+        if view_type == "renames":
+            pipeline = [
+                {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
+                {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+                {"$sort": {"total": -1}},
+                {"$limit": 20}
+            ]
+            collection = hyoshcoder.file_stats
+            stat_name = "files"
+        else:
+            pipeline = [
+                {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
+                {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
+                {"$sort": {"total": -1}},
+                {"$limit": 20}
+            ]
+            collection = hyoshcoder.file_stats
+            stat_name = "files in sequences"
+        
+        top_users = await collection.aggregate(pipeline).to_list(length=20)
+        
+        # Calculate total files
+        total_pipeline = [
             {"$match": {"timestamp": date_filter}} if date_filter else {"$match": {}},
-            {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
-            {"$sort": {"total_renames": -1}},
-            {"$limit": 10}
+            {"$group": {"_id": None, "total": {"$sum": 1}}}
         ]
-        
-        top_renamers = await hyoshcoder.file_stats.aggregate(rename_pipeline).to_list(length=10)
-        
-        # Get sequence stats
-        sequence_pipeline = [
-            {"$match": {"type": "sequence_completed", "timestamp": date_filter}} if date_filter else {"$match": {"type": "sequence_completed"}},
-            {"$group": {"_id": "$user_id", "total_sequences": {"$sum": 1}, "total_files": {"$sum": "$file_count"}}},
-            {"$sort": {"total_files": -1}},
-            {"$limit": 10}
-        ]
-        
-        top_sequencers = await hyoshcoder.file_stats.aggregate(sequence_pipeline).to_list(length=10)
+        total_result = await hyoshcoder.file_stats.aggregate(total_pipeline).to_list(length=1)
+        total_files = total_result[0]["total"] if total_result else 0
         
         # Build leaderboard text
         time_range_titles = {
-            "day": "Today's",
-            "week": "Weekly",
-            "month": "Monthly",
-            "all": "All-Time"
+            "day": "TODAY",
+            "week": "WEEKLY",
+            "month": "MONTHLY",
+            "all": "ALL TIME"
         }
         
-        text = f"✨ **{time_range_titles[time_range]} Leaderboard** ✨\n\n"
-        text += "🏆 **Top Renamers**\n"
+        text = f"# LEADERBOARD: {time_range_titles[time_range].upper()}\n\n"
+        text += f"## Top 20 Users With Most {view_type.capitalize()}:\n\n"
         
-        medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
-        
-        # Top Renamers
-        for i, user in enumerate(top_renamers, start=1):
+        # Top Users
+        for i, user in enumerate(top_users, start=1):
             try:
                 user_data = await client.get_users(user["_id"])
                 username = user_data.username if user_data.username else user_data.first_name
-                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_renames']} files`\n"
+                # Format username with special characters like in the image
+                formatted_name = f"« {username} »»" if i != 1 else f"<< {username.upper()} >>"
+                text += f"{i}. **{formatted_name}** {user['total']}\n"
             except:
-                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_renames']} files`\n"
+                text += f"{i}. **« Anonymous »»** {user['total']}\n"
         
-        text += "\n🎬 **Top Sequencers**\n"
+        text += f"\n---\n\n### Total {stat_name.capitalize()}: {total_files}\n"
+        text += f"{now.strftime('%H:%M')}\n\n"
         
-        # Top Sequencers
-        for i, user in enumerate(top_sequencers, start=1):
-            try:
-                user_data = await client.get_users(user["_id"])
-                username = user_data.username if user_data.username else user_data.first_name
-                text += f"{medals[i-1]} #{i}: [{username}](tg://user?id={user['_id']}) - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
-            except:
-                text += f"{medals[i-1]} #{i}: Anonymous - `{user['total_files']} files in {user['total_sequences']} sequences`\n"
-        
-        # Add user's personal stats
-        user_rank, user_renames = await get_user_rank(callback_query.from_user.id, time_range)
-        if user_rank:
-            text += f"\n📊 **Your Rank:** #{user_rank}\n"
-            text += f"📝 **Your Renames:** {user_renames}\n"
-        
-        # Update the message
+        # Update the keyboard
         keyboard = [
             [
-                InlineKeyboardButton("Day", callback_data=f"leaderboard_day"),
-                InlineKeyboardButton("Week", callback_data=f"leaderboard_week"),
-                InlineKeyboardButton("Month", callback_data=f"leaderboard_month"),
-                InlineKeyboardButton("All", callback_data=f"leaderboard_all")
+                InlineKeyboardButton("TODAY", callback_data=f"leaderboard_day_{view_type}"),
+                InlineKeyboardButton("WEEKLY", callback_data=f"leaderboard_week_{view_type}"),
+            ],
+            [
+                InlineKeyboardButton("MONTHLY", callback_data=f"leaderboard_month_{view_type}"),
+                InlineKeyboardButton("ALL TIME", callback_data=f"leaderboard_all_{view_type}"),
+            ],
+            [
+                InlineKeyboardButton("SWITCH TO RENAMES", callback_data=f"leaderboard_{time_range}_renames") if view_type == "sequences" else 
+                InlineKeyboardButton("SWITCH TO SEQUENCES", callback_data=f"leaderboard_{time_range}_sequences"),
             ]
         ]
         
@@ -1225,7 +1249,7 @@ async def leaderboard_callback(client, callback_query):
             disable_web_page_preview=True
         )
         
-        await callback_query.answer(f"Showing {time_range} leaderboard")
+        await callback_query.answer(f"Showing {time_range} {view_type} leaderboard")
         
     except Exception as e:
         logger.error(f"Error in leaderboard callback: {e}")
