@@ -531,6 +531,10 @@ async def end_sequence(client: Client, message: Message):
         missing_files = []
         for file in file_list:
             try:
+                if not isinstance(file, dict) or 'file_id' not in file or 'file_name' not in file:
+                    missing_files.append(str(file))
+                    continue
+
                 season = await extract_season(file["file_name"])
                 episode = await extract_episode(file["file_name"])
                 quality = await extract_quality(file["file_name"])
@@ -541,8 +545,8 @@ async def end_sequence(client: Client, message: Message):
                     "quality": quality or "unknown"
                 })
             except Exception as e:
-                missing_files.append(file["file_name"])
-                logger.error(f"Error processing file {file['file_name']}: {e}")
+                missing_files.append(file.get("file_name", str(file)))
+                logger.error(f"Error processing file {file}: {e}")
 
         # Sort files
         sorted_files = sorted(
@@ -564,62 +568,93 @@ async def end_sequence(client: Client, message: Message):
 
             try:
                 file = file_data["file"]
-                file_name = file['file_name'].replace('*', '×').replace('_', ' ').replace('`', "'")
+                if not isinstance(file, dict):
+                    continue
+
+                file_name = file.get('file_name', 'Unknown')
+                safe_name = file_name.replace('*', '×').replace('_', ' ').replace('`', "'")
                 
+                # Get the original message to copy
+                try:
+                    original_msg = await client.get_messages(
+                        chat_id=message.chat.id,
+                        message_ids=file["file_id"]
+                    )
+                except Exception as e:
+                    logger.error(f"Error getting message {file['file_id']}: {e}")
+                    missing_files.append(file_name)
+                    continue
+
                 # Use COPY instead of upload
-                copied_msg = await client.copy_message(
-                    chat_id=message.chat.id,
-                    from_chat_id=message.chat.id,  # Assuming files are in same chat
-                    message_id=file["file_id"],    # Use the original message ID
-                    caption=f'<b><blockquote>{html.escape(file["file_name"])}</blockquote></b>',
-                    parse_mode=ParseMode.HTML
-                )
-
-                # Send to dump channel if configured (also using copy)
-                dump_channel = await hyoshcoder.get_user_channel(user_id)
-                if dump_channel:
-                    user = message.from_user
-                    full_name = user.first_name
-                    if user.last_name:
-                        full_name += f" {user.last_name}"
-                    username = f"@{user.username}" if user.username else "N/A"
-                    
-                    user_data = await hyoshcoder.read_user(user_id)
-                    is_premium = user_data.get("is_premium", False) if user_data else False
-                    premium_status = '🗸' if is_premium else '✘'
-
-                    await client.copy_message(
-                        chat_id=dump_channel,
-                        from_chat_id=message.chat.id,
-                        message_id=file["file_id"],
-                        caption=f'<b><blockquote>{html.escape(file["file_name"])}</blockquote></b>',
+                try:
+                    copied_msg = await original_msg.copy(
+                        chat_id=message.chat.id,
+                        caption=f'<b><blockquote>{html.escape(safe_name)}</blockquote></b>',
                         parse_mode=ParseMode.HTML
                     )
+                except FloodWait as e:
+                    await asyncio.sleep(e.value)
+                    copied_msg = await original_msg.copy(
+                        chat_id=message.chat.id,
+                        caption=f'<b><blockquote>{html.escape(safe_name)}</blockquote></b>',
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Error copying file {file_name}: {e}")
+                    missing_files.append(file_name)
+                    continue
+
+                # Send to dump channel if configured
+                dump_channel = await hyoshcoder.get_user_channel(user_id)
+                if dump_channel:
+                    try:
+                        user = message.from_user
+                        full_name = user.first_name
+                        if user.last_name:
+                            full_name += f" {user.last_name}"
+                        username = f"@{user.username}" if user.username else "N/A"
+                        
+                        user_data = await hyoshcoder.read_user(user_id)
+                        is_premium = user_data.get("is_premium", False) if user_data else False
+                        premium_status = '🗸' if is_premium else '✘'
+
+                        await original_msg.copy(
+                            chat_id=dump_channel,
+                            caption=(
+                                f"<b>User Details</b>\n"
+                                f"ID: <code>{user_id}</code>\n"
+                                f"Name: {full_name}\n"
+                                f"Username: {username}\n"
+                                f"Premium: {premium_status}\n"
+                                f"File: <code>{html.escape(safe_name)}</code>"
+                            ),
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception as e:
+                        logger.error(f"Error sending to dump channel: {e}")
 
                 await asyncio.sleep(random.uniform(0.5, 1.5))  # Anti-flood delay
                 
-            except FloodWait as e:
-                await asyncio.sleep(e.value + 1)
             except Exception as e:
-                logger.error(f"Error sending file {file['file_name']}: {e}")
-                missing_files.append(file['file_name'])
+                logger.error(f"Unexpected error sending file {file.get('file_name', 'Unknown')}: {e}")
+                missing_files.append(file.get('file_name', 'Unknown'))
 
         # Success message
         success_message = (
-            f"🎉 **SEQUENCE COMPLETED** 🎉\n\n"
-            f"▫️ **Total Files Sent:** `{len(sorted_files)}`\n"
-            f"▫️ **Time Taken:** `{time_str}`\n"
+            f"🎉 <b>SEQUENCE COMPLETED</b> 🎉\n\n"
+            f"▫️ <b>Total Files Sent:</b> <code>{len(sorted_files)}</code>\n"
+            f"▫️ <b>Time Taken:</b> <code>{time_str}</code>\n"
         )
 
         if missing_files:
             success_message += (
-                f"\n❌ **Missing Files:** `{len(missing_files)}`\n"
-                f"`{', '.join(missing_files[:3])}`"
+                f"\n❌ <b>Missing Files:</b> <code>{len(missing_files)}</code>\n"
+                f"<code>{html.escape(', '.join(missing_files[:3]))}</code>"
             )
             if len(missing_files) > 3:
-                success_message += f" +{len(missing_files)-3} more"
+                success_message += f" +<code>{len(missing_files)-3}</code> more"
 
-        await message.reply_text(success_message)
+        await message.reply_text(success_message, parse_mode=ParseMode.HTML)
 
         # Cleanup
         if delete_messages:
@@ -630,7 +665,11 @@ async def end_sequence(client: Client, message: Message):
 
     except Exception as e:
         logger.error(f"Sequence processing failed: {e}")
-        await message.reply_text("❌ **Failed to process sequence!**")
+        await message.reply_text(
+            "❌ <b>Failed to process sequence!</b>\n"
+            "Please try again with fewer files.",
+            parse_mode=ParseMode.HTML
+        )
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
