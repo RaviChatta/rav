@@ -14,7 +14,7 @@ import uuid
 import logging
 import json
 from typing import Optional, Tuple, Dict, List, Set
-
+from html import escape
 # Database imports
 from database.data import hyoshcoder
 from config import settings
@@ -506,14 +506,14 @@ async def end_sequence(client: Client, message: Message):
 
         for index, file in enumerate(sorted_files):
             try:
-                # Send each file in the sorted order
+                file_name = escape(file['file_name'])
+                
                 sent_msg = await client.send_document(
                     message.chat.id,
                     file["file_id"],
-                    caption=f"**{file['file_name']}**",
-                    parse_mode="markdown"
+                    caption=f"<blockquote><b>{file_name}</b></blockquote>",
+                    parse_mode="html"
                 )
-
                 # Optional: Send to dump channel if configured
                 if settings.DUMP_CHANNEL:
                     try:
@@ -819,14 +819,11 @@ async def auto_rename_files(client: Client, message: Message):
                 duration = convert(message.audio.duration or 0)
 
             caption = (
-                custom_caption.format(
-                    filename=renamed_file_name,
-                    filesize=file_size_human,
-                    duration=duration,
-                )
+                f"<blockquote><b>{custom_caption.format(filename=renamed_file_name, filesize=file_size_human, duration=duration)}</b></blockquote>"
                 if custom_caption
-                else f"**{renamed_file_name}**"
+                else f"<blockquote><b>{renamed_file_name}</b></blockquote>"
             )
+
 
             # Handle thumbnail
             if custom_thumb:
@@ -875,6 +872,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 caption=caption,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                parse_mode="html"
                             )
                         elif media_type == "video":
                             await client.send_video(
@@ -885,7 +883,8 @@ async def auto_rename_files(client: Client, message: Message):
                                 duration=message.video.duration if message.video else 0,
                                 supports_streaming=True,
                                 progress=progress_for_pyrogram,
-                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
+                                parse_mode="html"
                             )
                         elif media_type == "audio":
                             await client.send_audio(
@@ -895,7 +894,8 @@ async def auto_rename_files(client: Client, message: Message):
                                 thumb=thumb_path,
                                 duration=message.audio.duration if message.audio else 0,
                                 progress=progress_for_pyrogram,
-                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time())
+                                progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
+                                parse_mode="html"
                             )
 
                     # Track the operation (only if not already processed)
