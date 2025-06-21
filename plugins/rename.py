@@ -12,7 +12,7 @@ import shutil
 from pyrogram.types import InputMediaPhoto
 import uuid
 import logging
-
+from pyrogram.enums import ParseMode, ChatAction
 import json
 from typing import Optional, Tuple, Dict, List, Set
 # Database imports
@@ -308,17 +308,33 @@ async def send_to_dump_channel(
 
         # Verify channel exists and bot has permissions
         try:
-            chat = await client.get_chat(dump_channel)
-            if chat.type not in ("channel", "supergroup"):
-                logger.warning(f"Invalid chat type {chat.type} for {dump_channel}")
+            # Convert to integer and validate
+            channel_id = int(dump_channel)
+            if channel_id >= 0:
+                logger.warning(f"Invalid channel ID format (must be negative): {dump_channel}")
                 return False
+                
+            chat = await client.get_chat(channel_id)
+            if chat.type not in ("channel", "supergroup"):
+                logger.warning(f"Invalid chat type {chat.type} for {channel_id}")
+                return False
+                
+            # Check bot permissions
+            member = await client.get_chat_member(channel_id, client.me.id)
+            if not member or not member.privileges or not member.privileges.can_post_messages:
+                logger.warning(f"Bot lacks posting permissions in channel {channel_id}")
+                return False
+                
+        except (ValueError, PeerIdInvalid) as e:
+            logger.error(f"Invalid channel ID or can't access channel {dump_channel}: {e}")
+            return False
         except Exception as e:
             logger.error(f"Can't access dump channel {dump_channel}: {e}")
             return False
 
-        # Prepare common parameters
+        # Rest of the function remains the same...
         send_params = {
-            "chat_id": dump_channel,
+            "chat_id": channel_id,
             "caption": caption[:1024],
             "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None,
             **kwargs
@@ -350,7 +366,7 @@ async def send_to_dump_channel(
                     **send_params
                 )
             
-            logger.info(f"Successfully sent {file_path} to dump channel {dump_channel}")
+            logger.info(f"Successfully sent {file_path} to dump channel {channel_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to send to dump channel: {e}")
@@ -553,21 +569,47 @@ async def end_sequence(client: Client, message: Message):
                         is_premium = user_data.get("is_premium", False) if user_data else False
                         premium_status = '🗸' if is_premium else '✘'
                         
-                        await client.send_document(
-                            settings.DUMP_CHANNEL,
-                            file["file_id"],
-                            caption=(
-                                f"**User Details**\n"
-                                f"ID: `{user_id}`\n"
-                                f"Name: {full_name}\n"
-                                f"Username: {username}\n"
-                                f"Premium: {premium_status}\n"
-                                f"File: `{file['file_name']}`"
-                            ),
-                            parse_mode=None
-                        )
-                    except Exception as e:
-                        logger.error(f"Dump failed for sequence file: {e}")
+                        # Get user's dump channel from database
+                        # Get user's dump channel from database
+                        dump_channel = await hyoshcoder.get_user_channel(user_id)
+                        if dump_channel:
+                            try:
+                                # Verify the channel exists and bot has permissions
+                                try:
+                                    chat = await client.get_chat(dump_channel)
+                                    if chat.type not in ("channel", "supergroup"):
+                                        logger.warning(f"Invalid chat type {chat.type} for dump channel")
+                                        raise ValueError("Dump channel must be a channel or supergroup")
+                                except Exception as e:
+                                    logger.error(f"Can't access dump channel {dump_channel}: {e}")
+                                    raise
+                        
+                                # Send with progress tracking
+                                await client.send_document(
+                                    chat_id=dump_channel,
+                                    document=file["file_id"],
+                                    caption=(
+                                        f"<b>User Details</b>\n"
+                                        f"ID: <code>{user_id}</code>\n"
+                                        f"Name: {full_name}\n"
+                                        f"Username: {username}\n"
+                                        f"Premium: {premium_status}\n"
+                                        f"File: <code>{html.escape(file['file_name'])}</code>"
+                                    ),
+                                    parse_mode=ParseMode.HTML,
+                                    progress=progress_for_pyrogram,
+                                    progress_args=(f"Dumping {file['file_name']}", message, time.time())
+                                )
+                                logger.info(f"Successfully dumped file to {dump_channel}")
+                                
+                            except FloodWait as e:
+                                logger.warning(f"Flood wait for dump channel: {e.x} seconds")
+                                await asyncio.sleep(e.x + 2)
+                            except PeerIdInvalid:
+                                logger.error(f"Invalid dump channel ID: {dump_channel}")
+                                await message.reply_text("❌ My dump channel settings are invalid. Please reconfigure with /set_dump")
+                            except Exception as e:
+                                logger.error(f"Failed to send to dump channel: {e}")
 
                 if index < len(sorted_files) - 1:
                     await asyncio.sleep(0.5)
@@ -902,7 +944,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 caption=caption,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode=None  # Changed to uppercase HTML
+                                parse_mode=ParseMode.HTML  # Changed to uppercase HTML
                             )
                         elif media_type == "video":
                             await client.send_video(
@@ -914,7 +956,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 supports_streaming=True,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode=None  # Changed to uppercase html
+                                parse_mode=ParseMode.HTML  # Changed to uppercase html
                             )
                         elif media_type == "audio":
                             await client.send_audio(
@@ -925,7 +967,7 @@ async def auto_rename_files(client: Client, message: Message):
                                 duration=message.audio.duration if message.audio else 0,
                                 progress=progress_for_pyrogram,
                                 progress_args=(f"Uploading #{current_file_number}", queue_message, time.time()),
-                                parse_mode=None  # Changed to uppercase HTML
+                                parse_mode=ParseMode.HTML  # Changed to uppercase HTML
                             )
 
                     # Track the operation (only if not already processed)
@@ -1064,14 +1106,6 @@ async def show_leaderboard(client: Client, message: Message):
         if leaderboard_type not in valid_types:
             leaderboard_type = "renames"
 
-        # Time period selection
-        time_periods = {
-            "today": "Today",
-            "week": "This Week", 
-            "month": "This Month",
-            "all": "All Time"
-        }
-        
         # Get leaderboard data with animation
         await loading_animation.edit_caption("📊 <b>Crunching cosmic data...</b>")
         
@@ -1107,7 +1141,7 @@ async def show_leaderboard(client: Client, message: Message):
         emoji_ranks = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
                       "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣", "1️⃣4️⃣", "1️⃣5️⃣"]
 
-        for i, user in enumerate(top_users[:15]):  # Show top 15
+        for i, user in enumerate(top_users[:15]):
             try:
                 user_obj = await client.get_users(user["_id"])
                 username = user_obj.username or user_obj.first_name
@@ -1134,12 +1168,6 @@ async def show_leaderboard(client: Client, message: Message):
                 InlineKeyboardButton(
                     "🎬 Sequences", 
                     callback_data=f"leaderboard_sequences"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🗓 Time Period", 
-                    callback_data="leaderboard_timeperiod"
                 )
             ]
         ]
