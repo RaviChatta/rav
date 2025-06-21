@@ -760,29 +760,52 @@ async def view_dump_channel(client: Client, message: Message):
 @Client.on_message(filters.command(["del_dump", "deldump"]) & filters.private)
 async def delete_dump_channel(client: Client, message: Message):
     """Remove dump channel setting."""
+    if not message.from_user:
+        return  # Ignore if not from a user
+
     try:
         user_id = message.from_user.id
         channel_id = await hyoshcoder.get_user_channel(user_id)
         
-        if channel_id:
-            success = await hyoshcoder.set_user_channel(user_id, None)
-            if success:
-                msg = await message.reply_text(
-                    f"✅ Channel `{channel_id}` has been removed from your dump list.",
-                    quote=True
-                )
-            else:
-                msg = await message.reply_text(
-                    "❌ Failed to remove dump channel. Please try again.",
-                    quote=True
-                )
-        else:
+        if not channel_id:
             msg = await message.reply_text(
-                "No dump channel is currently set.",
+                "ℹ️ No dump channel is currently set.",
                 quote=True
             )
+            asyncio.create_task(auto_delete_message(msg, 30))
+            asyncio.create_task(auto_delete_message(message, 30))
+            return
+
+        # Clear the channel setting
+        success = await hyoshcoder.set_user_channel(user_id, None)
         
-        asyncio.create_task(auto_delete_message(msg, 30))
+        if not success:
+            logger.warning(f"Failed to clear dump channel for user {user_id}")
+            raise ValueError("Database operation failed")
+
+        msg = await message.reply_text(
+            f"✅ Successfully removed dump channel `{channel_id}`.",
+            quote=True
+        )
+        
+        # Log the successful removal
+        logger.info(f"User {user_id} removed dump channel {channel_id}")
+
+    except ValueError as e:
+        msg = await message.reply_text(
+            "❌ Failed to remove dump channel due to a system error. Please try again.",
+            quote=True
+        )
+    except Exception as e:
+        logger.error(f"Error deleting dump channel for user {user_id}: {e}", exc_info=True)
+        msg = await message.reply_text(
+            "❌ An unexpected error occurred. Please try again later.",
+            quote=True
+        )
+    finally:
+        # Ensure messages are scheduled for deletion
+        if 'msg' in locals():
+            asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
 
     except Exception as e:
@@ -796,6 +819,9 @@ async def delete_dump_channel(client: Client, message: Message):
 
 async def handle_set_dump(client: Client, message: Message, args: List[str]):
     """Handle setting dump channel with proper validation."""
+    if not message.from_user:
+        return  # Ignore if not from a user
+    
     if len(args) == 0:
         return await send_auto_delete_message(
             client,
@@ -805,7 +831,7 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
             delete_after=30
         )
 
-    channel_id = args[0]
+    channel_id = args[0].strip()
     user_id = message.from_user.id
 
     try:
@@ -813,19 +839,26 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
         if not channel_id.startswith('-100') or not channel_id[4:].isdigit():
             raise ValueError("Invalid channel ID format. Must be like -1001234567890")
 
+        # Convert to integer for validation
+        channel_id_int = int(channel_id)
+        
         # Check if bot has admin rights in the channel
         try:
-            member = await client.get_chat_member(int(channel_id), client.me.id)
-            if not member or not member.privileges or not member.privileges.can_post_messages:
+            member = await client.get_chat_member(channel_id_int, client.me.id)
+            if not member or not getattr(member, 'privileges', None) or not member.privileges.can_post_messages:
                 raise ValueError("I need admin rights with post permissions in that channel")
         except PeerIdInvalid:
             raise ValueError("Channel not found or I'm not a member")
         except ChatAdminRequired:
             raise ValueError("I don't have admin rights in that channel")
+        except ChannelPrivate:
+            raise ValueError("Channel is private or I'm not a member")
 
         # Save to database
-        await hyoshcoder.set_user_channel(user_id, channel_id)
-        
+        success = await hyoshcoder.set_user_channel(user_id, channel_id)
+        if not success:
+            raise ValueError("Failed to save channel to database")
+
         msg = await message.reply_text(
             f"✅ Channel `{channel_id}` has been successfully set as your dump channel.",
             quote=True
@@ -843,12 +876,11 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
             delete_after=30
         )
     except Exception as e:
-        logger.error(f"Error setting dump channel: {e}")
+        logger.error(f"Error setting dump channel: {e}", exc_info=True)
         await send_auto_delete_message(
             client,
             message.chat.id,
-            f"❌ Error: {str(e)}\n\n"
-            "Failed to set dump channel. Please try again.",
+            "❌ An unexpected error occurred while setting dump channel. Please try again.",
             delete_after=30
         )
 
