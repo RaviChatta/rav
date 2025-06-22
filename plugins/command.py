@@ -1144,27 +1144,27 @@ async def handle_help(client: Client, message: Message):
     src_txt = "File name" if src_info == "file_name" else "File caption"
 
     buttons = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
-            InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
-            InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
-        ],
-        [
-            InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
-            InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
-            InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
-        ],
-        [
-            InlineKeyboardButton("ˢᴱᵠᵁᴱᴺᵀᴵᴬᴸ", callback_data='sequential'),
-            InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
-            InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
-        ],
-        [
-            InlineKeyboardButton("◁", callback_data="back"),
-            InlineKeyboardButton("• ᴴᴼᴹᴱ •", callback_data="home"),
-            InlineKeyboardButton("▷", callback_data="next")
-        ]
-    ])
+    [
+        InlineKeyboardButton("ᴀᴜᴛᴏ", callback_data='file_names'),
+        InlineKeyboardButton("ᴛʜᴜᴍʙ", callback_data='thumbnail'),
+        InlineKeyboardButton("ᴄᴀᴘᴛɪᴏɴ", callback_data='caption')
+    ],
+    [
+        InlineKeyboardButton("ᴍᴇᴛᴀ", callback_data='meta'),
+        InlineKeyboardButton("ᴍᴇᴅɪᴀ", callback_data='setmedia'),
+        InlineKeyboardButton("ᴅᴜᴍᴘ", callback_data='setdump')
+    ],
+    [
+        InlineKeyboardButton("sᴇǫ", callback_data='sequential'),
+        InlineKeyboardButton("ᴘʀᴇᴍ", callback_data='premiumx'),
+        InlineKeyboardButton(f"sʀᴄ: {src_txt}", callback_data='toggle_src')
+    ],
+    [
+        InlineKeyboardButton("◁", callback_data="back"),
+        InlineKeyboardButton("• ʜᴏᴍᴇ •", callback_data="home"),
+        InlineKeyboardButton("▷", callback_data="next")
+    ]
+])
 
 
     if img:
