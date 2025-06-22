@@ -1323,15 +1323,98 @@ async def find_user_command(client: Client, message: Message):
 
 @Client.on_message(filters.command("premium") & filters.user(ADMIN_USER_ID))
 async def premium_command(client: Client, message: Message):
-    await AdminPanel.process_activate_premium(client, message)
-
+    """Handle premium activation command"""
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            raise ValueError("Missing parameters. Usage: /premium user_id plan")
+        
+        user_id = int(parts[1])
+        plan = parts[2].lower()
+        reason = " ".join(parts[3:]) if len(parts) > 3 else "Admin activation"
+        
+        plans = await AdminPanel.get_config("premium_plans")
+        if plan not in plans:
+            raise ValueError(f"Invalid plan. Available: {', '.join(plans.keys())}")
+        
+        # Get user's current points
+        user = await hyoshcoder.get_user(user_id)
+        if not user:
+            raise ValueError("User not found")
+        
+        original_points = user['points']['balance']
+        premium_points = plans[plan]["points"]
+        duration_days = plans[plan]["duration"]
+        
+        # Activate premium
+        await hyoshcoder.activate_premium(
+            user_id=user_id,
+            plan=plan,
+            duration_days=duration_days,
+            original_points=original_points,
+            premium_points=premium_points
+        )
+        
+        await message.reply_text(
+            f"✅ Premium activated for user {user_id}\n"
+            f"📝 Plan: {plan} ({duration_days} days)\n"
+            f"🪙 Points: {premium_points}\n"
+            f"📝 Reason: {reason}",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
+        
+    except Exception as e:
+        await message.reply_text(
+            f"❌ Error: {str(e)}\n\n"
+            "Usage: <code>/premium user_id plan [reason]</code>\n"
+            "Example: <code>/premium 123456 1week \"Special offer\"</code>",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
 @Client.on_message(filters.command("depremium") & filters.user(ADMIN_USER_ID))
 async def deactivate_premium_command(client: Client, message: Message):
     await AdminPanel.process_deactivate_premium(client, message)
 
 @Client.on_message(filters.command("checkpremium") & filters.user(ADMIN_USER_ID))
 async def check_premium_command(client: Client, message: Message):
-    await AdminPanel.process_check_premium(client, message)
+    """Check premium status for a user"""
+    try:
+        if len(message.command) < 2:
+            raise ValueError("Missing user ID")
+        
+        user_id = int(message.command[1])
+        status = await hyoshcoder.check_premium_status(user_id)
+        
+        if status["is_premium"]:
+            expires_at = status.get("expires_at", "Unknown")
+            if isinstance(expires_at, datetime):
+                remaining = (expires_at - datetime.now()).days
+                expires_text = f"{expires_at} ({remaining} days remaining)"
+            else:
+                expires_text = str(expires_at)
+            
+            response = (
+                f"🌟 <b>Premium Status</b> for user {user_id}\n\n"
+                f"✅ Active: Yes\n"
+                f"📝 Plan: {status.get('plan', 'Unknown')}\n"
+                f"⏳ Expires: {expires_text}\n"
+                f"🪙 Points: {status.get('points', 'Unlimited')}"
+            )
+        else:
+            response = (
+                f"🌟 <b>Premium Status</b> for user {user_id}\n\n"
+                f"❌ Active: No\n"
+                f"📝 Reason: {status.get('reason', 'Unknown')}"
+            )
+        
+        await message.reply_text(response, reply_markup=AdminPanel.back_button("premium_menu"))
+        
+    except Exception as e:
+        await message.reply_text(
+            f"❌ Error: {str(e)}\n\n"
+            "Usage: <code>/checkpremium user_id</code>\n"
+            "Example: <code>/checkpremium 123456</code>",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
     
 @Client.on_message(filters.command("broadcast") & filters.user(ADMIN_USER_ID))
 async def broadcast_command(client: Client, message: Message):
