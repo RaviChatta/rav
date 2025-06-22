@@ -44,9 +44,10 @@ class AdminPanel:
             "new_user_balance": 70
         },
         "premium_plans": {
-            "basic": {"price": 100, "features": "Basic features"},
-            "premium": {"price": 200, "features": "Extra features"},
-            "gold": {"price": 300, "features": "All features"}
+            "1day": {"price": 5, "duration": 1, "points": 10000},
+            "1week": {"price": 10, "duration": 7, "points": 10000},
+            "2weeks": {"price": 15, "duration": 14, "points": 10000},
+            "1month": {"price": 30, "duration": 30, "points": 10000}
         }
     }
     
@@ -684,15 +685,16 @@ class AdminPanel:
     
     @staticmethod
     async def show_premium_plans(client: Client, callback: CallbackQuery) -> Message:
-        """Display premium plans"""
+        """Display premium plans with durations and points"""
         plans = await AdminPanel.get_config("premium_plans")
         
         text = "🌟 <b>Premium Plans</b>\n\n"
         for plan, details in plans.items():
             text += (
                 f"✨ <b>{plan.capitalize()}</b>\n"
-                f"🪙 Price: {details['price']} points\n"
-                f"📝 Features: {details['features']}\n\n"
+                f"⏳ Duration: {details['duration']} days\n"
+                f"🪙 Points: {details['points']} (unlimited during premium)\n"
+                f"💰 Price: {details['price']} points\n\n"
             )
         
         return await AdminPanel._edit_or_reply(
@@ -700,7 +702,6 @@ class AdminPanel:
             text,
             reply_markup=AdminPanel.back_button("premium_menu")
         )
-    
     @staticmethod
     async def handle_activate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
         """Initiate premium activation flow"""
@@ -719,40 +720,51 @@ class AdminPanel:
         )
     
     @staticmethod
-    async def process_activate_premium(client: Client, message: Message) -> Message:
-        """Process premium activation"""
-        try:
-            parts = message.text.split()
-            if len(parts) < 3:
-                raise ValueError("Missing parameters")
-            
-            user_id = int(parts[1])
-            duration_str = parts[2]
-            plan = parts[3] if len(parts) > 3 else "premium"
-            
-            duration = AdminPanel._parse_duration(duration_str)
-            
-            await hyoshcoder.activate_premium(
-                user_id=user_id,
-                plan=plan,
-                duration_days=duration.days
-            )
-            
-            return await AdminPanel._edit_or_reply(
-                message,
-                f"✅ Activated premium for user {user_id}\n"
-                f"⏳ Duration: {duration_str}\n"
-                f"📝 Plan: {plan}",
-                reply_markup=AdminPanel.back_button("premium_menu")
-            )
-        except Exception as e:
-            return await AdminPanel._edit_or_reply(
-                message,
-                f"❌ Error: {str(e)}\n\n"
-                "Usage: <code>/premium user_id duration plan</code>\n"
-                "Example: <code>/premium 123456 30d gold</code>",
-                reply_markup=AdminPanel.back_button("premium_menu")
-            )
+async def process_activate_premium(client: Client, message: Message) -> Message:
+    """Process premium activation with unlimited points"""
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            raise ValueError("Missing parameters")
+        
+        user_id = int(parts[1])
+        plan = parts[2].lower()  # 1day, 1week, 2weeks, 1month
+        reason = parts[3] if len(parts) > 3 else f"{plan} premium activation"
+        
+        plans = await AdminPanel.get_config("premium_plans")
+        if plan not in plans:
+            raise ValueError(f"Invalid plan. Available: {', '.join(plans.keys())}")
+        
+        # Get user's current points to store for later
+        user = await hyoshcoder.get_user(user_id)
+        original_points = user['points']['balance']
+        
+        # Activate premium with unlimited points
+        await hyoshcoder.activate_premium(
+            user_id=user_id,
+            plan=plan,
+            duration_days=plans[plan]["duration"],
+            original_points=original_points,
+            premium_points=plans[plan]["points"]
+        )
+        
+        return await AdminPanel._edit_or_reply(
+            message,
+            f"✅ Activated {plan} premium for user {user_id}\n"
+            f"⏳ Duration: {plans[plan]['duration']} days\n"
+            f"🪙 Points set to: {plans[plan]['points']}\n"
+            f"📝 Reason: {reason}",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
+    except Exception as e:
+        return await AdminPanel._edit_or_reply(
+            message,
+            f"❌ Error: {str(e)}\n\n"
+            "Usage: <code>/premium user_id plan [reason]</code>\n"
+            "Available plans: 1day, 1week, 2weeks, 1month\n"
+            "Example: <code>/premium 123456 1week \"Special offer\"</code>",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
     
     @staticmethod
     async def handle_deactivate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
@@ -807,39 +819,48 @@ class AdminPanel:
         )
     
     @staticmethod
-    async def process_check_premium(client: Client, message: Message) -> Message:
-        """Process premium status check"""
-        try:
-            user_id = int(message.text.split()[1])
-            status = await hyoshcoder.check_premium_status(user_id)
-            
-            if status["is_premium"]:
-                text = (
-                    f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
-                    f"✅ Active Premium\n"
-                    f"📝 Plan: {status.get('plan', 'Unknown')}\n"
-                    f"⏳ Valid until: {status.get('until', 'Unknown')}"
-                )
-            else:
-                text = (
-                    f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
-                    f"❌ No active premium\n"
-                    f"📝 Reason: {status.get('reason', 'Unknown')}"
-                )
-            
-            return await AdminPanel._edit_or_reply(
-                message,
-                text,
-                reply_markup=AdminPanel.back_button("premium_menu")
+async def process_check_premium(client: Client, message: Message) -> Message:
+    """Process premium status check with points info"""
+    try:
+        user_id = int(message.text.split()[1])
+        user = await hyoshcoder.get_user(user_id)
+        
+        if not user:
+            raise ValueError("User not found")
+        
+        premium = user.get('premium', {})
+        points = user.get('points', {})
+        
+        if premium.get('is_premium'):
+            remaining = (premium['expires_at'] - datetime.now()).days
+            text = (
+                f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
+                f"✅ Active Premium ({premium.get('plan', 'Unknown')})\n"
+                f"⏳ Days remaining: {remaining}\n"
+                f"💎 Unlimited Points: {points.get('balance', 0)}/{premium.get('premium_points', 0)}\n"
+                f"📅 Original Points: {premium.get('original_points', 0)}"
             )
-        except Exception as e:
-            return await AdminPanel._edit_or_reply(
-                message,
-                f"❌ Error: {str(e)}\n\n"
-                "Usage: <code>/checkpremium user_id</code>\n"
-                "Example: <code>/checkpremium 123456</code>",
-                reply_markup=AdminPanel.back_button("premium_menu")
+        else:
+            text = (
+                f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
+                f"❌ No active premium\n"
+                f"🪙 Current Points: {points.get('balance', 0)}\n"
+                f"📅 Last Premium: {premium.get('expired_at', 'Never')}"
             )
+        
+        return await AdminPanel._edit_or_reply(
+            message,
+            text,
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
+    except Exception as e:
+        return await AdminPanel._edit_or_reply(
+            message,
+            f"❌ Error: {str(e)}\n\n"
+            "Usage: <code>/checkpremium user_id</code>\n"
+            "Example: <code>/checkpremium 123456</code>",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
 
     # ========================
     # Broadcast Handlers
