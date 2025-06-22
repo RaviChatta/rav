@@ -299,7 +299,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             new_status = not current_status
             await hyoshcoder.set_sequential_mode(user_id, new_status)
             
-            btn_seq_text = "sᴇǫ✅" if new_status else "ˢᵉᑫ❌"
+            btn_seq_text = "sᴇǫ✅" if new_status else "sᴇǫ❌"
             src_txt = "File name" if await hyoshcoder.get_src_info(user_id) == "file_name" else "File caption"
             
             btn = InlineKeyboardMarkup([
@@ -314,7 +314,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         InlineKeyboardButton("ᴅᴜᴍᴘ", callback_data='setdump')
                     ],
                     [
-                        InlineKeyboardButton("sᴇǫ", callback_data='sequential'),
+                        InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
                         InlineKeyboardButton("ᴘʀᴇᴍ", callback_data='premiumx'),
                         InlineKeyboardButton(f"sʀᴄ: {src_txt}", callback_data='toggle_src')
                     ],
@@ -334,7 +334,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await hyoshcoder.set_src_info(user_id, new_src)
             
             sequential_status = await hyoshcoder.get_sequential_mode(user_id)
-            btn_seq_text = "sᴇǫ✅" if sequential_status else "ˢᵉᑫ❌"
+            btn_seq_text = "sᴇǫ✅" if sequential_status else "sᴇǫ❌"
             src_txt = "File name" if new_src == "file_name" else "File caption"
             
             btn = InlineKeyboardMarkup([
@@ -349,7 +349,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         InlineKeyboardButton("ᴅᴜᴍᴘ", callback_data='setdump')
                     ],
                     [
-                        InlineKeyboardButton("sᴇǫ", callback_data='sequential'),
+                        InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
                         InlineKeyboardButton("ᴘʀᴇᴍ", callback_data='premiumx'),
                         InlineKeyboardButton(f"sʀᴄ: {src_txt}", callback_data='toggle_src')
                     ],
