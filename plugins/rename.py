@@ -1123,7 +1123,7 @@ async def show_leaderboard(client: Client, message: Message):
         leaderboard_text = await build_complete_leaderboard(client, message.from_user.id, view_type)
         
         # Send message with working button
-        msg = await message.reply_text(
+        await message.reply_text(
             leaderboard_text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
@@ -1138,7 +1138,7 @@ async def show_leaderboard(client: Client, message: Message):
         logger.error(f"Leaderboard error: {str(e)}")
         await message.reply_text("🚨 Failed to load leaderboard!")
 
-@Client.on_callback_query(filters.regex(r"^leaderboard_toggle:(renames|sequences)$"))
+@Client.on_callback_query(filters.regex(r"^leaderboard_toggle:"))
 async def handle_leaderboard_toggle(client, callback_query):
     """Handle leaderboard toggle"""
     try:
@@ -1179,7 +1179,7 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
     """Build complete leaderboard with proper data"""
     # Get top users based on view type
     if view_type == "renames":
-        # Get top users by total file renames
+        # Count all individual file renames
         top_users = await hyoshcoder.file_stats.aggregate([
             {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
             {"$sort": {"total": -1}},
@@ -1201,11 +1201,9 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
                 user_count = user["total"]
                 break
     else:
-        # Get top users by total sequences (counted by media_group_id operations)
-        # We'll consider each media group as a sequence
-        top_users = await hyoshcoder.file_stats.aggregate([
-            {"$match": {"media_group_id": {"$exists": True}}},
-            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+        # Count sequence operations (files processed between /ssequence and /esequence)
+        top_users = await hyoshcoder.sequences.aggregate([
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
             {"$sort": {"total": -1}},
             {"$limit": 10}
         ]).to_list(length=10)
@@ -1214,9 +1212,8 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
         # Get user's rank and count for sequences
         user_rank = None
         user_count = 0
-        all_users = await hyoshcoder.file_stats.aggregate([
-            {"$match": {"media_group_id": {"$exists": True}}},
-            {"$group": {"_id": "$user_id", "total": {"$sum": 1}}},
+        all_users = await hyoshcoder.sequences.aggregate([
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$file_count"}}},
             {"$sort": {"total": -1}}
         ]).to_list(None)
         
@@ -1226,7 +1223,7 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
                 user_count = user["total"]
                 break
     
-    # Build leaderboard text with premium styling
+    # Build leaderboard text
     text = f"""
 ✨ <b>{title}</b> ✨
 ━━━━━━━━━━━━━━━━
@@ -1249,7 +1246,6 @@ async def build_complete_leaderboard(client: Client, user_id: int, view_type: st
     text += f"""
 ━━━━━━━━━━━━━━━━
 <b>🌟 YOUR RANK:</b> <code>#{user_rank if user_rank else 'N/A'}</code> (<code>{user_count}</code> {view_type})
-<b>🕒 Updated:</b> <code>{datetime.now().strftime('%d %b %Y • %H:%M')}</code>
 """
     
     return text
