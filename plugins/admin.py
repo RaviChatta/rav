@@ -718,7 +718,17 @@ class AdminPanel:
             f"Available plans:\n{plan_options}",
             reply_markup=AdminPanel.back_button("premium_menu")
         )
-    
+    @staticmethod
+    async def handle_deactivate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Initiate premium deactivation flow"""
+        return await AdminPanel._edit_or_reply(
+            target,
+            "❌ <b>Deactivate Premium</b>\n\n"
+            "Enter command:\n"
+            "<code>/depremium user_id [reason]</code>\n\n"
+            "Example: <code>/depremium 123456 \"Violation of terms\"</code>",
+            reply_markup=AdminPanel.back_button("premium_menu")
+        )
     @staticmethod
     async def process_activate_premium(client: Client, message: Message) -> Message:
         """Process premium activation with unlimited points"""
@@ -728,31 +738,41 @@ class AdminPanel:
                 raise ValueError("Missing parameters")
             
             user_id = int(parts[1])
-            plan = parts[2].lower()  # 1day, 1week, 2weeks, 1month
+            plan = parts[2].lower()  # e.g., "1week"
             reason = parts[3] if len(parts) > 3 else f"{plan} premium activation"
             
             plans = await AdminPanel.get_config("premium_plans")
             if plan not in plans:
-                raise ValueError(f"Invalid plan. Available: {', '.join(plans.keys())}")
+                available_plans = ", ".join(plans.keys())
+                raise ValueError(f"Invalid plan. Available: {available_plans}")
+            
+            # Get plan details
+            plan_details = plans[plan]
+            duration_days = plan_details["duration"]
+            premium_points = plan_details["points"]
             
             # Get user's current points to store for later
             user = await hyoshcoder.get_user(user_id)
+            if not user:
+                raise ValueError("User not found")
+            
             original_points = user['points']['balance']
             
             # Activate premium with unlimited points
             await hyoshcoder.activate_premium(
                 user_id=user_id,
                 plan=plan,
-                duration_days=plans[plan]["duration"],
+                duration_days=duration_days,
                 original_points=original_points,
-                premium_points=plans[plan]["points"]
+                premium_points=premium_points,
+                reason=reason
             )
             
             return await AdminPanel._edit_or_reply(
                 message,
                 f"✅ Activated {plan} premium for user {user_id}\n"
-                f"⏳ Duration: {plans[plan]['duration']} days\n"
-                f"🪙 Points set to: {plans[plan]['points']}\n"
+                f"⏳ Duration: {duration_days} days\n"
+                f"🪙 Points set to: {premium_points}\n"
                 f"📝 Reason: {reason}",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
@@ -761,7 +781,6 @@ class AdminPanel:
                 message,
                 f"❌ Error: {str(e)}\n\n"
                 "Usage: <code>/premium user_id plan [reason]</code>\n"
-                "Available plans: 1day, 1week, 2weeks, 1month\n"
                 "Example: <code>/premium 123456 1week \"Special offer\"</code>",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
@@ -891,108 +910,145 @@ class AdminPanel:
     # ========================
     
     @staticmethod
-    async def handle_broadcast(client: Client, callback: CallbackQuery) -> Message:
-        """Initiate broadcast flow"""
+    async def handle_broadcast_menu(client: Client, callback: CallbackQuery) -> Message:
+        """Show broadcast options with clear instructions"""
         return await AdminPanel._edit_or_reply(
             callback,
             "📢 <b>Broadcast Message</b>\n\n"
-            "Reply to this message with your content:\n"
-            "- Text for text broadcast\n"
-            "- Media for media broadcast\n\n"
-            "Add <code>--silent</code> to disable notifications\n"
-            "Add <code>--pin</code> to pin the message",
+            "1. First, prepare your message (text, photo, video, etc.)\n"
+            "2. Reply to that message with <code>/broadcast</code>\n\n"
+            "Options:\n"
+            "- Add <code>--silent</code> to send silently\n"
+            "- Add <code>--pin</code> to pin the message\n"
+            "- Add <code>--users</code> to broadcast to users only\n"
+            "- Add <code>--groups</code> to broadcast to groups only",
             reply_markup=AdminPanel.back_button("broadcast_menu")
         )
     
     @staticmethod
     async def process_broadcast(client: Client, message: Message) -> Message:
-        """Process sending broadcast to all users"""
+        """Completely rewritten broadcast handler with better reliability"""
         try:
             if not message.reply_to_message:
                 raise ValueError("You must reply to a message to broadcast it")
-            
+    
+            # Parse broadcast options
             broadcast_msg = message.reply_to_message
-            silent = "--silent" in message.text.lower()
-            pin_message = "--pin" in message.text.lower()
-            
-            users = await hyoshcoder.get_all_users(filter_banned=True)
-            total = len(users)
-            success = 0
-            failed = 0
-            
-            # Send initial status message
-            status_msg = await message.reply_text(
-                f"📢 Broadcasting to {total} users...\n"
+            options = message.text.lower().split()
+            silent = "--silent" in options
+            pin_message = "--pin" in options
+            users_only = "--users" in options
+            groups_only = "--groups" in options
+    
+            # Get appropriate recipients
+            if users_only:
+                recipients = await hyoshcoder.get_all_users(filter_banned=True)
+            elif groups_only:
+                recipients = await hyoshcoder.get_all_groups()
+            else:
+                recipients = await hyoshcoder.get_all_chats(filter_banned=True)
+    
+            total = len(recipients)
+            if total == 0:
+                raise ValueError("No recipients found for broadcast")
+    
+            # Prepare progress message
+            progress_msg = await message.reply_text(
+                f"📢 Preparing to broadcast to {total} chats...\n"
+                f"🔄 Status: Initializing\n"
                 f"✅ Success: 0\n"
                 f"❌ Failed: 0\n"
-                f"⏳ Please wait..."
+                f"⏳ Progress: 0%"
             )
-            
-            # Process broadcasting
-            for user in users:
+    
+            success = 0
+            failed = 0
+            start_time = datetime.now()
+    
+            async def send_to_chat(chat):
+                nonlocal success, failed
                 try:
                     if broadcast_msg.text:
                         sent_msg = await client.send_message(
-                            chat_id=user["_id"],
+                            chat_id=chat["_id"],
                             text=broadcast_msg.text,
                             parse_mode=enums.ParseMode.HTML,
                             disable_notification=silent
                         )
                     else:
                         sent_msg = await broadcast_msg.copy(
-                            chat_id=user["_id"],
+                            chat_id=chat["_id"],
                             disable_notification=silent
                         )
-                    
+    
                     if pin_message:
                         try:
-                            await sent_msg.pin()
+                            await sent_msg.pin(disable_notification=True)
                         except Exception as pin_error:
-                            logger.warning(f"Couldn't pin message for {user['_id']}: {pin_error}")
-                    
+                            logger.warning(f"Couldn't pin message in {chat['_id']}: {pin_error}")
+    
                     success += 1
-                except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
-                    failed += 1
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
-                    continue
-                except Exception as e:
-                    logger.error(f"Broadcast error for {user['_id']}: {e}")
+                    await send_to_chat(chat)  # Retry after flood wait
+                except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
                     failed += 1
-                
-                # Update status periodically
+                except Exception as e:
+                    logger.error(f"Broadcast error for {chat['_id']}: {e}")
+                    failed += 1
+    
+                # Update progress every 10 messages or when complete
                 if (success + failed) % 10 == 0 or (success + failed) == total:
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    remaining = (total - (success + failed)) * (elapsed / (success + failed + 1))
+                    progress = (success + failed) / total * 100
+    
                     try:
-                        await status_msg.edit_text(
-                            f"📢 Broadcasting to {total} users...\n"
+                        await progress_msg.edit_text(
+                            f"📢 Broadcasting to {total} chats...\n"
+                            f"🔄 Status: Active\n"
                             f"✅ Success: {success}\n"
                             f"❌ Failed: {failed}\n"
-                            f"⏳ {((success + failed)/total)*100:.1f}% complete"
+                            f"⏳ Progress: {progress:.1f}%\n"
+                            f"⏱ ETA: {timedelta(seconds=int(remaining))}"
                         )
                     except Exception as e:
-                        logger.error(f"Error updating status: {e}")
-            
+                        logger.error(f"Error updating progress: {e}")
+    
+            # Process broadcasting in batches to avoid flooding
+            batch_size = 10
+            for i in range(0, total, batch_size):
+                batch = recipients[i:i + batch_size]
+                await asyncio.gather(*[send_to_chat(chat) for chat in batch])
+    
             # Final report
-            final_text = (
+            elapsed_time = datetime.now() - start_time
+            success_rate = (success / total) * 100 if total > 0 else 0
+    
+            final_report = (
                 f"📢 <b>Broadcast Complete!</b>\n\n"
-                f"👥 Total Users: {total}\n"
-                f"✅ Successfully Sent: {success}\n"
-                f"❌ Failed to Send: {failed}\n"
-                f"📊 Success Rate: {(success/total)*100:.1f}%"
+                f"⏱ Time taken: {elapsed_time}\n"
+                f"👥 Total recipients: {total}\n"
+                f"✅ Successfully sent: {success}\n"
+                f"❌ Failed to send: {failed}\n"
+                f"📊 Success rate: {success_rate:.1f}%"
             )
-            
-            await status_msg.edit_text(final_text)
+    
+            await progress_msg.edit_text(final_report)
             return await message.reply_text(
-                "✅ Broadcast completed!",
+                "✅ Broadcast completed successfully!",
                 reply_markup=AdminPanel.back_button("broadcast_menu")
             )
-            
+    
         except Exception as e:
             logger.error(f"Broadcast error: {e}", exc_info=True)
-            return await message.reply_text(
-                f"❌ Broadcast error: {str(e)}",
+            error_msg = await message.reply_text(
+                f"❌ Broadcast failed: {str(e)}",
                 reply_markup=AdminPanel.back_button("broadcast_menu")
             )
+            await asyncio.sleep(10)
+            await error_msg.delete()
+            return None
     @staticmethod
     async def handle_stats_broadcast(client: Client, callback: CallbackQuery) -> Message:
         """Initiate stats broadcast"""
