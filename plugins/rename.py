@@ -1102,119 +1102,99 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 
 # LEADERBOARD HANDLERS
-# LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Show the initial leaderboard with toggle buttons"""
+    """Beautiful leaderboard with auto-deletion"""
     try:
-        # Start with Renames leaderboard by default
-        await send_leaderboard(client, message.chat.id, "renames", message.from_user.id)
-    except Exception as e:
-        logger.error(f"Leaderboard error: {e}")
-        await message.reply_text("🚨 Failed to load leaderboard!")
-
-async def send_leaderboard(client: Client, chat_id: int, lb_type: str, user_id: int):
-    """Send or update leaderboard with proper buttons"""
-    # Get leaderboard data
-    if lb_type == "renames":
-        # Renames leaderboard - top users by file renames
-        top_users = await hyoshcoder.file_stats.aggregate([
-            {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 10}
-        ]).to_list(length=10)
+        loading_msg = await message.reply_text("🔄 𝗟𝗼𝗮𝗱𝗶𝗻𝗴 𝗹𝗲𝗮𝗱𝗲𝗿𝗯𝗼𝗮𝗿𝗱...")
         
-        # Get user's rank
-        all_users = await hyoshcoder.file_stats.aggregate([
-            {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]).to_list(None)
+        # Try to get leaderboard data with retry logic
+        max_retries = 3
+        leaderboard = []
         
-        user_rank = next((i+1 for i, u in enumerate(all_users) if u["_id"] == user_id), None)
-        user_count = next((u["count"] for u in all_users if u["_id"] == user_id), 0)
+        for attempt in range(max_retries):
+            try:
+                pipeline = [
+                    {"$group": {"_id": "$user_id", "total_renames": {"$sum": 1}}},
+                    {"$sort": {"total_renames": -1}},
+                    {"$limit": 10}
+                ]
+                
+                top_users = await hyoshcoder.file_stats.aggregate(pipeline).to_list(length=10)
+                
+                for user in top_users:
+                    try:
+                        # Get user details with proper error handling
+                        user_data = await client.get_users(user["_id"])
+                        username = user_data.username if user_data.username else user_data.first_name
+                        leaderboard.append({
+                            "user_id": user["_id"],
+                            "username": username,
+                            "renames": user["total_renames"]
+                        })
+                    except Exception as e:
+                        logger.error(f"Error getting user data for {user['_id']}: {e}")
+                        leaderboard.append({
+                            "user_id": user["_id"],
+                            "username": "Anonymous",
+                            "renames": user["total_renames"]
+                        })
+                        continue
+                
+                break  # Success, exit retry loop
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(2 ** attempt)
+                continue
         
-        title = "🏆 TOP RENAMERS"
-        metric = "files renamed"
-    else:
-        # Sequences leaderboard - top users by sequenced files
-        top_users = await hyoshcoder.sequences.aggregate([
-            {"$group": {"_id": "$user_id", "count": {"$sum": "$file_count"}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 10}
-        ]).to_list(length=10)
+        await loading_msg.delete()
         
-        # Get user's sequence rank
-        all_users = await hyoshcoder.sequences.aggregate([
-            {"$group": {"_id": "$user_id", "count": {"$sum": "$file_count"}}},
-            {"$sort": {"count": -1}}
-        ]).to_list(None)
+        if not leaderboard:
+            return await message.reply_text("No rename data available yet!")
         
-        user_rank = next((i+1 for i, u in enumerate(all_users) if u["_id"] == user_id), None)
-        user_count = next((u["count"] for u in all_users if u["_id"] == user_id), 0)
+        text = "✨ **Top 10 File Renamers** ✨\n\n"
+        medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
         
-        title = "🏆 TOP SEQUENCERS"
-        metric = "files sequenced"
-    
-    # Build leaderboard text
-    text = f"✨ **{title}** ✨\n━━━━━━━━━━━━━━━━\n\n"
-    
-    # Add top users with medals
-    medals = ["🥇", "🥈", "🥉"] + [f"{i}." for i in range(4, 11)]
-    for i, user in enumerate(top_users[:10]):
-        try:
-            user_obj = await client.get_users(user["_id"])
-            name = user_obj.first_name
-            if user_obj.username:
-                name = f"@{user_obj.username}"
-            text += f"{medals[i]} {name[:15]} - `{user['count']}` {metric}\n"
-        except:
-            text += f"{medals[i]} Anonymous - `{user['count']}` {metric}\n"
-    
-    # Add user's position
-    text += f"\n━━━━━━━━━━━━━━━━\n"
-    text += f"🌟 **Your Rank:** `#{user_rank if user_rank else 'N/A'}`\n"
-    text += f"📊 **Your {metric.split()[0].title()}:** `{user_count}`\n"
-    text += f"🕒 Updated: `{datetime.now().strftime('%d %b %Y %H:%M')}`"
-    
-    # Create buttons
-    buttons = [
-        [
-            InlineKeyboardButton(
-                "🔁 Show Sequences" if lb_type == "renames" else "🔁 Show Renames",
-                callback_data=f"lb_switch:{lb_type}:{user_id}"
+        for i, user in enumerate(leaderboard, start=1):
+            text += (
+                f"{medals[i-1]} **#{i}:** "
+                f"[@{user['username']}](tg://user?id={user['user_id']}) - "
+                f"`{user['renames']} files`\n"
             )
-        ]
-    ]
-    
-    # Send or update message
-    try:
-        await client.send_message(
-            chat_id,
-            text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-            disable_web_page_preview=True
-        )
-    except Exception as e:
-        logger.error(f"Error sending leaderboard: {e}")
+        
+        try:
+            user_rank, user_renames = await get_user_rank(message.from_user.id)
+            if user_rank:
+                if user_rank > 10:
+                    text += (
+                        f"\n📊 **Your Rank:** #{user_rank}\n"
+                        f"📝 **Your Renames:** {user_renames}\n"
+                        f"➖ You need {leaderboard[-1]['renames'] - user_renames + 1} more to reach top 10!"
+                    )
+                else:
+                    text += f"\n🎉 **You're in top 10!** Keep going!"
+        except Exception as e:
+            logger.error(f"Error getting user rank: {e}")
+            text += "\n⚠️ Couldn't load your personal stats"
 
-@Client.on_callback_query(filters.regex(r"^lb_switch:(renames|sequences):(\d+)$"))
-async def handle_leaderboard_switch(client, callback_query):
-    """Handle leaderboard switching"""
-    try:
-        data_parts = callback_query.data.split(":")
-        current_type = data_parts[1]
-        user_id = int(data_parts[2])
+        # Send the full leaderboard to the chat where command was used
+        msg = await message.reply_text(text, disable_web_page_preview=True)
         
-        # Determine which leaderboard to show next
-        new_type = "sequences" if current_type == "renames" else "renames"
+        # Auto-delete after 1 minute
+        await asyncio.sleep(60)
+        try:
+            await msg.delete()
+        except:
+            pass
         
-        # Edit the existing message with new leaderboard
-        await send_leaderboard(client, callback_query.message.chat.id, new_type, user_id)
-        await callback_query.message.delete()
-        await callback_query.answer()
     except Exception as e:
-        logger.error(f"Leaderboard switch error: {e}")
-        await callback_query.answer("Failed to switch leaderboard", show_alert=True)
+        logger.error(f"Error generating leaderboard: {e}")
+        try:
+            await loading_msg.delete()
+        except:
+            pass
+        await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
 # SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
