@@ -858,70 +858,88 @@ class AdminPanel:
             reply_markup=AdminPanel.back_button("broadcast_menu")
         )
     
-    @staticmethod
-    async def process_broadcast(client: Client, message: Message) -> Message:
-        """Process sending broadcast to all users"""
-        try:
-            if not message.reply_to_message:
-                raise ValueError("You must reply to the broadcast instruction message")
+@staticmethod
+async def process_broadcast(client: Client, message: Message) -> Message:
+    """Process sending broadcast to all users"""
+    try:
+        if not message.reply_to_message:
+            raise ValueError("You must reply to the broadcast instruction message")
+        
+        broadcast_msg = message.reply_to_message
+        silent = "--silent" in message.text.lower()
+        
+        users = await hyoshcoder.get_all_users(filter_banned=True)
+        total = len(users)
+        success = 0
+        failed = 0
+        
+        # Send initial status message
+        status_msg = await message.reply_text(
+            f"📢 Broadcasting to {total} users...\n"
+            f"✅ Success: {success}\n"
+            f"❌ Failed: {failed}\n"
+            f"⏳ Please wait..."
+        )
+        
+        # Process broadcasting
+        for user in users:
+            try:
+                if broadcast_msg.text:
+                    await client.send_message(
+                        chat_id=user["_id"],
+                        text=broadcast_msg.text,
+                        parse_mode=enums.ParseMode.HTML,
+                        disable_notification=silent
+                    )
+                else:
+                    await broadcast_msg.copy(
+                        chat_id=user["_id"],
+                        disable_notification=silent
+                    )
+                success += 1
+            except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
+                failed += 1
+            except FloodWait as e:
+                # Handle flood waits properly
+                await asyncio.sleep(e.value)
+                continue
+            except Exception as e:
+                logger.error(f"Broadcast error for {user['_id']}: {e}")
+                failed += 1
             
-            broadcast_msg = message.reply_to_message
-            silent = "--silent" in message.text.lower()
-            
-            users = await hyoshcoder.get_all_users(filter_banned=True)
-            total = len(users)
-            success = 0
-            failed = 0
-            
-            status_msg = await message.reply_text(
-                f"📢 Broadcasting to {total} users...\n"
-                f"✅ Success: {success}\n"
-                f"❌ Failed: {failed}"
-            )
-            
-            for user in users:
+            # Update status every 10 sends or if it's the last message
+            if (success + failed) % 10 == 0 or (success + failed) == total:
                 try:
-                    if broadcast_msg.text:
-                        await client.send_message(
-                            chat_id=user["_id"],
-                            text=broadcast_msg.text,
-                            parse_mode=enums.ParseMode.HTML,
-                            disable_notification=silent
-                        )
-                    else:
-                        await broadcast_msg.copy(
-                            chat_id=user["_id"],
-                            disable_notification=silent
-                        )
-                    success += 1
-                except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
-                    failed += 1
+                    await status_msg.edit_text(
+                        f"📢 Broadcasting to {total} users...\n"
+                        f"✅ Success: {success}\n"
+                        f"❌ Failed: {failed}\n"
+                        f"⏳ {round(((success + failed)/total)*100, 1)}% complete"
+                    )
                 except Exception as e:
-                    logger.error(f"Broadcast error for {user['_id']}: {e}")
-                    failed += 1
-                
-                # Update status every 10 sends
-                if (success + failed) % 10 == 0:
-                    with suppress(Exception):
-                        await status_msg.edit_text(
-                            f"📢 Broadcasting to {total} users...\n"
-                            f"✅ Success: {success}\n"
-                            f"❌ Failed: {failed}"
-                        )
-            
-            await status_msg.edit_text(
-                f"📢 Broadcast Complete!\n"
-                f"✅ Success: {success}\n"
-                f"❌ Failed: {failed}"
-            )
-            
-        except Exception as e:
-            return await AdminPanel._edit_or_reply(
-                message,
-                f"❌ Broadcast error: {str(e)}",
-                reply_markup=AdminPanel.back_button("broadcast_menu")
-            )
-    
+                    logger.error(f"Error updating status: {e}")
+        
+        # Final report
+        await status_msg.edit_text(
+            f"📢 Broadcast Complete!\n\n"
+            f"✅ Success: {success}\n"
+            f"❌ Failed: {failed}\n"
+            f"📊 Success Rate: {round((success/total)*100, 1)}%"
+        )
+        
+        return await AdminPanel._edit_or_reply(
+            message,
+            "✅ Broadcast completed!",
+            reply_markup=AdminPanel.back_button("broadcast_menu")
+        )
+        
+    except Exception as e:
+        logger.error(f"Broadcast error: {e}", exc_info=True)
+        return await AdminPanel._edit_or_reply(
+            message,
+            f"❌ Broadcast error: {str(e)}",
+            reply_markup=AdminPanel.back_button("broadcast_menu")
+        )
     @staticmethod
     async def handle_stats_broadcast(client: Client, callback: CallbackQuery) -> Message:
         """Initiate stats broadcast"""
@@ -1285,10 +1303,14 @@ async def deactivate_premium_command(client: Client, message: Message):
 @Client.on_message(filters.command("checkpremium") & filters.user(ADMIN_USER_ID))
 async def check_premium_command(client: Client, message: Message):
     await AdminPanel.process_check_premium(client, message)
-
+    
 @Client.on_message(filters.command("broadcast") & filters.user(ADMIN_USER_ID))
 async def broadcast_command(client: Client, message: Message):
-    await AdminPanel.process_broadcast(client, message)
+    """Handle the broadcast command"""
+    if message.reply_to_message:
+        await AdminPanel.process_broadcast(client, message)
+    else:
+        await AdminPanel.handle_broadcast(client, message)
 
 # ========================
 # Callback Handlers
