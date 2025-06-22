@@ -765,7 +765,7 @@ class AdminPanel:
         )
     @staticmethod
     async def process_activate_premium(client: Client, message: Message) -> Message:
-        """Process premium activation command"""
+        """Process premium activation command with proper database handling"""
         try:
             parts = message.text.split(maxsplit=3)
             if len(parts) < 3:
@@ -775,7 +775,7 @@ class AdminPanel:
             plan = parts[2].lower()
             reason = parts[3] if len(parts) > 3 else "Admin activation"
             
-            # Define plans directly instead of getting from config
+            # Defined plans with all required parameters
             plans = {
                 "1day": {"duration": 1, "points": 10000},
                 "1week": {"duration": 7, "points": 10000},
@@ -791,36 +791,40 @@ class AdminPanel:
                 raise ValueError(f"Invalid plan. Available: {available}")
             
             plan_details = plans[plan]
-            duration = plan_details["duration"]
-            points = plan_details["points"]
             
-            # Get user's current points
+            # Get user first to verify existence
             user = await hyoshcoder.get_user(user_id)
             if not user:
                 raise ValueError("User not found")
             
-            original_points = user['points']['balance']
-            
-            # Activate premium
-            await hyoshcoder.activate_premium(
-                user_id=user_id,
-                plan=plan,
-                duration_days=duration,
-                original_points=original_points,
-                premium_points=points,
-                reason=reason
+            # Activate premium - modified to match your database method
+            result = await hyoshcoder.db.users.update_one(
+                {"_id": user_id},
+                {"$set": {
+                    "premium.is_premium": True,
+                    "premium.plan": plan,
+                    "premium.activated_at": datetime.now(),
+                    "premium.expires_at": datetime.now() + timedelta(days=plan_details["duration"]),
+                    "premium.reason": reason,
+                    "points.balance": plan_details["points"],
+                    "premium.original_points": user['points']['balance']
+                }}
             )
+            
+            if not result.modified_count:
+                raise ValueError("Failed to activate premium - user not updated")
             
             return await AdminPanel._edit_or_reply(
                 message,
                 f"✅ Activated {plan} premium for user {user_id}\n"
-                f"⏳ Duration: {duration} days\n"
-                f"🪙 Points: {points}\n"
+                f"⏳ Duration: {plan_details['duration']} days\n"
+                f"🪙 Points: {plan_details['points']}\n"
                 f"📝 Reason: {reason}",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
             
         except Exception as e:
+            logger.error(f"Premium activation error: {e}")
             return await AdminPanel._edit_or_reply(
                 message,
                 f"❌ Error: {str(e)}\n\n"
@@ -828,7 +832,7 @@ class AdminPanel:
                 "Example: <code>/premium 123456 1week \"Special offer\"</code>",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
-        
+            
     @staticmethod
     async def handle_deactivate_premium_menu(client: Client, callback: CallbackQuery) -> Message:
         """Show deactivate premium menu"""
@@ -969,83 +973,87 @@ class AdminPanel:
 
     @staticmethod
     async def process_broadcast(client: Client, message: Message) -> Message:
-        """Process sending broadcast"""
+        """Fixed broadcast method that properly handles user list"""
         try:
             if not message.reply_to_message:
-                raise ValueError("Reply to a message to broadcast it")
-            
+                raise ValueError("You must reply to a message to broadcast it")
+    
             broadcast_msg = message.reply_to_message
             options = message.text.lower().split()
             silent = "--silent" in options
-            pin = "--pin" in options
+            pin_message = "--pin" in options
             
+            # Get all users as a list (not async generator)
             users = await hyoshcoder.get_all_users(filter_banned=True)
+            if not isinstance(users, list):
+                users = [user async for user in users] if hasattr(users, '__aiter__') else list(users)
+            
             total = len(users)
             success = 0
             failed = 0
             
             # Send initial status
-            status = await message.reply_text(
+            status_msg = await message.reply_text(
                 f"📢 Broadcasting to {total} users...\n"
                 f"✅ Success: 0\n"
                 f"❌ Failed: 0\n"
                 f"⏳ Progress: 0%"
             )
             
-            # Process in batches
-            batch_size = 10
-            for i in range(0, total, batch_size):
-                batch = users[i:i + batch_size]
-                
-                for user in batch:
-                    try:
-                        if broadcast_msg.text:
-                            sent = await client.send_message(
-                                chat_id=user["_id"],
-                                text=broadcast_msg.text,
-                                parse_mode=enums.ParseMode.HTML,
-                                disable_notification=silent
-                            )
-                        else:
-                            sent = await broadcast_msg.copy(
-                                chat_id=user["_id"],
-                                disable_notification=silent
-                            )
-                        
-                        if pin:
-                            try:
-                                await sent.pin(disable_notification=True)
-                            except:
-                                pass
-                        
-                        success += 1
-                    except FloodWait as e:
-                        await asyncio.sleep(e.value)
-                        continue
-                    except:
-                        failed += 1
-                    
-                    # Update progress
-                    if (success + failed) % 10 == 0 or (success + failed) == total:
-                        progress = (success + failed) / total * 100
-                        await status.edit_text(
-                            f"📢 Broadcasting to {total} users...\n"
-                            f"✅ Success: {success}\n"
-                            f"❌ Failed: {failed}\n"
-                            f"⏳ Progress: {progress:.1f}%"
+            # Process broadcasting
+            for user in users:
+                try:
+                    if broadcast_msg.text:
+                        sent_msg = await client.send_message(
+                            chat_id=user["_id"],
+                            text=broadcast_msg.text,
+                            parse_mode=enums.ParseMode.HTML,
+                            disable_notification=silent
                         )
+                    else:
+                        sent_msg = await broadcast_msg.copy(
+                            chat_id=user["_id"],
+                            disable_notification=silent
+                        )
+                    
+                    if pin_message:
+                        try:
+                            await sent_msg.pin(disable_notification=True)
+                        except Exception:
+                            pass
+                    
+                    success += 1
+                except FloodWait as e:
+                    await asyncio.sleep(e.value)
+                    continue
+                except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
+                    failed += 1
+                except Exception as e:
+                    logger.error(f"Broadcast error for {user['_id']}: {e}")
+                    failed += 1
+                
+                # Update progress
+                if (success + failed) % 10 == 0 or (success + failed) == total:
+                    progress = (success + failed) / total * 100
+                    await status_msg.edit_text(
+                        f"📢 Broadcasting to {total} users...\n"
+                        f"✅ Success: {success}\n"
+                        f"❌ Failed: {failed}\n"
+                        f"⏳ Progress: {progress:.1f}%"
+                    )
             
             # Final report
-            await status.edit_text(
+            final_text = (
                 f"📢 <b>Broadcast Complete!</b>\n\n"
-                f"👥 Total: {total}\n"
-                f"✅ Success: {success}\n"
-                f"❌ Failed: {failed}\n"
+                f"👥 Total Users: {total}\n"
+                f"✅ Successfully Sent: {success}\n"
+                f"❌ Failed to Send: {failed}\n"
                 f"📊 Success Rate: {(success/total)*100:.1f}%"
             )
             
+            await status_msg.edit_text(final_text)
             return await message.reply_text(
-                "✅ Broadcast finished!",
+                "✅ Broadcast completed!",
                 reply_markup=AdminPanel.back_button("broadcast_menu")
             )
             
