@@ -638,10 +638,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
             return
         elif data == "sort":
             await query.message.edit_caption(
-            caption=Txt.SORT_TXT,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ʙᴀᴄᴋ", callback_data="help")]
-            ])
+                caption=Txt.SORT_TXT,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("ʙᴀᴄᴋ", callback_data="help")]
+                ])
+            )
+
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• ʙᴜʏ ᴘʀᴇᴍɪᴜᴍ •", callback_data="buy_premium")],
