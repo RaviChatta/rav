@@ -1196,42 +1196,47 @@ class Database:
         })
         
         async for user in expired_users:
-            original_points = user['premium']['original_points']
-            await self.db.users.update_one(
-                {"_id": user["_id"]},
-                {"$set": {
-                    "premium.is_premium": False,
-                    "premium.expired_at": now,
-                    "points.balance": original_points
-                }}
-            )
-
+            try:
+                original_points = user['premium']['original_points']
+                await self.db.users.update_one(
+                    {"_id": user["_id"]},
+                    {"$set": {
+                        "premium.is_premium": False,
+                        "premium.expired_at": now,
+                        "points.balance": original_points
+                    }}
+                )
+                logger.info(f"Premium expired for user {user['_id']}, points reverted to {original_points}")
+            except Exception as e:
+                logger.error(f"Error handling premium expiry for user {user['_id']}: {e}")
+    
     async def check_premium_status(self, user_id: int) -> Dict:
-        """Check user's premium status with auto-expiration."""
+        """Check user's premium status with auto-expiration"""
         try:
-            user = await self.users.find_one({"_id": user_id})
+            user = await self.db.users.find_one({"_id": user_id})
             if not user:
                 return {"is_premium": False, "reason": "User not found"}
-    
-            premium_info = user.get("premium", {})
-            is_premium = premium_info.get("is_premium", False)
-            until = premium_info.get("until")
-            plan = premium_info.get("plan")
-    
-            if is_premium:
-                if until:
-                    expiry_time = datetime.datetime.fromisoformat(until)
-                    if expiry_time < datetime.datetime.utcnow():
-                        await self.deactivate_premium(user_id)
-                        return {"is_premium": False, "reason": "Subscription expired"}
-                return {"is_premium": True, "until": until, "plan": plan}
-    
-            return {"is_premium": False, "reason": "No active subscription"}
-    
+            
+            premium = user.get("premium", {})
+            if not premium.get("is_premium", False):
+                return {"is_premium": False, "reason": "No active premium"}
+            
+            # Check if premium has expired
+            if "expires_at" in premium and premium["expires_at"] < datetime.now():
+                await self.check_premium_expiry()  # Force immediate check
+                return {"is_premium": False, "reason": "Subscription expired"}
+            
+            return {
+                "is_premium": True,
+                "plan": premium.get("plan"),
+                "expires_at": premium.get("expires_at"),
+                "activated_at": premium.get("activated_at"),
+                "points": premium.get("premium_points")
+            }
+            
         except Exception as e:
             logger.error(f"Error checking premium status for {user_id}: {e}")
             return {"is_premium": False, "reason": "Error checking status"}
-
 
     async def deactivate_premium(self, user_id: int) -> bool:
         """Deactivate premium subscription for a user."""
