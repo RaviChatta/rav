@@ -1155,14 +1155,17 @@ async def handle_help(client: Client, message: Message):
             InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
         ],
         [
-            InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
+            InlineKeyboardButton("ˢᴱᵠᵁᴱᴺᵀᴵᴬᴸ", callback_data='sequential'),
             InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
             InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
         ],
         [
-            InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
+            InlineKeyboardButton("◁", callback_data="back"),
+            InlineKeyboardButton("• ᴴᴼᴹᴱ •", callback_data="home"),
+            InlineKeyboardButton("▷", callback_data="next")
         ]
     ])
+
 
     if img:
         msg = await message.reply_photo(
