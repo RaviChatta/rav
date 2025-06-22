@@ -1238,18 +1238,25 @@ class Database:
             logger.error(f"Error checking premium status for {user_id}: {e}")
             return {"is_premium": False, "reason": "Error checking status"}
 
-    async def deactivate_premium(self, user_id: int) -> bool:
-        """Deactivate premium subscription for a user."""
+    async def deactivate_premium(self, user_id: int, reason: str = "Admin deactivation") -> bool:
+        """Deactivate premium and revert points"""
         try:
-            await self.users.update_one(
+            user = await self.db.users.find_one({"_id": user_id})
+            if not user:
+                return False
+                
+            original_points = user.get("premium", {}).get("original_points", user["points"]["balance"])
+            
+            result = await self.db.users.update_one(
                 {"_id": user_id},
                 {"$set": {
                     "premium.is_premium": False,
-                    "premium.until": None,
-                    "premium.plan": None
+                    "premium.expired_at": datetime.now(),
+                    "premium.deactivation_reason": reason,
+                    "points.balance": original_points
                 }}
             )
-            return True
+            return result.modified_count > 0
         except Exception as e:
             logger.error(f"Error deactivating premium for {user_id}: {e}")
             return False
