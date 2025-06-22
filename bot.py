@@ -76,7 +76,15 @@ class Bot(Client):
             except Exception as e:
                 logger.error(f"Error refreshing leaderboards: {e}", exc_info=False)
                 await asyncio.sleep(300)
-
+    async def check_premium_expiry_task(client: Client):
+        """Background task to check for expired premium users"""
+        while True:
+            try:
+                await hyoshcoder.check_premium_expiry()
+                await asyncio.sleep(3600)  # Check every hour
+            except Exception as e:
+                logger.error(f"Premium expiry check error: {e}")
+                await asyncio.sleep(600)
     async def initialize_anime_finder(self):
         if not self.is_anime_finder_enabled:
             return
@@ -125,6 +133,8 @@ class Bot(Client):
         # Start background tasks
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
+        asyncio.create_task(check_premium_expiry_task(client))
+
      #   asyncio.create_task(self.startup_tasks())
 
     async def stop(self, *args):
