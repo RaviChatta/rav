@@ -720,52 +720,52 @@ class AdminPanel:
         )
     
     @staticmethod
-async def process_activate_premium(client: Client, message: Message) -> Message:
-    """Process premium activation with unlimited points"""
-    try:
-        parts = message.text.split()
-        if len(parts) < 3:
-            raise ValueError("Missing parameters")
+    async def process_activate_premium(client: Client, message: Message) -> Message:
+        """Process premium activation with unlimited points"""
+        try:
+            parts = message.text.split()
+            if len(parts) < 3:
+                raise ValueError("Missing parameters")
+            
+            user_id = int(parts[1])
+            plan = parts[2].lower()  # 1day, 1week, 2weeks, 1month
+            reason = parts[3] if len(parts) > 3 else f"{plan} premium activation"
+            
+            plans = await AdminPanel.get_config("premium_plans")
+            if plan not in plans:
+                raise ValueError(f"Invalid plan. Available: {', '.join(plans.keys())}")
+            
+            # Get user's current points to store for later
+            user = await hyoshcoder.get_user(user_id)
+            original_points = user['points']['balance']
+            
+            # Activate premium with unlimited points
+            await hyoshcoder.activate_premium(
+                user_id=user_id,
+                plan=plan,
+                duration_days=plans[plan]["duration"],
+                original_points=original_points,
+                premium_points=plans[plan]["points"]
+            )
+            
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"✅ Activated {plan} premium for user {user_id}\n"
+                f"⏳ Duration: {plans[plan]['duration']} days\n"
+                f"🪙 Points set to: {plans[plan]['points']}\n"
+                f"📝 Reason: {reason}",
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
+        except Exception as e:
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"❌ Error: {str(e)}\n\n"
+                "Usage: <code>/premium user_id plan [reason]</code>\n"
+                "Available plans: 1day, 1week, 2weeks, 1month\n"
+                "Example: <code>/premium 123456 1week \"Special offer\"</code>",
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
         
-        user_id = int(parts[1])
-        plan = parts[2].lower()  # 1day, 1week, 2weeks, 1month
-        reason = parts[3] if len(parts) > 3 else f"{plan} premium activation"
-        
-        plans = await AdminPanel.get_config("premium_plans")
-        if plan not in plans:
-            raise ValueError(f"Invalid plan. Available: {', '.join(plans.keys())}")
-        
-        # Get user's current points to store for later
-        user = await hyoshcoder.get_user(user_id)
-        original_points = user['points']['balance']
-        
-        # Activate premium with unlimited points
-        await hyoshcoder.activate_premium(
-            user_id=user_id,
-            plan=plan,
-            duration_days=plans[plan]["duration"],
-            original_points=original_points,
-            premium_points=plans[plan]["points"]
-        )
-        
-        return await AdminPanel._edit_or_reply(
-            message,
-            f"✅ Activated {plan} premium for user {user_id}\n"
-            f"⏳ Duration: {plans[plan]['duration']} days\n"
-            f"🪙 Points set to: {plans[plan]['points']}\n"
-            f"📝 Reason: {reason}",
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
-    except Exception as e:
-        return await AdminPanel._edit_or_reply(
-            message,
-            f"❌ Error: {str(e)}\n\n"
-            "Usage: <code>/premium user_id plan [reason]</code>\n"
-            "Available plans: 1day, 1week, 2weeks, 1month\n"
-            "Example: <code>/premium 123456 1week \"Special offer\"</code>",
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
-    
     @staticmethod
     async def handle_deactivate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
         """Initiate premium deactivation flow"""
@@ -819,48 +819,48 @@ async def process_activate_premium(client: Client, message: Message) -> Message:
         )
     
     @staticmethod
-async def process_check_premium(client: Client, message: Message) -> Message:
-    """Process premium status check with points info"""
-    try:
-        user_id = int(message.text.split()[1])
-        user = await hyoshcoder.get_user(user_id)
-        
-        if not user:
-            raise ValueError("User not found")
-        
-        premium = user.get('premium', {})
-        points = user.get('points', {})
-        
-        if premium.get('is_premium'):
-            remaining = (premium['expires_at'] - datetime.now()).days
-            text = (
-                f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
-                f"✅ Active Premium ({premium.get('plan', 'Unknown')})\n"
-                f"⏳ Days remaining: {remaining}\n"
-                f"💎 Unlimited Points: {points.get('balance', 0)}/{premium.get('premium_points', 0)}\n"
-                f"📅 Original Points: {premium.get('original_points', 0)}"
+    async def process_check_premium(client: Client, message: Message) -> Message:
+        """Process premium status check with points info"""
+        try:
+            user_id = int(message.text.split()[1])
+            user = await hyoshcoder.get_user(user_id)
+            
+            if not user:
+                raise ValueError("User not found")
+            
+            premium = user.get('premium', {})
+            points = user.get('points', {})
+            
+            if premium.get('is_premium'):
+                remaining = (premium['expires_at'] - datetime.now()).days
+                text = (
+                    f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
+                    f"✅ Active Premium ({premium.get('plan', 'Unknown')})\n"
+                    f"⏳ Days remaining: {remaining}\n"
+                    f"💎 Unlimited Points: {points.get('balance', 0)}/{premium.get('premium_points', 0)}\n"
+                    f"📅 Original Points: {premium.get('original_points', 0)}"
+                )
+            else:
+                text = (
+                    f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
+                    f"❌ No active premium\n"
+                    f"🪙 Current Points: {points.get('balance', 0)}\n"
+                    f"📅 Last Premium: {premium.get('expired_at', 'Never')}"
+                )
+            
+            return await AdminPanel._edit_or_reply(
+                message,
+                text,
+                reply_markup=AdminPanel.back_button("premium_menu")
             )
-        else:
-            text = (
-                f"🌟 <b>Premium Status</b> - User {user_id}\n\n"
-                f"❌ No active premium\n"
-                f"🪙 Current Points: {points.get('balance', 0)}\n"
-                f"📅 Last Premium: {premium.get('expired_at', 'Never')}"
+        except Exception as e:
+            return await AdminPanel._edit_or_reply(
+                message,
+                f"❌ Error: {str(e)}\n\n"
+                "Usage: <code>/checkpremium user_id</code>\n"
+                "Example: <code>/checkpremium 123456</code>",
+                reply_markup=AdminPanel.back_button("premium_menu")
             )
-        
-        return await AdminPanel._edit_or_reply(
-            message,
-            text,
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
-    except Exception as e:
-        return await AdminPanel._edit_or_reply(
-            message,
-            f"❌ Error: {str(e)}\n\n"
-            "Usage: <code>/checkpremium user_id</code>\n"
-            "Example: <code>/checkpremium 123456</code>",
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
 
     # ========================
     # Broadcast Handlers
@@ -875,92 +875,100 @@ async def process_check_premium(client: Client, message: Message) -> Message:
             "Reply to this message with your content:\n"
             "- Text for text broadcast\n"
             "- Media for media broadcast\n\n"
-            "Add <code>--silent</code> to disable notifications",
+            "Add <code>--silent</code> to disable notifications\n"
+            "Add <code>--pin</code> to pin the message",
             reply_markup=AdminPanel.back_button("broadcast_menu")
         )
     
-@staticmethod
-async def process_broadcast(client: Client, message: Message) -> Message:
-    """Process sending broadcast to all users"""
-    try:
-        if not message.reply_to_message:
-            raise ValueError("You must reply to the broadcast instruction message")
-        
-        broadcast_msg = message.reply_to_message
-        silent = "--silent" in message.text.lower()
-        
-        users = await hyoshcoder.get_all_users(filter_banned=True)
-        total = len(users)
-        success = 0
-        failed = 0
-        
-        # Send initial status message
-        status_msg = await message.reply_text(
-            f"📢 Broadcasting to {total} users...\n"
-            f"✅ Success: {success}\n"
-            f"❌ Failed: {failed}\n"
-            f"⏳ Please wait..."
-        )
-        
-        # Process broadcasting
-        for user in users:
-            try:
-                if broadcast_msg.text:
-                    await client.send_message(
-                        chat_id=user["_id"],
-                        text=broadcast_msg.text,
-                        parse_mode=enums.ParseMode.HTML,
-                        disable_notification=silent
-                    )
-                else:
-                    await broadcast_msg.copy(
-                        chat_id=user["_id"],
-                        disable_notification=silent
-                    )
-                success += 1
-            except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
-                failed += 1
-            except FloodWait as e:
-                # Handle flood waits properly
-                await asyncio.sleep(e.value)
-                continue
-            except Exception as e:
-                logger.error(f"Broadcast error for {user['_id']}: {e}")
-                failed += 1
+    @staticmethod
+    async def process_broadcast(client: Client, message: Message) -> Message:
+        """Process sending broadcast to all users"""
+        try:
+            if not message.reply_to_message:
+                raise ValueError("You must reply to a message to broadcast it")
             
-            # Update status every 10 sends or if it's the last message
-            if (success + failed) % 10 == 0 or (success + failed) == total:
+            broadcast_msg = message.reply_to_message
+            silent = "--silent" in message.text.lower()
+            pin_message = "--pin" in message.text.lower()
+            
+            users = await hyoshcoder.get_all_users(filter_banned=True)
+            total = len(users)
+            success = 0
+            failed = 0
+            
+            # Send initial status message
+            status_msg = await message.reply_text(
+                f"📢 Broadcasting to {total} users...\n"
+                f"✅ Success: 0\n"
+                f"❌ Failed: 0\n"
+                f"⏳ Please wait..."
+            )
+            
+            # Process broadcasting
+            for user in users:
                 try:
-                    await status_msg.edit_text(
-                        f"📢 Broadcasting to {total} users...\n"
-                        f"✅ Success: {success}\n"
-                        f"❌ Failed: {failed}\n"
-                        f"⏳ {round(((success + failed)/total)*100, 1)}% complete"
-                    )
+                    if broadcast_msg.text:
+                        sent_msg = await client.send_message(
+                            chat_id=user["_id"],
+                            text=broadcast_msg.text,
+                            parse_mode=enums.ParseMode.HTML,
+                            disable_notification=silent
+                        )
+                    else:
+                        sent_msg = await broadcast_msg.copy(
+                            chat_id=user["_id"],
+                            disable_notification=silent
+                        )
+                    
+                    if pin_message:
+                        try:
+                            await sent_msg.pin()
+                        except Exception as pin_error:
+                            logger.warning(f"Couldn't pin message for {user['_id']}: {pin_error}")
+                    
+                    success += 1
+                except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
+                    failed += 1
+                except FloodWait as e:
+                    await asyncio.sleep(e.value)
+                    continue
                 except Exception as e:
-                    logger.error(f"Error updating status: {e}")
-        
-        # Final report
-        await status_msg.edit_text(
-            f"📢 Broadcast Complete!\n\n"
-            f"✅ Success: {success}\n"
-            f"❌ Failed: {failed}\n"
-            f"📊 Success Rate: {round((success/total)*100, 1)}%"
-        )
-        
-        return await AdminPanel._edit_or_reply(
-            message,
-            "✅ Broadcast completed!",
-            reply_markup=AdminPanel.back_button("broadcast_menu")
-        )
-        
-    except Exception as e:
-        logger.error(f"Broadcast error: {e}", exc_info=True)
-        return await AdminPanel._edit_or_reply(
-            message,
-            f"❌ Broadcast error: {str(e)}",
-            reply_markup=AdminPanel.back_button("broadcast_menu")
-        )
+                    logger.error(f"Broadcast error for {user['_id']}: {e}")
+                    failed += 1
+                
+                # Update status periodically
+                if (success + failed) % 10 == 0 or (success + failed) == total:
+                    try:
+                        await status_msg.edit_text(
+                            f"📢 Broadcasting to {total} users...\n"
+                            f"✅ Success: {success}\n"
+                            f"❌ Failed: {failed}\n"
+                            f"⏳ {((success + failed)/total)*100:.1f}% complete"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error updating status: {e}")
+            
+            # Final report
+            final_text = (
+                f"📢 <b>Broadcast Complete!</b>\n\n"
+                f"👥 Total Users: {total}\n"
+                f"✅ Successfully Sent: {success}\n"
+                f"❌ Failed to Send: {failed}\n"
+                f"📊 Success Rate: {(success/total)*100:.1f}%"
+            )
+            
+            await status_msg.edit_text(final_text)
+            return await message.reply_text(
+                "✅ Broadcast completed!",
+                reply_markup=AdminPanel.back_button("broadcast_menu")
+            )
+            
+        except Exception as e:
+            logger.error(f"Broadcast error: {e}", exc_info=True)
+            return await message.reply_text(
+                f"❌ Broadcast error: {str(e)}",
+                reply_markup=AdminPanel.back_button("broadcast_menu")
+            )
     @staticmethod
     async def handle_stats_broadcast(client: Client, callback: CallbackQuery) -> Message:
         """Initiate stats broadcast"""
@@ -1327,7 +1335,7 @@ async def check_premium_command(client: Client, message: Message):
     
 @Client.on_message(filters.command("broadcast") & filters.user(ADMIN_USER_ID))
 async def broadcast_command(client: Client, message: Message):
-    """Handle the broadcast command"""
+    """Handle broadcast command"""
     if message.reply_to_message:
         await AdminPanel.process_broadcast(client, message)
     else:
