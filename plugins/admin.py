@@ -686,38 +686,72 @@ class AdminPanel:
     @staticmethod
     async def show_premium_plans(client: Client, callback: CallbackQuery) -> Message:
         """Display premium plans with durations and points"""
-        plans = await AdminPanel.get_config("premium_plans")
-        
-        text = "🌟 <b>Premium Plans</b>\n\n"
-        for plan, details in plans.items():
-            text += (
-                f"✨ <b>{plan.capitalize()}</b>\n"
-                f"⏳ Duration: {details['duration']} days\n"
-                f"🪙 Points: {details['points']} (unlimited during premium)\n"
-                f"💰 Price: {details['price']} points\n\n"
+        try:
+            plans = {
+                "1day": {"duration": 1, "points": 10000, "price": 5},
+                "1week": {"duration": 7, "points": 10000, "price": 10},
+                "2weeks": {"duration": 14, "points": 10000, "price": 15}, 
+                "1month": {"duration": 30, "points": 10000, "price": 30}
+            }
+            
+            text = "🌟 <b>Premium Plans</b>\n\n"
+            for plan, details in plans.items():
+                text += (
+                    f"✨ <b>{plan.capitalize()}</b>\n"
+                    f"⏳ Duration: {details['duration']} days\n"
+                    f"🪙 Points: {details['points']}\n"
+                    f"💰 Price: {details['price']} points\n\n"
+                )
+            
+            return await AdminPanel._edit_or_reply(
+                callback,
+                text,
+                reply_markup=AdminPanel.back_button("premium_menu")
             )
-        
-        return await AdminPanel._edit_or_reply(
-            callback,
-            text,
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
+        except Exception as e:
+            logger.error(f"Error showing premium plans: {e}")
+            return await AdminPanel._edit_or_reply(
+                callback,
+                f"❌ Error displaying plans: {str(e)}",
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
     @staticmethod
     async def handle_activate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
-        """Initiate premium activation flow"""
-        plans = await AdminPanel.get_config("premium_plans")
-        plan_options = "\n".join([f"• {plan}" for plan in plans.keys()])
-        
-        return await AdminPanel._edit_or_reply(
-            target,
-            "🌟 <b>Activate Premium</b>\n\n"
-            "Enter command:\n"
-            "<code>/premium user_id duration plan</code>\n\n"
-            "Example: <code>/premium 123456 30d gold</code>\n"
-            "Duration formats: 7d, 30d, 1y\n"
-            f"Available plans:\n{plan_options}",
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
+        """Handle premium activation flow with proper plan validation"""
+        try:
+            # Define available premium plans directly (to avoid config issues)
+            available_plans = {
+                "1day": {"duration": 1, "points": 10000, "price": 5},
+                "1week": {"duration": 7, "points": 10000, "price": 10},
+                "2weeks": {"duration": 14, "points": 10000, "price": 15},
+                "1month": {"duration": 30, "points": 10000, "price": 30},
+                "basic": {"duration": 90, "points": 5000, "price": 40},
+                "premium": {"duration": 120, "points": 15000, "price": 70},
+                "gold": {"duration": 300, "points": 30000, "price": 300}
+            }
+    
+            # Format plan options for display
+            plan_options = "\n".join(
+                [f"• {plan_name}: {details['duration']} days ({details['points']} points)"
+                 for plan_name, details in available_plans.items()]
+            )
+    
+            return await AdminPanel._edit_or_reply(
+                target,
+                "🌟 <b>Activate Premium</b>\n\n"
+                "Enter command:\n"
+                "<code>/premium user_id plan [reason]</code>\n\n"
+                "Example: <code>/premium 123456 1week \"Special offer\"</code>\n\n"
+                f"Available plans:\n{plan_options}",
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
+        except Exception as e:
+            logger.error(f"Error in handle_activate_premium: {e}")
+            return await AdminPanel._edit_or_reply(
+                target,
+                f"❌ Error displaying premium activation: {str(e)}",
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
     @staticmethod
     async def handle_deactivate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
         """Initiate premium deactivation flow"""
@@ -729,53 +763,63 @@ class AdminPanel:
             "Example: <code>/depremium 123456 \"Violation of terms\"</code>",
             reply_markup=AdminPanel.back_button("premium_menu")
         )
-    @staticmethod
+   @staticmethod
     async def process_activate_premium(client: Client, message: Message) -> Message:
-        """Process premium activation with unlimited points"""
+        """Process premium activation command"""
         try:
-            parts = message.text.split()
+            parts = message.text.split(maxsplit=3)
             if len(parts) < 3:
                 raise ValueError("Missing parameters")
             
             user_id = int(parts[1])
-            plan = parts[2].lower()  # e.g., "1week"
-            reason = parts[3] if len(parts) > 3 else f"{plan} premium activation"
+            plan = parts[2].lower()
+            reason = parts[3] if len(parts) > 3 else "Admin activation"
             
-            plans = await AdminPanel.get_config("premium_plans")
+            # Define plans directly instead of getting from config
+            plans = {
+                "1day": {"duration": 1, "points": 10000},
+                "1week": {"duration": 7, "points": 10000},
+                "2weeks": {"duration": 14, "points": 10000},
+                "1month": {"duration": 30, "points": 10000},
+                "basic": {"duration": 30, "points": 5000},
+                "premium": {"duration": 60, "points": 15000},
+                "gold": {"duration": 90, "points": 30000}
+            }
+            
             if plan not in plans:
-                available_plans = ", ".join(plans.keys())
-                raise ValueError(f"Invalid plan. Available: {available_plans}")
+                available = ", ".join(plans.keys())
+                raise ValueError(f"Invalid plan. Available: {available}")
             
-            # Get plan details
             plan_details = plans[plan]
-            duration_days = plan_details["duration"]
-            premium_points = plan_details["points"]
+            duration = plan_details["duration"]
+            points = plan_details["points"]
             
-            # Get user's current points to store for later
+            # Get user's current points
             user = await hyoshcoder.get_user(user_id)
             if not user:
                 raise ValueError("User not found")
             
             original_points = user['points']['balance']
             
-            # Activate premium with unlimited points
+            # Activate premium
             await hyoshcoder.activate_premium(
                 user_id=user_id,
                 plan=plan,
-                duration_days=duration_days,
+                duration_days=duration,
                 original_points=original_points,
-                premium_points=premium_points,
+                premium_points=points,
                 reason=reason
             )
             
             return await AdminPanel._edit_or_reply(
                 message,
                 f"✅ Activated {plan} premium for user {user_id}\n"
-                f"⏳ Duration: {duration_days} days\n"
-                f"🪙 Points set to: {premium_points}\n"
+                f"⏳ Duration: {duration} days\n"
+                f"🪙 Points: {points}\n"
                 f"📝 Reason: {reason}",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
+            
         except Exception as e:
             return await AdminPanel._edit_or_reply(
                 message,
@@ -911,144 +955,106 @@ class AdminPanel:
     
     @staticmethod
     async def handle_broadcast_menu(client: Client, callback: CallbackQuery) -> Message:
-        """Show broadcast options with clear instructions"""
+        """Show broadcast options"""
         return await AdminPanel._edit_or_reply(
             callback,
             "📢 <b>Broadcast Message</b>\n\n"
-            "1. First, prepare your message (text, photo, video, etc.)\n"
-            "2. Reply to that message with <code>/broadcast</code>\n\n"
+            "1. Prepare your message (text, photo, etc.)\n"
+            "2. Reply to it with <code>/broadcast</code>\n\n"
             "Options:\n"
             "- Add <code>--silent</code> to send silently\n"
-            "- Add <code>--pin</code> to pin the message\n"
-            "- Add <code>--users</code> to broadcast to users only\n"
-            "- Add <code>--groups</code> to broadcast to groups only",
+            "- Add <code>--pin</code> to pin messages",
             reply_markup=AdminPanel.back_button("broadcast_menu")
         )
-    
+
     @staticmethod
     async def process_broadcast(client: Client, message: Message) -> Message:
-        """Completely rewritten broadcast handler with better reliability"""
+        """Process sending broadcast"""
         try:
             if not message.reply_to_message:
-                raise ValueError("You must reply to a message to broadcast it")
-    
-            # Parse broadcast options
+                raise ValueError("Reply to a message to broadcast it")
+            
             broadcast_msg = message.reply_to_message
             options = message.text.lower().split()
             silent = "--silent" in options
-            pin_message = "--pin" in options
-            users_only = "--users" in options
-            groups_only = "--groups" in options
-    
-            # Get appropriate recipients
-            if users_only:
-                recipients = await hyoshcoder.get_all_users(filter_banned=True)
-            elif groups_only:
-                recipients = await hyoshcoder.get_all_groups()
-            else:
-                recipients = await hyoshcoder.get_all_chats(filter_banned=True)
-    
-            total = len(recipients)
-            if total == 0:
-                raise ValueError("No recipients found for broadcast")
-    
-            # Prepare progress message
-            progress_msg = await message.reply_text(
-                f"📢 Preparing to broadcast to {total} chats...\n"
-                f"🔄 Status: Initializing\n"
+            pin = "--pin" in options
+            
+            users = await hyoshcoder.get_all_users(filter_banned=True)
+            total = len(users)
+            success = 0
+            failed = 0
+            
+            # Send initial status
+            status = await message.reply_text(
+                f"📢 Broadcasting to {total} users...\n"
                 f"✅ Success: 0\n"
                 f"❌ Failed: 0\n"
                 f"⏳ Progress: 0%"
             )
-    
-            success = 0
-            failed = 0
-            start_time = datetime.now()
-    
-            async def send_to_chat(chat):
-                nonlocal success, failed
-                try:
-                    if broadcast_msg.text:
-                        sent_msg = await client.send_message(
-                            chat_id=chat["_id"],
-                            text=broadcast_msg.text,
-                            parse_mode=enums.ParseMode.HTML,
-                            disable_notification=silent
-                        )
-                    else:
-                        sent_msg = await broadcast_msg.copy(
-                            chat_id=chat["_id"],
-                            disable_notification=silent
-                        )
-    
-                    if pin_message:
-                        try:
-                            await sent_msg.pin(disable_notification=True)
-                        except Exception as pin_error:
-                            logger.warning(f"Couldn't pin message in {chat['_id']}: {pin_error}")
-    
-                    success += 1
-                except FloodWait as e:
-                    await asyncio.sleep(e.value)
-                    await send_to_chat(chat)  # Retry after flood wait
-                except (UserIsBlocked, PeerIdInvalid, ChatWriteForbidden):
-                    failed += 1
-                except Exception as e:
-                    logger.error(f"Broadcast error for {chat['_id']}: {e}")
-                    failed += 1
-    
-                # Update progress every 10 messages or when complete
-                if (success + failed) % 10 == 0 or (success + failed) == total:
-                    elapsed = (datetime.now() - start_time).total_seconds()
-                    remaining = (total - (success + failed)) * (elapsed / (success + failed + 1))
-                    progress = (success + failed) / total * 100
-    
-                    try:
-                        await progress_msg.edit_text(
-                            f"📢 Broadcasting to {total} chats...\n"
-                            f"🔄 Status: Active\n"
-                            f"✅ Success: {success}\n"
-                            f"❌ Failed: {failed}\n"
-                            f"⏳ Progress: {progress:.1f}%\n"
-                            f"⏱ ETA: {timedelta(seconds=int(remaining))}"
-                        )
-                    except Exception as e:
-                        logger.error(f"Error updating progress: {e}")
-    
-            # Process broadcasting in batches to avoid flooding
+            
+            # Process in batches
             batch_size = 10
             for i in range(0, total, batch_size):
-                batch = recipients[i:i + batch_size]
-                await asyncio.gather(*[send_to_chat(chat) for chat in batch])
-    
+                batch = users[i:i + batch_size]
+                
+                for user in batch:
+                    try:
+                        if broadcast_msg.text:
+                            sent = await client.send_message(
+                                chat_id=user["_id"],
+                                text=broadcast_msg.text,
+                                parse_mode=enums.ParseMode.HTML,
+                                disable_notification=silent
+                            )
+                        else:
+                            sent = await broadcast_msg.copy(
+                                chat_id=user["_id"],
+                                disable_notification=silent
+                            )
+                        
+                        if pin:
+                            try:
+                                await sent.pin(disable_notification=True)
+                            except:
+                                pass
+                        
+                        success += 1
+                    except FloodWait as e:
+                        await asyncio.sleep(e.value)
+                        continue
+                    except:
+                        failed += 1
+                    
+                    # Update progress
+                    if (success + failed) % 10 == 0 or (success + failed) == total:
+                        progress = (success + failed) / total * 100
+                        await status.edit_text(
+                            f"📢 Broadcasting to {total} users...\n"
+                            f"✅ Success: {success}\n"
+                            f"❌ Failed: {failed}\n"
+                            f"⏳ Progress: {progress:.1f}%"
+                        )
+            
             # Final report
-            elapsed_time = datetime.now() - start_time
-            success_rate = (success / total) * 100 if total > 0 else 0
-    
-            final_report = (
+            await status.edit_text(
                 f"📢 <b>Broadcast Complete!</b>\n\n"
-                f"⏱ Time taken: {elapsed_time}\n"
-                f"👥 Total recipients: {total}\n"
-                f"✅ Successfully sent: {success}\n"
-                f"❌ Failed to send: {failed}\n"
-                f"📊 Success rate: {success_rate:.1f}%"
+                f"👥 Total: {total}\n"
+                f"✅ Success: {success}\n"
+                f"❌ Failed: {failed}\n"
+                f"📊 Success Rate: {(success/total)*100:.1f}%"
             )
-    
-            await progress_msg.edit_text(final_report)
+            
             return await message.reply_text(
-                "✅ Broadcast completed successfully!",
+                "✅ Broadcast finished!",
                 reply_markup=AdminPanel.back_button("broadcast_menu")
             )
-    
+            
         except Exception as e:
-            logger.error(f"Broadcast error: {e}", exc_info=True)
-            error_msg = await message.reply_text(
+            logger.error(f"Broadcast error: {e}")
+            return await message.reply_text(
                 f"❌ Broadcast failed: {str(e)}",
                 reply_markup=AdminPanel.back_button("broadcast_menu")
             )
-            await asyncio.sleep(10)
-            await error_msg.delete()
-            return None
     @staticmethod
     async def handle_stats_broadcast(client: Client, callback: CallbackQuery) -> Message:
         """Initiate stats broadcast"""
@@ -1315,10 +1321,8 @@ class AdminPanel:
                 await AdminPanel.show_premium_plans(client, callback)
             
             # Broadcast
-            elif data == "text_broadcast":
-                await AdminPanel.handle_broadcast(client, callback)
-            elif data == "media_broadcast":
-                await AdminPanel.handle_broadcast(client, callback)
+            elif data in ["text_broadcast", "media_broadcast"]:
+                await AdminPanel.handle_broadcast_menu(client, callback)
             elif data == "stats_broadcast":
                 await AdminPanel.handle_stats_broadcast(client, callback)
             elif data == "confirm_stats_broadcast":
@@ -1403,53 +1407,7 @@ async def find_user_command(client: Client, message: Message):
 
 @Client.on_message(filters.command("premium") & filters.user(ADMIN_USER_ID))
 async def premium_command(client: Client, message: Message):
-    """Handle premium activation command"""
-    try:
-        parts = message.text.split()
-        if len(parts) < 3:
-            raise ValueError("Missing parameters. Usage: /premium user_id plan")
-        
-        user_id = int(parts[1])
-        plan = parts[2].lower()
-        reason = " ".join(parts[3:]) if len(parts) > 3 else "Admin activation"
-        
-        plans = await AdminPanel.get_config("premium_plans")
-        if plan not in plans:
-            raise ValueError(f"Invalid plan. Available: {', '.join(plans.keys())}")
-        
-        # Get user's current points
-        user = await hyoshcoder.get_user(user_id)
-        if not user:
-            raise ValueError("User not found")
-        
-        original_points = user['points']['balance']
-        premium_points = plans[plan]["points"]
-        duration_days = plans[plan]["duration"]
-        
-        # Activate premium
-        await hyoshcoder.activate_premium(
-            user_id=user_id,
-            plan=plan,
-            duration_days=duration_days,
-            original_points=original_points,
-            premium_points=premium_points
-        )
-        
-        await message.reply_text(
-            f"✅ Premium activated for user {user_id}\n"
-            f"📝 Plan: {plan} ({duration_days} days)\n"
-            f"🪙 Points: {premium_points}\n"
-            f"📝 Reason: {reason}",
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
-        
-    except Exception as e:
-        await message.reply_text(
-            f"❌ Error: {str(e)}\n\n"
-            "Usage: <code>/premium user_id plan [reason]</code>\n"
-            "Example: <code>/premium 123456 1week \"Special offer\"</code>",
-            reply_markup=AdminPanel.back_button("premium_menu")
-        )
+    await AdminPanel.process_activate_premium(client, message)
 @Client.on_message(filters.command("depremium") & filters.user(ADMIN_USER_ID))
 async def deactivate_premium_command(client: Client, message: Message):
     await AdminPanel.process_deactivate_premium(client, message)
@@ -1498,11 +1456,7 @@ async def check_premium_command(client: Client, message: Message):
     
 @Client.on_message(filters.command("broadcast") & filters.user(ADMIN_USER_ID))
 async def broadcast_command(client: Client, message: Message):
-    """Handle broadcast command"""
-    if message.reply_to_message:
-        await AdminPanel.process_broadcast(client, message)
-    else:
-        await AdminPanel.handle_broadcast(client, message)
+    await AdminPanel.process_broadcast(client, message)
 
 # ========================
 # Callback Handlers
