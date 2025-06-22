@@ -33,7 +33,9 @@ class Database:
         self.leaderboards = None
         self.file_stats = None
         self.config = None
-
+        self.sequences = None  # Will store completed sequences
+        self.active_sequences = None  # Will track in-progress sequences
+        self.sequence_stats = None  # Will store aggregated sequence stats
     async def connect(self, max_pool_size: int = 100, min_pool_size: int = 10, max_idle_time_ms: int = 30000):
         """Establish database connection with enhanced settings and error handling."""
         try:
@@ -68,7 +70,9 @@ class Database:
             self.referrals = self.db.referrals
             self.config = self.db.config
             self._is_connected = True
-            
+            self.sequences = self.db.sequences
+            self.active_sequences = self.db.active_sequences
+            self.sequence_stats = self.db.sequence_stats
 
             # Create indexes
             await self._create_indexes()
@@ -262,6 +266,158 @@ class Database:
         except PyMongoError as e:
             logger.error(f"Error adding user {id}: {e}")
             return False
+
+    async def start_sequence(self, user_id: int) -> bool:
+        """Start tracking a new sequence for a user"""
+        try:
+            await self.active_sequences.insert_one({
+                "user_id": user_id,
+                "start_time": datetime.now(pytz.UTC),
+                "files": [],
+                "last_update": datetime.now(pytz.UTC)
+            })
+            return True
+        except Exception as e:
+            logger.error(f"Error starting sequence for {user_id}: {e}")
+            return False
+
+    async def add_to_sequence(self, user_id: int, file_id: str, file_name: str) -> bool:
+        """Add a file to an active sequence"""
+        try:
+            result = await self.active_sequences.update_one(
+                {"user_id": user_id},
+                {
+                    "$push": {"files": {"file_id": file_id, "file_name": file_name}},
+                    "$set": {"last_update": datetime.now(pytz.UTC)}
+                }
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error adding file to sequence for {user_id}: {e}")
+            return False
+
+    async def end_sequence(self, user_id: int) -> Tuple[bool, List[Dict]]:
+        """Complete a sequence and return the files"""
+        try:
+            # Get and remove the active sequence
+            sequence = await self.active_sequences.find_one_and_delete({"user_id": user_id})
+            if not sequence:
+                return False, []
+                
+            # Record the completed sequence
+            await self.sequences.insert_one({
+                "user_id": user_id,
+                "file_count": len(sequence["files"]),
+                "start_time": sequence["start_time"],
+                "end_time": datetime.now(pytz.UTC),
+                "duration_seconds": (datetime.now(pytz.UTC) - sequence["start_time"]).total_seconds()
+            })
+            
+            # Update sequence stats
+            await self._update_sequence_stats(user_id, len(sequence["files"]))
+            
+            return True, sequence["files"]
+        except Exception as e:
+            logger.error(f"Error ending sequence for {user_id}: {e}")
+            return False, []
+
+    async def _update_sequence_stats(self, user_id: int, file_count: int) -> bool:
+        """Update user's sequence statistics"""
+        try:
+            await self.sequence_stats.update_one(
+                {"user_id": user_id},
+                {
+                    "$inc": {
+                        "total_sequences": 1,
+                        "total_files": file_count,
+                        "current_streak": 1
+                    },
+                    "$set": {
+                        "last_sequence": datetime.now(pytz.UTC),
+                        "longest_streak": await self._calculate_longest_streak(user_id)
+                    }
+                },
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error updating sequence stats for {user_id}: {e}")
+            return False
+
+    async def _calculate_longest_streak(self, user_id: int) -> int:
+        """Calculate the user's longest sequence streak"""
+        try:
+            stats = await self.sequence_stats.find_one({"user_id": user_id})
+            if not stats:
+                return 1
+                
+            current_streak = stats.get("current_streak", 1)
+            longest_streak = stats.get("longest_streak", 1)
+            
+            return max(current_streak, longest_streak)
+        except Exception as e:
+            logger.error(f"Error calculating streak for {user_id}: {e}")
+            return 1
+
+    async def get_sequence_stats(self, user_id: int) -> Dict:
+        """Get user's sequence statistics"""
+        try:
+            stats = await self.sequence_stats.find_one({"user_id": user_id})
+            if not stats:
+                return {
+                    "total_sequences": 0,
+                    "total_files": 0,
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "last_sequence": None
+                }
+            return stats
+        except Exception as e:
+            logger.error(f"Error getting sequence stats for {user_id}: {e}")
+            return {
+                "total_sequences": 0,
+                "total_files": 0,
+                "current_streak": 0,
+                "longest_streak": 0,
+                "last_sequence": None
+            }
+
+    async def get_top_sequences(self, limit: int = 10) -> List[Dict]:
+        """Get top users by sequence file count"""
+        try:
+            return await self.sequence_stats.aggregate([
+                {"$sort": {"total_files": -1}},
+                {"$limit": limit},
+                {"$project": {
+                    "user_id": 1,
+                    "total_files": 1,
+                    "total_sequences": 1,
+                    "longest_streak": 1
+                }}
+            ]).to_list(length=limit)
+        except Exception as e:
+            logger.error(f"Error getting top sequences: {e}")
+            return []
+
+    async def get_user_sequence_rank(self, user_id: int) -> Tuple[Optional[int], int]:
+        """Get user's rank and total files in sequences"""
+        try:
+            # Get all users sorted by total files in sequences
+            all_users = await self.sequence_stats.aggregate([
+                {"$sort": {"total_files": -1}},
+                {"$project": {"user_id": 1, "total_files": 1}}
+            ]).to_list(None)
+            
+            # Find the user's position
+            for index, user in enumerate(all_users, start=1):
+                if user["user_id"] == user_id:
+                    return index, user["total_files"]
+                    
+            return None, 0
+        except Exception as e:
+            logger.error(f"Error getting sequence rank for {user_id}: {e}")
+            return None, 0
+
     # Create a point link (valid for 24 hours, one-time use)
     async def create_point_link(self, user_id: int, point_id: str, points: int):
         expiry = datetime.utcnow().replace(tzinfo=pytz.UTC) + timedelta(hours=24)
