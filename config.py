@@ -85,7 +85,7 @@ class Settings():
         return random.choice(self.SHORTEN_SERVICES)
     BOT_USERNAME = os.getenv("BOT_USERNAME", "Autorenameboabot")
     TOKEN_ID_LENGTH = 8  # Or whatever you use
-    SHORTENER_POINT_REWARD = 50 
+    SHORTENER_POINT_REWARD = 80 
     REFER_POINT_REWARD = 300  # or whatever value you want
     LEADERBOARD_DELETE_TIMER = 30
     # URL par défaut pour l'image de démarrage ou de log
