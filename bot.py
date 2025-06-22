@@ -84,7 +84,7 @@ class Bot(Client):
                 await asyncio.sleep(3600)  # Check every hour
             except Exception as e:
                 logger.error(f"Premium expiry check error: {e}")
-                await asyncio.sleep(600)
+                await asyncio.sleep(600)  # Wait 10 minutes before retrying if error occurs
     async def initialize_anime_finder(self):
         if not self.is_anime_finder_enabled:
             return
@@ -134,6 +134,7 @@ class Bot(Client):
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
         asyncio.create_task(check_premium_expiry_task(client))
+        logger.info("Premium expiry checker started")
 
      #   asyncio.create_task(self.startup_tasks())
 
