@@ -133,7 +133,7 @@ class Bot(Client):
         # Start background tasks
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
-        asyncio.create_task(check_premium_expiry_task(client))
+        asyncio.create_task(check_premium_expiry_task())
         logger.info("Premium expiry checker started")
 
      #   asyncio.create_task(self.startup_tasks())
