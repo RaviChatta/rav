@@ -1167,26 +1167,44 @@ class Database:
             return []
 
     async def activate_premium(self, user_id: int, plan: str, duration_days: int, 
-                             payment_method: str = "manual") -> bool:
-        """Activate premium subscription for a user."""
-        try:
-            now = datetime.utcnow()
-            until = now + timedelta(days=duration_days)
-
-            await self.users.update_one(
-                {"_id": user_id},
+                             original_points: int, premium_points: int):
+        """Activate premium with unlimited points"""
+        expiry_date = datetime.now() + timedelta(days=duration_days)
+        
+        await self.db.users.update_one(
+            {"_id": user_id},
+            {"$set": {
+                "premium": {
+                    "is_premium": True,
+                    "plan": plan,
+                    "activated_at": datetime.now(),
+                    "expires_at": expiry_date,
+                    "original_points": original_points,
+                    "premium_points": premium_points
+                },
+                "points.balance": premium_points
+            }},
+            upsert=True
+        )
+    
+    async def check_premium_expiry(self):
+        """Check and handle expired premium users"""
+        now = datetime.now()
+        expired_users = self.db.users.find({
+            "premium.is_premium": True,
+            "premium.expires_at": {"$lt": now}
+        })
+        
+        async for user in expired_users:
+            original_points = user['premium']['original_points']
+            await self.db.users.update_one(
+                {"_id": user["_id"]},
                 {"$set": {
-                    "premium.is_premium": True,
-                    "premium.since": now.isoformat(),
-                    "premium.until": until.isoformat(),
-                    "premium.plan": plan,
-                    "premium.payment_method": payment_method
+                    "premium.is_premium": False,
+                    "premium.expired_at": now,
+                    "points.balance": original_points
                 }}
             )
-            return True
-        except Exception as e:
-            logger.error(f"Error activating premium for {user_id}: {e}")
-            return False
 
     async def check_premium_status(self, user_id: int) -> Dict:
         """Check user's premium status with auto-expiration."""
