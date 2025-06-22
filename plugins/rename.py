@@ -488,68 +488,62 @@ async def cancel_processing(client: Client, message: Message):
     
     await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
+# SEQUENCE HANDLERS
 @Client.on_message(filters.command(["ssequence", "startsequence"]))
 async def start_sequence(client: Client, message: Message):
-    """Start a file sequence collection with database tracking"""
+    """Start a file sequence collection"""
     user_id = message.from_user.id
+    username = message.from_user.username or ""
     
     if settings.ADMIN_MODE and user_id not in settings.ADMINS:
         return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
         
     # Check if sequence already active
-    active_seq = await hyoshcoder.active_sequences.find_one({"user_id": user_id})
-    if active_seq:
+    if await hyoshcoder.active_sequences.find_one({"user_id": user_id}):
         return await message.reply_text("**A sequence is already active! Use /esequence to end it.**")
     
     # Start new sequence in database
-    success = await hyoshcoder.start_sequence(user_id)
-    if not success:
-        return await message.reply_text("❌ Failed to start sequence. Please try again.")
+    await hyoshcoder.active_sequences.insert_one({
+        "user_id": user_id,
+        "username": username,
+        "start_time": datetime.now(pytz.UTC),
+        "files": []
+    })
     
     # Initialize memory tracking
     active_sequences[user_id] = []
     sequence_message_ids[user_id] = []
     
-    msg = await message.reply_text(
+    await message.reply_text(
         "**🎬 Sequence Started!**\n"
         "Now send me your files one by one.\n"
         "When done, type /esequence to complete."
     )
-    sequence_message_ids[user_id].append(msg.id)
 
 @Client.on_message(filters.command(["esequence", "endsequence"]))
 async def end_sequence(client: Client, message: Message):
-    """Complete a sequence and process files with full tracking"""
+    """Complete a sequence and process files"""
     user_id = message.from_user.id
     
     if settings.ADMIN_MODE and user_id not in settings.ADMINS:
         return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
     
-    # Get and end sequence from database
-    success, db_files = await hyoshcoder.end_sequence(user_id)
-    if not success:
+    # Get sequence from database
+    sequence = await hyoshcoder.active_sequences.find_one_and_delete({"user_id": user_id})
+    if not sequence:
         return await message.reply_text("**No active sequence found!**\nUse /ssequence to start one.")
     
-    # Get memory-stored files as fallback
+    # Get files from database or memory
+    db_files = sequence.get("files", [])
     mem_files = active_sequences.pop(user_id, [])
-    delete_messages = sequence_message_ids.pop(user_id, [])
-    
-    # Prefer database files, fallback to memory
     file_list = db_files if db_files else mem_files
     
     if not file_list:
         return await message.reply_text("**No files received in this sequence!**")
 
-    start_time = time.time()
-    processing_msg = await message.reply_text(
-        "🔄 **Processing Sequence...**\n"
-        f"• Files: {len(file_list)}\n"
-        "• Sorting and organizing..."
-    )
-
     try:
-        # Process files with metadata extraction
-        processed_files = []
+        # Process files
+        sorted_files = []
         missing_files = []
         
         for file in file_list:
@@ -558,44 +552,31 @@ async def end_sequence(client: Client, message: Message):
                 episode = await extract_episode(file["file_name"])
                 quality = await extract_quality(file["file_name"])
                 
-                processed_files.append({
+                sorted_files.append({
                     "file": file,
-                    "season": season or "0",
-                    "episode": episode or "0",
-                    "quality": quality or "HD",
-                    "sort_key": (int(season or 0), int(episode or 0), quality or "HD")
+                    "sort_key": (
+                        int(season or 0),
+                        int(episode or 0),
+                        quality or "HD"
+                    )
                 })
             except Exception as e:
                 missing_files.append(file["file_name"])
                 logger.error(f"Error processing {file['file_name']}: {e}")
 
-        # Sort files by season > episode > quality
-        sorted_files = sorted(processed_files, key=lambda x: x["sort_key"])
+        # Sort files
+        sorted_files.sort(key=lambda x: x["sort_key"])
         
-        # Send files with progress
+        # Send files
         success_count = 0
-        for idx, file_data in enumerate(sorted_files, 1):
-            if user_id in cancel_operations:
-                await message.reply_text("❌ Sequence canceled!")
-                return
-                
-            file = file_data["file"]
+        for item in sorted_files:
+            file = item["file"]
             try:
-                # Update progress every 5 files
-                if idx % 5 == 0:
-                    await processing_msg.edit_text(
-                        f"📤 Uploading Files...\n"
-                        f"• Progress: {idx}/{len(sorted_files)}\n"
-                        f"• Success: {success_count}\n"
-                        f"• Failed: {len(missing_files)}"
-                    )
-                
-                # Send file with clean name
-                clean_name = sanitize_filename(file["file_name"])
+                # Send to user
                 await client.send_document(
                     message.chat.id,
                     file["file_id"],
-                    caption=f"📁 {clean_name}"
+                    caption=f"📁 {file['file_name']}"
                 )
                 success_count += 1
                 
@@ -608,32 +589,38 @@ async def end_sequence(client: Client, message: Message):
                     )
                 
                 await asyncio.sleep(1)  # Rate limiting
-                
             except Exception as e:
                 missing_files.append(file["file_name"])
                 logger.error(f"Failed to send {file['file_name']}: {e}")
 
-        # Get sequence stats
-        seq_stats = await hyoshcoder.get_sequence_stats(user_id)
-        time_taken = time.time() - start_time
-        mins, secs = divmod(int(time_taken), 60)
+        # Record sequence completion
+        await hyoshcoder.sequences.insert_one({
+            "user_id": user_id,
+            "username": sequence.get("username", ""),
+            "file_count": len(file_list),
+            "success_count": success_count,
+            "start_time": sequence["start_time"],
+            "end_time": datetime.now(pytz.UTC),
+            "duration": (datetime.now(pytz.UTC) - sequence["start_time"]).total_seconds()
+        })
         
-        # Build completion message
-        msg_text = (
+        # Update stats
+        await update_sequence_stats(user_id, len(file_list), success_count)
+        
+        # Build success message
+        stats = await hyoshcoder.sequence_stats.find_one({"user_id": user_id}) or {}
+        msg = (
             f"🎉 **SEQUENCE COMPLETED** 🎉\n\n"
-            f"• 📂 Files Processed: `{success_count}/{len(file_list)}`\n"
-            f"• ⏱ Time Taken: `{mins}m {secs}s`\n"
-            f"• 📊 Your Stats:\n"
-            f"  - Total Sequences: `{seq_stats.get('total_sequences', 0)}`\n"
-            f"  - Total Files: `{seq_stats.get('total_files', 0)}`\n"
-            f"  - Current Streak: `{seq_stats.get('current_streak', 0)}`\n"
-            f"  - Longest Streak: `{seq_stats.get('longest_streak', 0)}`\n"
+            f"• 📂 Total Files: `{len(file_list)}`\n"
+            f"• ✅ Successfully Sent: `{success_count}`\n"
+            f"• 🔥 Current Streak: `{stats.get('current_streak', 0)}`\n"
+            f"• 🏆 Longest Streak: `{stats.get('longest_streak', 0)}`\n"
         )
         
         if missing_files:
-            msg_text += f"\n❌ Failed Files: `{len(missing_files)}`"
+            msg += f"\n❌ Failed Files: `{len(missing_files)}`"
         
-        await processing_msg.edit_text(msg_text)
+        await message.reply_text(msg)
         
     except Exception as e:
         logger.error(f"Sequence error: {e}")
@@ -642,8 +629,43 @@ async def end_sequence(client: Client, message: Message):
         # Cleanup
         if user_id in active_sequences:
             del active_sequences[user_id]
-        if delete_messages:
-            await client.delete_messages(message.chat.id, delete_messages)
+        if user_id in sequence_message_ids:
+            del sequence_message_ids[user_id]
+
+async def update_sequence_stats(user_id: int, total_files: int, success_files: int):
+    """Update user's sequence statistics"""
+    now = datetime.now(pytz.UTC)
+    stats = await hyoshcoder.sequence_stats.find_one({"user_id": user_id}) or {
+        "user_id": user_id,
+        "total_sequences": 0,
+        "total_files": 0,
+        "success_files": 0,
+        "current_streak": 0,
+        "longest_streak": 0,
+        "last_sequence": None
+    }
+    
+    # Calculate streak
+    last_seq = stats.get("last_sequence")
+    current_streak = stats.get("current_streak", 0)
+    if last_seq and (now - last_seq).days < 2:  # Allow 1 day gap
+        current_streak += 1
+    else:
+        current_streak = 1
+    
+    await hyoshcoder.sequence_stats.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "total_sequences": stats["total_sequences"] + 1,
+            "total_files": stats["total_files"] + total_files,
+            "success_files": stats["success_files"] + success_files,
+            "current_streak": current_streak,
+            "longest_streak": max(stats.get("longest_streak", 0), current_streak),
+            "last_sequence": now
+        }},
+        upsert=True
+    )
+
 
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
@@ -1104,72 +1126,68 @@ async def handle_media_group_completion(client: Client, message: Message):
             pass
 
 
+# LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Interactive leaderboard with sequence tracking"""
+    """Show leaderboard with toggle buttons"""
     try:
-        # Initial view - sequences leaderboard by default
-        view_type = "sequences"
-        
-        # Build leaderboard message
-        lb_text = await build_leaderboard_text(client, message.from_user.id, view_type)
-        
-        # Send with toggle button
-        await message.reply_text(
-            lb_text,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(
-                    "🔁 Switch to Renames Leaderboard",
-                    callback_data=f"lb_toggle:{view_type}"
-                )
-            ]]),
-            disable_web_page_preview=True
-        )
-        
+        # Initial view - renames leaderboard
+        await send_leaderboard(client, message.chat.id, "renames")
     except Exception as e:
         logger.error(f"Leaderboard error: {e}")
         await message.reply_text("🚨 Failed to load leaderboard!")
 
-@Client.on_callback_query(filters.regex(r"^lb_toggle:(sequences|renames)$"))
-async def toggle_leaderboard(client, callback_query):
-    """Handle leaderboard view toggling"""
+async def send_leaderboard(client: Client, chat_id: int, lb_type: str):
+    """Send leaderboard with proper buttons"""
+    text = await build_leaderboard_text(client, lb_type)
+    
+    buttons = [
+        [
+            InlineKeyboardButton(
+                "🔁 Show Sequences Leaderboard" if lb_type == "renames" else "🔁 Show Renames Leaderboard",
+                callback_data=f"lb_switch:{lb_type}"
+            )
+        ]
+    ]
+    
+    await client.send_message(
+        chat_id,
+        text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        disable_web_page_preview=True
+    )
+
+@Client.on_callback_query(filters.regex(r"^lb_switch:(renames|sequences)$"))
+async def switch_leaderboard(client, callback_query):
+    """Handle leaderboard switching"""
     try:
         current_type = callback_query.data.split(":")[1]
-        new_type = "renames" if current_type == "sequences" else "sequences"
+        new_type = "sequences" if current_type == "renames" else "renames"
         
-        # Regenerate leaderboard
-        lb_text = await build_leaderboard_text(client, callback_query.from_user.id, new_type)
+        text = await build_leaderboard_text(client, new_type)
         
-        # Update button text
-        btn_text = (
-            "🔁 Switch to Renames Leaderboard" 
-            if new_type == "sequences" 
-            else "🔁 Switch to Sequences Leaderboard"
-        )
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    "🔁 Show Sequences Leaderboard" if new_type == "renames" else "🔁 Show Renames Leaderboard",
+                    callback_data=f"lb_switch:{new_type}"
+                )
+            ]
+        ]
         
-        # Edit message
         await callback_query.message.edit_text(
-            lb_text,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(btn_text, callback_data=f"lb_toggle:{new_type}")
-            ]]),
+            text,
+            reply_markup=InlineKeyboardMarkup(buttons),
             disable_web_page_preview=True
         )
         await callback_query.answer()
-        
     except Exception as e:
-        logger.error(f"Toggle error: {e}")
-        await callback_query.answer("Error updating leaderboard", show_alert=True)
+        logger.error(f"Leaderboard switch error: {e}")
+        await callback_query.answer("Failed to switch leaderboard", show_alert=True)
 
-async def build_leaderboard_text(client: Client, user_id: int, lb_type: str) -> str:
-    """Build formatted leaderboard text"""
-    if lb_type == "sequences":
-        # Sequences leaderboard
-        top_users = await hyoshcoder.get_top_sequences(10)
-        user_rank, user_total = await hyoshcoder.get_user_sequence_rank(user_id)
-        title = "🏆 TOP SEQUENCERS"
-        metric = "files sequenced"
-    else:
+async def build_leaderboard_text(client: Client, lb_type: str) -> str:
+    """Build leaderboard text for either type"""
+    if lb_type == "renames":
         # Renames leaderboard
         top_users = await hyoshcoder.file_stats.aggregate([
             {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
@@ -1177,20 +1195,23 @@ async def build_leaderboard_text(client: Client, user_id: int, lb_type: str) -> 
             {"$limit": 10}
         ]).to_list(length=10)
         
-        user_stats = await hyoshcoder.file_stats.aggregate([
-            {"$match": {"user_id": user_id}},
-            {"$count": "total"}
-        ]).to_list(length=1)
-        
-        user_total = user_stats[0]["total"] if user_stats else 0
-        user_rank = await get_user_rank(user_id)
         title = "🏆 TOP RENAMERS"
         metric = "files renamed"
+    else:
+        # Sequences leaderboard
+        top_users = await hyoshcoder.sequences.aggregate([
+            {"$group": {"_id": "$user_id", "count": {"$sum": "$file_count"}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10}
+        ]).to_list(length=10)
+        
+        title = "🏆 TOP SEQUENCERS"
+        metric = "files sequenced"
     
     # Build leaderboard text
     text = f"✨ **{title}** ✨\n━━━━━━━━━━━━━━━━\n\n"
     
-    # Add top users with medals
+    # Add top users
     medals = ["🥇", "🥈", "🥉"] + [f"{i}." for i in range(4, 11)]
     for i, user in enumerate(top_users[:10]):
         try:
@@ -1198,30 +1219,14 @@ async def build_leaderboard_text(client: Client, user_id: int, lb_type: str) -> 
             name = user_obj.first_name
             if user_obj.username:
                 name = f"@{user_obj.username}"
-            count = user["count"] if lb_type == "renames" else user["total_files"]
-            text += f"{medals[i]} {name[:15]} - `{count}` {metric}\n"
+            text += f"{medals[i]} {name[:15]} - `{user['count']}` {metric}\n"
         except:
-            text += f"{medals[i]} Anonymous - `{user.get('count', user.get('total_files', 0))}` {metric}\n"
+            text += f"{medals[i]} Anonymous - `{user['count']}` {metric}\n"
     
-    # Add user's position
-    text += f"\n━━━━━━━━━━━━━━━━\n"
-    text += f"🌟 **Your Rank:** `#{user_rank if user_rank else 'N/A'}`\n"
-    text += f"📊 **Your {metric.title()}:** `{user_total}`\n"
+    text += "\n━━━━━━━━━━━━━━━━\n"
     text += f"🕒 Updated: `{datetime.now().strftime('%d %b %Y %H:%M')}`"
     
     return text
-
-async def get_user_rank(user_id: int) -> Optional[int]:
-    """Get user's rank for file renames"""
-    all_users = await hyoshcoder.file_stats.aggregate([
-        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}}
-    ]).to_list(None)
-    
-    for index, user in enumerate(all_users, start=1):
-        if user["_id"] == user_id:
-            return index
-    return None
 # SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
