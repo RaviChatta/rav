@@ -137,7 +137,7 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         # Smooth Gradient Style (10th style)
         progress = "{0}{1}".format(
             ''.join(["▰" for _ in range(math.floor(percentage / 5))]),
-            ''.join(["▱" for _ in range(20 - math.floor(percentage / 5))])
+            ''.join(["▱" for _ in range(16 - math.floor(percentage / 5))])
         )
 
         tmp = progress + Txt.PROGRESS_BAR.format(
