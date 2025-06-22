@@ -491,182 +491,155 @@ async def cancel_processing(client: Client, message: Message):
     await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
 # SEQUENCE HANDLERS
-@Client.on_message(filters.command(["ssequence", "startsequence"]))
-async def start_sequence(client: Client, message: Message):
-    """Start a file sequence collection"""
-    user_id = message.from_user.id
-    username = message.from_user.username or ""
-    
-    if settings.ADMIN_MODE and user_id not in settings.ADMINS:
-        return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
-        
-    # Check if sequence already active
-    if await hyoshcoder.active_sequences.find_one({"user_id": user_id}):
-        return await message.reply_text("**A sequence is already active! Use /esequence to end it.**")
-    
-    # Start new sequence in database
-    await hyoshcoder.active_sequences.insert_one({
-        "user_id": user_id,
-        "username": username,
-        "start_time": datetime.now(pytz.UTC),
-        "files": []
-    })
-    
-    # Initialize memory tracking
-    active_sequences[user_id] = []
-    sequence_message_ids[user_id] = []
-    
-    await message.reply_text(
-        "**🎬 Sequence Started!**\n"
-        "Now send me your files one by one.\n"
-        "When done, type /esequence to complete."
-    )
-
 @Client.on_message(filters.command(["esequence", "endsequence"]))
 async def end_sequence(client: Client, message: Message):
-    """Complete a sequence and process files"""
+    """End a file sequence and send sorted files"""
     user_id = message.from_user.id
     
     if settings.ADMIN_MODE and user_id not in settings.ADMINS:
         return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
     
-    # Get sequence from database
-    sequence = await hyoshcoder.active_sequences.find_one_and_delete({"user_id": user_id})
-    if not sequence:
-        return await message.reply_text("**No active sequence found!**\nUse /ssequence to start one.")
+    if user_id not in active_sequences:
+        return await message.reply_text("**No active sequence found!**\n**Use /ssequence to start one.**")
+
+    # Start timer
+    start_time = time.time()
     
-    # Get files from database or memory
-    db_files = sequence.get("files", [])
-    mem_files = active_sequences.pop(user_id, [])
-    file_list = db_files if db_files else mem_files
-    
+    file_list = active_sequences.pop(user_id, [])
+    delete_messages = sequence_message_ids.pop(user_id, [])
+
     if not file_list:
         return await message.reply_text("**No files received in this sequence!**")
 
     try:
-        # Process files
-        sorted_files = []
+        # Processing message with static text instead of animation
+        processing_msg = await message.reply_text(
+            "🔃 **Sorting and organizing your files...**\n"
+            "Please wait while I process your sequence..."
+        )
+
+        # Extract metadata and sort files
+        file_metadata = []
         missing_files = []
-        
         for file in file_list:
             try:
                 season = await extract_season(file["file_name"])
                 episode = await extract_episode(file["file_name"])
                 quality = await extract_quality(file["file_name"])
-                
-                sorted_files.append({
+                file_metadata.append({
                     "file": file,
-                    "sort_key": (
-                        int(season or 0),
-                        int(episode or 0),
-                        quality or "HD"
-                    )
+                    "season": season or "0",
+                    "episode": episode or "0", 
+                    "quality": quality or "unknown"
                 })
             except Exception as e:
                 missing_files.append(file["file_name"])
-                logger.error(f"Error processing {file['file_name']}: {e}")
+                logger.error(f"Error processing file {file['file_name']}: {e}")
 
         # Sort files
-        sorted_files.sort(key=lambda x: x["sort_key"])
+        sorted_files = sorted(
+            file_metadata,
+            key=lambda f: (f["season"], f["episode"], f["quality"])
+        )
         
-        # Send files
-        success_count = 0
-        for item in sorted_files:
-            file = item["file"]
+        # Calculate time taken
+        time_taken = time.time() - start_time
+        mins, secs = divmod(int(time_taken), 60)
+        time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+
+        # Delete processing message
+        await processing_msg.delete()
+
+        # Send files with delay to avoid flooding
+        for file_data in sorted_files:
+            if user_id in cancel_operations and cancel_operations[user_id]:
+                await message.reply_text("❌ Sequence processing was canceled!")
+                return
+
             try:
-                # Send to user
+                file = file_data["file"]
+                file_name = file['file_name'].replace('*', '×').replace('_', ' ').replace('`', "'")
+                
+                # Send file to user with simple caption
                 await client.send_document(
                     message.chat.id,
                     file["file_id"],
-                    caption=f"📁 {file['file_name']}"
+                    caption=f'"{file_name}"'
                 )
-                success_count += 1
                 
                 # Send to dump channel if configured
-                if dump_channel := await hyoshcoder.get_user_channel(user_id):
-                    await client.send_document(
-                        chat_id=dump_channel,
-                        document=file["file_id"],
-                        caption=f"Sequenced file from user {user_id}"
-                    )
+                try:
+                    dump_channel = await hyoshcoder.get_user_channel(user_id)
+                    if dump_channel:
+                        user = message.from_user
+                        full_name = user.first_name
+                        if user.last_name:
+                            full_name += f" {user.last_name}"
+                        username = f"@{user.username}" if user.username else "N/A"
+                        
+                        user_data = await hyoshcoder.read_user(user_id)
+                        is_premium = user_data.get("is_premium", False) if user_data else False
+                        premium_status = '🗸' if is_premium else '✘'
+
+                        await client.send_document(
+                            chat_id=dump_channel,
+                            document=file["file_id"],
+                            caption=(
+                                f"<b>User Details</b>\n"
+                                f"ID: <code>{user_id}</code>\n"
+                                f"Name: {full_name}\n"
+                                f"Username: {username}\n"
+                                f"Premium: {premium_status}\n"
+                                f"File: <code>{html.escape(file['file_name'])}</code>"
+                            ),
+                            parse_mode=ParseMode.HTML
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to send to dump channel: {e}")
+
+                # Small delay between files (0.5-1.5 seconds)
+                await asyncio.sleep(random.uniform(0.5, 1.5))
                 
-                await asyncio.sleep(1)  # Rate limiting
+            except FloodWait as e:
+                await asyncio.sleep(e.value + 1)
             except Exception as e:
-                missing_files.append(file["file_name"])
-                logger.error(f"Failed to send {file['file_name']}: {e}")
+                logger.error(f"Error sending file {file['file_name']}: {e}")
+                missing_files.append(file['file_name'])
 
-        # Record sequence completion
-        await hyoshcoder.sequences.insert_one({
-            "user_id": user_id,
-            "username": sequence.get("username", ""),
-            "file_count": len(file_list),
-            "success_count": success_count,
-            "start_time": sequence["start_time"],
-            "end_time": datetime.now(pytz.UTC),
-            "duration": (datetime.now(pytz.UTC) - sequence["start_time"]).total_seconds()
-        })
-        
-        # Update stats
-        await update_sequence_stats(user_id, len(file_list), success_count)
-        
-        # Build success message
-        stats = await hyoshcoder.sequence_stats.find_one({"user_id": user_id}) or {}
-        msg = (
+        # Prepare success message
+        success_message = (
             f"🎉 **SEQUENCE COMPLETED** 🎉\n\n"
-            f"• 📂 Total Files: `{len(file_list)}`\n"
-            f"• ✅ Successfully Sent: `{success_count}`\n"
-            f"• 🔥 Current Streak: `{stats.get('current_streak', 0)}`\n"
-            f"• 🏆 Longest Streak: `{stats.get('longest_streak', 0)}`\n"
+            f"▫️ **Total Files Sent:** `{len(sorted_files)}`\n"
+            f"▫️ **Time Taken:** `{time_str}`\n"
         )
-        
-        if missing_files:
-            msg += f"\n❌ Failed Files: `{len(missing_files)}`"
-        
-        await message.reply_text(msg)
-        
-    except Exception as e:
-        logger.error(f"Sequence error: {e}")
-        await message.reply_text("❌ Sequence processing failed!")
-    finally:
-        # Cleanup
-        if user_id in active_sequences:
-            del active_sequences[user_id]
-        if user_id in sequence_message_ids:
-            del sequence_message_ids[user_id]
 
-async def update_sequence_stats(user_id: int, total_files: int, success_files: int):
-    """Update user's sequence statistics"""
-    now = datetime.now(pytz.UTC)
-    stats = await hyoshcoder.sequence_stats.find_one({"user_id": user_id}) or {
-        "user_id": user_id,
-        "total_sequences": 0,
-        "total_files": 0,
-        "success_files": 0,
-        "current_streak": 0,
-        "longest_streak": 0,
-        "last_sequence": None
-    }
-    
-    # Calculate streak
-    last_seq = stats.get("last_sequence")
-    current_streak = stats.get("current_streak", 0)
-    if last_seq and (now - last_seq).days < 2:  # Allow 1 day gap
-        current_streak += 1
-    else:
-        current_streak = 1
-    
-    await hyoshcoder.sequence_stats.update_one(
-        {"user_id": user_id},
-        {"$set": {
-            "total_sequences": stats["total_sequences"] + 1,
-            "total_files": stats["total_files"] + total_files,
-            "success_files": stats["success_files"] + success_files,
-            "current_streak": current_streak,
-            "longest_streak": max(stats.get("longest_streak", 0), current_streak),
-            "last_sequence": now
-        }},
-        upsert=True
-    )
+        # Add missing files info if any
+        if missing_files:
+            success_message += (
+                f"\n❌ **Missing Files:** `{len(missing_files)}`\n"
+                f"`{', '.join(missing_files[:3])}`"
+            )
+            if len(missing_files) > 3:
+                success_message += f" +{len(missing_files)-3} more"
+
+        # Send final success message after all files are sent
+        await message.reply_text(success_message)
+
+        # Clean up messages
+        if delete_messages:
+            try:
+                await client.delete_messages(message.chat.id, delete_messages)
+            except Exception as e:
+                logger.error(f"Error deleting messages: {e}")
+
+    except Exception as e:
+        logger.error(f"Sequence processing failed: {e}")
+        error_message = (
+            "❌ **Failed to process sequence!**\n"
+            "Please try again with fewer files or check your filenames."
+        )
+        # Avoid showing technical errors to users
+        await message.reply_text(error_message)
 
 
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
