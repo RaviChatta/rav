@@ -105,7 +105,7 @@ class AdminPanel:
     
     @staticmethod
     def premium_menu() -> InlineKeyboardMarkup:
-        """Complete premium management menu"""
+        """Updated premium menu with users list option"""
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("⭐ Activate", callback_data="activate_premium"),
@@ -115,8 +115,10 @@ class AdminPanel:
                 InlineKeyboardButton("📝 Check Status", callback_data="check_premium"),
                 InlineKeyboardButton("📊 Plans", callback_data="premium_plans")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_main"),
-             InlineKeyboardButton("❌ Close", callback_data="close_admin")]
+            [
+                InlineKeyboardButton("👥 Premium Users", callback_data="premium_users")
+            ],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_main")]
         ])
     
     @staticmethod
@@ -952,7 +954,78 @@ class AdminPanel:
                 "Example: <code>/checkpremium 123456</code>",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
-
+    @staticmethod
+    async def show_premium_users(client: Client, target: Union[Message, CallbackQuery]) -> Message:
+        """Display list of premium users with their plan and expiry"""
+        try:
+            premium_users = []
+            async for user in hyoshcoder.db.users.find({"premium.is_premium": True}):
+                premium_users.append(user)
+            
+            if not premium_users:
+                return await AdminPanel._edit_or_reply(
+                    target,
+                    "🌟 <b>Premium Users</b>\n\nNo active premium users found.",
+                    reply_markup=AdminPanel.back_button("premium_menu")
+                )
+            
+            # Format the list
+            users_list = []
+            for user in sorted(premium_users, key=lambda x: x['premium']['expires_at']):
+                expires_at = user['premium']['expires_at']
+                remaining = (expires_at - datetime.now()).days
+                users_list.append(
+                    f"• <code>{user['_id']}</code> - {user['premium']['plan']} "
+                    f"(expires in {remaining} days)"
+                )
+            
+            # Paginate if too many users
+            if len(users_list) > 50:
+                chunks = [users_list[i:i + 50] for i in range(0, len(users_list), 50)]
+                return await AdminPanel._send_paginated(
+                    client, target, chunks, 
+                    title="🌟 <b>Premium Users</b> (Page {}/{}):\n\n",
+                    menu="premium_menu"
+                )
+            
+            return await AdminPanel._edit_or_reply(
+                target,
+                "🌟 <b>Premium Users</b> ({} total):\n\n{}".format(
+                    len(premium_users),
+                    "\n".join(users_list)
+                ),
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
+            
+        except Exception as e:
+            logger.error(f"Error showing premium users: {e}")
+            return await AdminPanel._edit_or_reply(
+                target,
+                f"❌ Error loading premium users: {str(e)}",
+                reply_markup=AdminPanel.back_button("premium_menu")
+            )
+    
+    @staticmethod
+    async def _send_paginated(client, target, chunks, title, menu):
+        """Helper for paginated results"""
+        current_page = 0
+        total_pages = len(chunks)
+        
+        async def update_page(page):
+            return await AdminPanel._edit_or_reply(
+                target,
+                title.format(page+1, total_pages) + "\n".join(chunks[page]),
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("⬅️", callback_data=f"premium_page_{page-1}"),
+                        InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="none"),
+                        InlineKeyboardButton("➡️", callback_data=f"premium_page_{page+1}")
+                    ],
+                    [InlineKeyboardButton("🔙 Back", callback_data=menu)]
+                ])
+            )
+        
+        return await update_page(current_page)
     # ========================
     # Broadcast Handlers
     # ========================
@@ -973,7 +1046,7 @@ class AdminPanel:
 
     @staticmethod
     async def process_broadcast(client: Client, message: Message) -> Message:
-        """Fixed broadcast method that properly handles user list"""
+        """Fixed broadcast method that properly handles async generator"""
         try:
             if not message.reply_to_message:
                 raise ValueError("You must reply to a message to broadcast it")
@@ -983,15 +1056,16 @@ class AdminPanel:
             silent = "--silent" in options
             pin_message = "--pin" in options
             
-            # Get all users as a list (not async generator)
-            users = await hyoshcoder.get_all_users(filter_banned=True)
-            if not isinstance(users, list):
-                users = [user async for user in users] if hasattr(users, '__aiter__') else list(users)
+            # Properly handle async generator
+            users_cursor = hyoshcoder.get_all_users(filter_banned=True)
+            users = []
+            async for user in users_cursor:
+                users.append(user)
             
             total = len(users)
             success = 0
             failed = 0
-            
+                
             # Send initial status
             status_msg = await message.reply_text(
                 f"📢 Broadcasting to {total} users...\n"
@@ -1327,7 +1401,11 @@ class AdminPanel:
                 await AdminPanel.handle_check_premium(client, callback)
             elif data == "premium_plans":
                 await AdminPanel.show_premium_plans(client, callback)
-            
+            elif data == "premium_users":
+                await AdminPanel.show_premium_users(client, callback)
+            elif data.startswith("premium_page_"):
+                page = int(data.split("_")[2])
+                
             # Broadcast
             elif data in ["text_broadcast", "media_broadcast"]:
                 await AdminPanel.handle_broadcast_menu(client, callback)
@@ -1465,7 +1543,9 @@ async def check_premium_command(client: Client, message: Message):
 @Client.on_message(filters.command("broadcast") & filters.user(ADMIN_USER_ID))
 async def broadcast_command(client: Client, message: Message):
     await AdminPanel.process_broadcast(client, message)
-
+@Client.on_message(filters.command("premiumusers") & filters.user(ADMIN_USER_ID))
+async def premium_users_command(client: Client, message: Message):
+    await AdminPanel.show_premium_users(client, message)
 # ========================
 # Callback Handlers
 # ========================
