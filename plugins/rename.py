@@ -1130,6 +1130,7 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 # LEADERBOARD HANDLERS
 # LEADERBOARD HANDLERS
+# LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
     """Show the initial leaderboard with toggle buttons"""
@@ -1158,7 +1159,7 @@ async def send_leaderboard(client: Client, chat_id: int, lb_type: str, user_id: 
         ]).to_list(None)
         
         user_rank = next((i+1 for i, u in enumerate(all_users) if u["_id"] == user_id, None)
-        user_count = next((u["count"] for u in all_users if u["_id"] == user_id, 0)
+        user_count = next((u["count"] for u in all_users if u["_id"] == user_id), 0)
         
         title = "🏆 TOP RENAMERS"
         metric = "files renamed"
@@ -1177,7 +1178,7 @@ async def send_leaderboard(client: Client, chat_id: int, lb_type: str, user_id: 
         ]).to_list(None)
         
         user_rank = next((i+1 for i, u in enumerate(all_users) if u["_id"] == user_id, None)
-        user_count = next((u["count"] for u in all_users if u["_id"] == user_id, 0)
+        user_count = next((u["count"] for u in all_users if u["_id"] == user_id), 0)
         
         title = "🏆 TOP SEQUENCERS"
         metric = "files sequenced"
