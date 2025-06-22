@@ -265,25 +265,28 @@ async def cb_handler(client: Client, query: CallbackQuery):
             src_txt = "File name" if src_info == "file_name" else "File caption"
     
             btn = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
-                    InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
-                    InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
-                ],
-                [
-                    InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
-                    InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
-                    InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
-                ],
-                [
-                    InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
-                    InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
-                    InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
-                ],
-                [
-                    InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
-                ]
+                    [
+                        InlineKeyboardButton("ᴀᴜᴛᴏ", callback_data='file_names'),
+                        InlineKeyboardButton("ᴛʜᴜᴍʙ", callback_data='thumbnail'),
+                        InlineKeyboardButton("ᴄᴀᴘᴛɪᴏɴ", callback_data='caption')
+                    ],
+                    [
+                        InlineKeyboardButton("ᴍᴇᴛᴀ", callback_data='meta'),
+                        InlineKeyboardButton("ᴍᴇᴅɪᴀ", callback_data='setmedia'),
+                        InlineKeyboardButton("ᴅᴜᴍᴘ", callback_data='setdump')
+                    ],
+                    [
+                        InlineKeyboardButton("sᴇǫᴜᴇɴᴛɪᴀʟ", callback_data='sequential'),
+                        InlineKeyboardButton("ᴘʀᴇᴍ", callback_data='premiumx'),
+                        InlineKeyboardButton(f"sʀᴄ: {src_txt}", callback_data='toggle_src')
+                    ],
+                    [
+                        InlineKeyboardButton("ꜱᴏʀᴛ", callback_data="sort"),
+                        InlineKeyboardButton("• ʜᴏᴍᴇ •", callback_data="home"),
+                        InlineKeyboardButton("▷", callback_data="home")
+                    ]
             ])
+
 
             response = {
                 "caption": Txt.HELP_TXT.format(client.mention),
@@ -300,24 +303,26 @@ async def cb_handler(client: Client, query: CallbackQuery):
             src_txt = "File name" if await hyoshcoder.get_src_info(user_id) == "file_name" else "File caption"
             
             btn = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
-                    InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
-                    InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
-                ],
-                [
-                    InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
-                    InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
-                    InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
-                ],
-                [
-                    InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
-                    InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
-                    InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
-                ],
-                [
-                    InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
-                ]
+                    [
+                        InlineKeyboardButton("ᴀᴜᴛᴏ", callback_data='file_names'),
+                        InlineKeyboardButton("ᴛʜᴜᴍʙ", callback_data='thumbnail'),
+                        InlineKeyboardButton("ᴄᴀᴘᴛɪᴏɴ", callback_data='caption')
+                    ],
+                    [
+                        InlineKeyboardButton("ᴍᴇᴛᴀ", callback_data='meta'),
+                        InlineKeyboardButton("ᴍᴇᴅɪᴀ", callback_data='setmedia'),
+                        InlineKeyboardButton("ᴅᴜᴍᴘ", callback_data='setdump')
+                    ],
+                    [
+                        InlineKeyboardButton("sᴇǫᴜᴇɴᴛɪᴀʟ", callback_data='sequential'),
+                        InlineKeyboardButton("ᴘʀᴇᴍ", callback_data='premiumx'),
+                        InlineKeyboardButton(f"sʀᴄ: {src_txt}", callback_data='toggle_src')
+                    ],
+                    [
+                        InlineKeyboardButton("ꜱᴏʀᴛ", callback_data="sort"),
+                        InlineKeyboardButton("• ʜᴏᴍᴇ •", callback_data="home"),
+                        InlineKeyboardButton("▷", callback_data="home")
+                    ]
             ])
             
             await query.message.edit_reply_markup(reply_markup=btn)
@@ -333,24 +338,26 @@ async def cb_handler(client: Client, query: CallbackQuery):
             src_txt = "File name" if new_src == "file_name" else "File caption"
             
             btn = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("ᴬᵁᵀᴼ", callback_data='file_names'),
-                    InlineKeyboardButton("ᵀᴴᵁᴹᴮ", callback_data='thumbnail'),
-                    InlineKeyboardButton("ᶜᴬᴾᵀᴵᴼᴺ", callback_data='caption')
-                ],
-                [
-                    InlineKeyboardButton("ᴹᴱᵀᴬ", callback_data='meta'),
-                    InlineKeyboardButton("ᴹᴱᴰᴵᴬ", callback_data='setmedia'),
-                    InlineKeyboardButton("ᴰᵁᴹᴾ", callback_data='setdump')
-                ],
-                [
-                    InlineKeyboardButton(btn_seq_text, callback_data='sequential'),
-                    InlineKeyboardButton("ᴾᴿᴱᴹ", callback_data='premiumx'),
-                    InlineKeyboardButton(f"ˢᴿᶜ: {src_txt}", callback_data='toggle_src')
-                ],
-                [
-                    InlineKeyboardButton("ᴴᴼᴹᴱ", callback_data='home')
-                ]
+                    [
+                        InlineKeyboardButton("ᴀᴜᴛᴏ", callback_data='file_names'),
+                        InlineKeyboardButton("ᴛʜᴜᴍʙ", callback_data='thumbnail'),
+                        InlineKeyboardButton("ᴄᴀᴘᴛɪᴏɴ", callback_data='caption')
+                    ],
+                    [
+                        InlineKeyboardButton("ᴍᴇᴛᴀ", callback_data='meta'),
+                        InlineKeyboardButton("ᴍᴇᴅɪᴀ", callback_data='setmedia'),
+                        InlineKeyboardButton("ᴅᴜᴍᴘ", callback_data='setdump')
+                    ],
+                    [
+                        InlineKeyboardButton("sᴇǫᴜᴇɴᴛɪᴀʟ", callback_data='sequential'),
+                        InlineKeyboardButton("ᴘʀᴇᴍ", callback_data='premiumx'),
+                        InlineKeyboardButton(f"sʀᴄ: {src_txt}", callback_data='toggle_src')
+                    ],
+                    [
+                        InlineKeyboardButton("ꜱᴏʀᴛ", callback_data="sort"),
+                        InlineKeyboardButton("• ʜᴏᴍᴇ •", callback_data="home"),
+                        InlineKeyboardButton("▷", callback_data="home")
+                    ]
             ])
             
             await query.message.edit_reply_markup(reply_markup=btn)
@@ -455,7 +462,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 caption = (
                     "**🎯 Your Referral Link**\n\n"
                     f"Share this link to earn {settings.REFER_POINT_REWARD} points per referral:\n"
-                    f"`{refer_link}`\n\n"
+                    f"USE '/refer' to get your referal link \n\n"
                     "💡 Use `/freepoints` for earning points via ads\n"
                     "💡 Use `/genpoints` to generate earning links\n\n"
                 )
@@ -610,7 +617,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         elif data == "setdump_instructions":
             await query.answer("ℹ️ Use /set_dump <channel_id> to configure dump channel.", show_alert=True)
             return
-        
+
         elif data == "remove_dump":
             await hyoshcoder.set_user_channel(user_id, None)
             btn = InlineKeyboardMarkup([
@@ -629,7 +636,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 response['reply_markup']
             )
             return
-        
+        elif data == "sort":
+            await query.message.edit_caption(
+            caption=Txt.SORT_TXT,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("ʙᴀᴄᴋ", callback_data="help")]
+            ])
         elif data == "premiumx":
             btn = InlineKeyboardMarkup([
                 [InlineKeyboardButton("• ʙᴜʏ ᴘʀᴇᴍɪᴜᴍ •", callback_data="buy_premium")],
