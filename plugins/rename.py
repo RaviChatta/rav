@@ -491,6 +491,23 @@ async def cancel_processing(client: Client, message: Message):
     await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
 # SEQUENCE HANDLERS
+@Client.on_message(filters.command(["ssequence", "startsequence"]))
+async def start_sequence(client: Client, message: Message):
+    """Start a file sequence collection"""
+    user_id = message.from_user.id
+    
+    if settings.ADMIN_MODE and user_id not in settings.ADMINS:
+        return await message.reply_text("**Admin mode is active - Only admins can use sequences!**")
+        
+    if user_id in active_sequences:
+        return await message.reply_text("**A sequence is already active! Use /esequence to end it.**")
+    
+    active_sequences[user_id] = []
+    sequence_message_ids[user_id] = []
+    
+    msg = await message.reply_text("**Sequence has been started! Send your files...**")
+    sequence_message_ids[user_id].append(msg.id)
+    
 @Client.on_message(filters.command(["esequence", "endsequence"]))
 async def end_sequence(client: Client, message: Message):
     """End a file sequence and send sorted files"""
