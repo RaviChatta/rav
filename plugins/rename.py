@@ -1129,83 +1129,55 @@ async def handle_media_group_completion(client: Client, message: Message):
 
 
 # LEADERBOARD HANDLERS
+# LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
-    """Show leaderboard with toggle buttons"""
+    """Show the initial leaderboard with toggle buttons"""
     try:
-        # Initial view - renames leaderboard
-        await send_leaderboard(client, message.chat.id, "renames")
+        # Start with Renames leaderboard by default
+        await send_leaderboard(client, message.chat.id, "renames", message.from_user.id)
     except Exception as e:
         logger.error(f"Leaderboard error: {e}")
         await message.reply_text("🚨 Failed to load leaderboard!")
 
-async def send_leaderboard(client: Client, chat_id: int, lb_type: str):
-    """Send leaderboard with proper buttons"""
-    text = await build_leaderboard_text(client, lb_type)
-    
-    buttons = [
-        [
-            InlineKeyboardButton(
-                "🔁 Show Sequences Leaderboard" if lb_type == "renames" else "🔁 Show Renames Leaderboard",
-                callback_data=f"lb_switch:{lb_type}"
-            )
-        ]
-    ]
-    
-    await client.send_message(
-        chat_id,
-        text,
-        reply_markup=InlineKeyboardMarkup(buttons),
-        disable_web_page_preview=True
-    )
-
-@Client.on_callback_query(filters.regex(r"^lb_switch:(renames|sequences)$"))
-async def switch_leaderboard(client, callback_query):
-    """Handle leaderboard switching"""
-    try:
-        current_type = callback_query.data.split(":")[1]
-        new_type = "sequences" if current_type == "renames" else "renames"
-        
-        text = await build_leaderboard_text(client, new_type)
-        
-        buttons = [
-            [
-                InlineKeyboardButton(
-                    "🔁 Show Sequences Leaderboard" if new_type == "renames" else "🔁 Show Renames Leaderboard",
-                    callback_data=f"lb_switch:{new_type}"
-                )
-            ]
-        ]
-        
-        await callback_query.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-            disable_web_page_preview=True
-        )
-        await callback_query.answer()
-    except Exception as e:
-        logger.error(f"Leaderboard switch error: {e}")
-        await callback_query.answer("Failed to switch leaderboard", show_alert=True)
-
-async def build_leaderboard_text(client: Client, lb_type: str) -> str:
-    """Build leaderboard text for either type"""
+async def send_leaderboard(client: Client, chat_id: int, lb_type: str, user_id: int):
+    """Send or update leaderboard with proper buttons"""
+    # Get leaderboard data
     if lb_type == "renames":
-        # Renames leaderboard
+        # Renames leaderboard - top users by file renames
         top_users = await hyoshcoder.file_stats.aggregate([
             {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
             {"$limit": 10}
         ]).to_list(length=10)
         
+        # Get user's rank
+        all_users = await hyoshcoder.file_stats.aggregate([
+            {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]).to_list(None)
+        
+        user_rank = next((i+1 for i, u in enumerate(all_users) if u["_id"] == user_id, None)
+        user_count = next((u["count"] for u in all_users if u["_id"] == user_id, 0)
+        
         title = "🏆 TOP RENAMERS"
         metric = "files renamed"
     else:
-        # Sequences leaderboard
+        # Sequences leaderboard - top users by sequenced files
         top_users = await hyoshcoder.sequences.aggregate([
             {"$group": {"_id": "$user_id", "count": {"$sum": "$file_count"}}},
             {"$sort": {"count": -1}},
             {"$limit": 10}
         ]).to_list(length=10)
+        
+        # Get user's sequence rank
+        all_users = await hyoshcoder.sequences.aggregate([
+            {"$group": {"_id": "$user_id", "count": {"$sum": "$file_count"}}},
+            {"$sort": {"count": -1}}
+        ]).to_list(None)
+        
+        user_rank = next((i+1 for i, u in enumerate(all_users) if u["_id"] == user_id, None)
+        user_count = next((u["count"] for u in all_users if u["_id"] == user_id, 0)
         
         title = "🏆 TOP SEQUENCERS"
         metric = "files sequenced"
@@ -1213,7 +1185,7 @@ async def build_leaderboard_text(client: Client, lb_type: str) -> str:
     # Build leaderboard text
     text = f"✨ **{title}** ✨\n━━━━━━━━━━━━━━━━\n\n"
     
-    # Add top users
+    # Add top users with medals
     medals = ["🥇", "🥈", "🥉"] + [f"{i}." for i in range(4, 11)]
     for i, user in enumerate(top_users[:10]):
         try:
@@ -1225,10 +1197,51 @@ async def build_leaderboard_text(client: Client, lb_type: str) -> str:
         except:
             text += f"{medals[i]} Anonymous - `{user['count']}` {metric}\n"
     
-    text += "\n━━━━━━━━━━━━━━━━\n"
+    # Add user's position
+    text += f"\n━━━━━━━━━━━━━━━━\n"
+    text += f"🌟 **Your Rank:** `#{user_rank if user_rank else 'N/A'}`\n"
+    text += f"📊 **Your {metric.split()[0].title()}:** `{user_count}`\n"
     text += f"🕒 Updated: `{datetime.now().strftime('%d %b %Y %H:%M')}`"
     
-    return text
+    # Create buttons
+    buttons = [
+        [
+            InlineKeyboardButton(
+                "🔁 Show Sequences" if lb_type == "renames" else "🔁 Show Renames",
+                callback_data=f"lb_switch:{lb_type}:{user_id}"
+            )
+        ]
+    ]
+    
+    # Send or update message
+    try:
+        await client.send_message(
+            chat_id,
+            text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        logger.error(f"Error sending leaderboard: {e}")
+
+@Client.on_callback_query(filters.regex(r"^lb_switch:(renames|sequences):(\d+)$"))
+async def handle_leaderboard_switch(client, callback_query):
+    """Handle leaderboard switching"""
+    try:
+        data_parts = callback_query.data.split(":")
+        current_type = data_parts[1]
+        user_id = int(data_parts[2])
+        
+        # Determine which leaderboard to show next
+        new_type = "sequences" if current_type == "renames" else "renames"
+        
+        # Edit the existing message with new leaderboard
+        await send_leaderboard(client, callback_query.message.chat.id, new_type, user_id)
+        await callback_query.message.delete()
+        await callback_query.answer()
+    except Exception as e:
+        logger.error(f"Leaderboard switch error: {e}")
+        await callback_query.answer("Failed to switch leaderboard", show_alert=True)
 # SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
