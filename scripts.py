@@ -133,7 +133,11 @@ class Scripts:
 <code>/metadata on</code> – ᴇɴᴀʙʟᴇ
 </blockquote>
 """
+    SORT_TXT = """
+➲ /ssequence: sᴛᴀʀᴛ sᴇǫᴜᴇɴᴄᴇ.
+➲ /ssequence: ᴇɴᴅ sᴇǫᴜᴇɴᴄᴇ.
 
+"""
     SOURCE_TXT = """
 🌠 <b>ᴛᴇᴄʜɴᴏʟᴏɢʏ</b> 🌠
 <blockquote>
