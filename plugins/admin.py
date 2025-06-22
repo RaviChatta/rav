@@ -763,7 +763,7 @@ class AdminPanel:
             "Example: <code>/depremium 123456 \"Violation of terms\"</code>",
             reply_markup=AdminPanel.back_button("premium_menu")
         )
-   @staticmethod
+    @staticmethod
     async def process_activate_premium(client: Client, message: Message) -> Message:
         """Process premium activation command"""
         try:
