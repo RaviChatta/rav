@@ -113,11 +113,11 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
     
     # Dynamic delay: adjust based on file size
     if total >= 1024 * 1024 * 1024:         # ≥ 1 GB
-        delay = 10
+        delay = 8
     elif total >= 500 * 1024 * 1024:        # 500 MB – 1 GB
         delay = 5
     else:                                   # < 500 MB
-        delay = 2.5
+        delay = 1.5
     
     if now - last < delay and current != total:
         return
@@ -134,9 +134,10 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
         estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
 
+        # Smooth Gradient Style (10th style)
         progress = "{0}{1}".format(
-            ''.join(["█" for _ in range(math.floor(percentage / 5))]),
-            ''.join(["░" for _ in range(20 - math.floor(percentage / 5))])
+            ''.join(["▰" for _ in range(math.floor(percentage / 5))]),
+            ''.join(["▱" for _ in range(20 - math.floor(percentage / 5))])
         )
 
         tmp = progress + Txt.PROGRESS_BAR.format(
@@ -190,7 +191,7 @@ def convert(seconds):
     minutes = seconds // 60
     seconds %= 60      
     return "%d:%02d:%02d" % (hour, minutes, seconds)
-
+    
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
         curr = datetime.now(timezone("Asia/Kolkata"))
