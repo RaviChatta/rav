@@ -767,17 +767,16 @@ class AdminPanel:
             )
         
     @staticmethod
-    async def handle_deactivate_premium(client: Client, target: Union[Message, CallbackQuery]) -> Message:
-        """Initiate premium deactivation flow"""
+    async def handle_deactivate_premium_menu(client: Client, callback: CallbackQuery) -> Message:
+        """Show deactivate premium menu"""
         return await AdminPanel._edit_or_reply(
-            target,
+            callback,
             "❌ <b>Deactivate Premium</b>\n\n"
-            "Enter command:\n"
+            "Enter user ID to deactivate premium:\n"
             "<code>/depremium user_id [reason]</code>\n\n"
-            "Example: <code>/depremium 123456 \"Expired\"</code>",
+            "Example: <code>/depremium 123456 \"Violation of terms\"</code>",
             reply_markup=AdminPanel.back_button("premium_menu")
         )
-    
     @staticmethod
     async def process_deactivate_premium(client: Client, message: Message) -> Message:
         """Process premium deactivation"""
@@ -787,14 +786,39 @@ class AdminPanel:
                 raise ValueError("Missing user ID")
             
             user_id = int(parts[1])
-            reason = parts[2] if len(parts) > 2 else "Manual deactivation"
+            reason = parts[2] if len(parts) > 2 else "Admin deactivation"
             
-            await hyoshcoder.deactivate_premium(user_id)
+            # Get user's current premium status
+            user = await hyoshcoder.get_user(user_id)
+            if not user:
+                raise ValueError("User not found")
+            
+            if not user.get("premium", {}).get("is_premium", False):
+                return await AdminPanel._edit_or_reply(
+                    message,
+                    f"ℹ️ User {user_id} doesn't have active premium",
+                    reply_markup=AdminPanel.back_button("premium_menu")
+                )
+            
+            # Store original points before deactivation
+            original_points = user["premium"].get("original_points", user["points"]["balance"])
+            
+            # Deactivate premium
+            await hyoshcoder.db.users.update_one(
+                {"_id": user_id},
+                {"$set": {
+                    "premium.is_premium": False,
+                    "premium.expired_at": datetime.now(),
+                    "premium.deactivation_reason": reason,
+                    "points.balance": original_points
+                }}
+            )
             
             return await AdminPanel._edit_or_reply(
                 message,
-                f"✅ Deactivated premium for user {user_id}\n"
-                f"📝 Reason: {reason}",
+                f"✅ Premium deactivated for user {user_id}\n"
+                f"📝 Reason: {reason}\n"
+                f"🪙 Points reverted to: {original_points}",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
         except Exception as e:
@@ -802,7 +826,7 @@ class AdminPanel:
                 message,
                 f"❌ Error: {str(e)}\n\n"
                 "Usage: <code>/depremium user_id [reason]</code>\n"
-                "Example: <code>/depremium 123456 \"Expired\"</code>",
+                "Example: <code>/depremium 123456 \"Violation\"</code>",
                 reply_markup=AdminPanel.back_button("premium_menu")
             )
     
