@@ -754,7 +754,7 @@ async def auto_rename_files(client: Client, message: Message):
     queue_msg = await message.reply_text(
         f"📁 File added to queue (#{queue_position})\n"
         f"Name: {file_info['file_name'] or 'Unknown'}\n"
-        f"Queue size: {len(user_file_queues[user_id]['queue'])}"
+        f"✅ Added to Queue: {len(user_file_queues[user_id]['queue'])}"
     )
 
     # Start processing if not already running
@@ -987,90 +987,114 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             thumb_path = None
     
     # Upload flow with retry logic
-    max_upload_retries = 1
+    max_upload_retries = 3
     for attempt in range(max_upload_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
-                return await message.reply_text("❌ Processing canceled by user")
+                await message.reply_text("❌ Processing canceled by user")
+                return
     
-            # Get dump channel with caching
-            dump_channel = await get_user_dump_channel(user_id)
+            # Prepare common upload parameters
+            common_params = {
+                'caption': caption,
+                'parse_mode': ParseMode.HTML,
+                'thumb': thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                'progress': progress_for_pyrogram,
+                'progress_args': (f"Uploading #{queue_position}", None, time.time())
+            }
+    
+            # Try dump channel first if configured
             dump_success = False
+            dump_channel = await hyoshcoder.get_user_channel(user_id)
             
             if dump_channel:
                 try:
-                    # Verify channel exists and bot has permissions
-                    try:
-                        chat = await client.get_chat(dump_channel)
-                        if chat.type not in ("channel", "supergroup"):
-                            logger.warning(f"Invalid chat type {chat.type} for dump channel {dump_channel}")
-                            raise ValueError("Invalid chat type")
-                            
-                        # Check bot permissions
-                        member = await client.get_chat_member(dump_channel, client.me.id)
-                        if not member or not member.privileges or not member.privileges.can_post_messages:
-                            logger.warning(f"Bot lacks posting permissions in dump channel {dump_channel}")
-                            raise ValueError("Missing permissions")
-                            
-                    except Exception as e:
-                        logger.error(f"Can't access dump channel {dump_channel}: {e}")
-                        # Remove invalid channel from cache
-                        if user_id in user_dump_channels:
-                            del user_dump_channels[user_id]
-                        raise
-                    
-                    # Try dump channel first
-                    dump_success = await send_to_dump_channel(
-                        client,
-                        user_id,
-                        path,
-                        caption,
-                        thumb_path
-                    )
-                    
-                    if dump_success:
-                        await message.reply_text(f"✅ Sent #{queue_position} to dump channel!")
+                    channel_id = int(dump_channel)
+                    if channel_id < 0:  # Negative ID indicates a channel
+                        chat = await client.get_chat(channel_id)
+                        if chat.type in ("channel", "supergroup"):
+                            member = await client.get_chat_member(channel_id, client.me.id)
+                            if member and member.privileges and member.privileges.can_post_messages:
+                                # Prepare dump channel caption
+                                user = message.from_user
+                                full_name = user.first_name
+                                if user.last_name:
+                                    full_name += f" {user.last_name}"
+                                username = f"@{user.username}" if user.username else "N/A"
+                                
+                                user_data = await hyoshcoder.read_user(user_id)
+                                is_premium = user_data.get("is_premium", False) if user_data else False
+                                premium_status = '✅' if is_premium else '❌'
+                                
+                                dump_caption = (
+                                    f"<b>File Details</b>\n"
+                                    f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
+                                    f"Size: {humanbytes(file_info['size'])}\n"
+                                )
+                                
+                                # Send to dump channel based on file type
+                                if file_info['media_type'] == "document":
+                                    await client.send_document(
+                                        chat_id=channel_id,
+                                        document=path,
+                                        caption=dump_caption,
+                                        thumb=common_params['thumb'],
+                                        parse_mode=ParseMode.HTML
+                                    )
+                                    dump_success = True
+                                elif file_info['media_type'] == "video":
+                                    await client.send_video(
+                                        chat_id=channel_id,
+                                        video=path,
+                                        caption=dump_caption,
+                                        thumb=common_params['thumb'],
+                                        duration=file_info.get('duration', 0),
+                                        supports_streaming=True,
+                                        parse_mode=ParseMode.HTML
+                                    )
+                                    dump_success = True
+                                elif file_info['media_type'] == "audio":
+                                    await client.send_audio(
+                                        chat_id=channel_id,
+                                        audio=path,
+                                        caption=dump_caption,
+                                        thumb=common_params['thumb'],
+                                        duration=file_info.get('duration', 0),
+                                        parse_mode=ParseMode.HTML
+                                    )
+                                    dump_success = True
+                                    
+                                if dump_success:
+                                    await message.reply_text(f"✅ File #{queue_position} sent to dump channel!")
                 except Exception as e:
                     logger.error(f"Error sending to dump channel: {e}")
                     dump_success = False
     
+            # If dump channel not set or failed, send to original chat
             if not dump_success:
-                # Normal upload if dump channel failed or not set
                 if file_info['media_type'] == "document":
                     await client.send_document(
-                        message.chat.id,
+                        chat_id=message.chat.id,
                         document=path,
-                        thumb=thumb_path,
-                        caption=caption,
-                        progress=progress_for_pyrogram,
-                        progress_args=(f"Uploading #{queue_position}", None, time.time()),
-                        parse_mode=ParseMode.HTML
+                        **common_params
                     )
                 elif file_info['media_type'] == "video":
                     await client.send_video(
-                        message.chat.id,
+                        chat_id=message.chat.id,
                         video=path,
-                        caption=caption,
-                        thumb=thumb_path,
                         duration=file_info.get('duration', 0),
                         supports_streaming=True,
-                        progress=progress_for_pyrogram,
-                        progress_args=(f"Uploading #{queue_position}", None, time.time()),
-                        parse_mode=ParseMode.HTML
+                        **common_params
                     )
                 elif file_info['media_type'] == "audio":
                     await client.send_audio(
-                        message.chat.id,
+                        chat_id=message.chat.id,
                         audio=path,
-                        caption=caption,
-                        thumb=thumb_path,
                         duration=file_info.get('duration', 0),
-                        progress=progress_for_pyrogram,
-                        progress_args=(f"Uploading #{queue_position}", None, time.time()),
-                        parse_mode=ParseMode.HTML
+                        **common_params
                     )
     
-            # Track the operation
+            # Track successful operation
             await track_rename_operation(
                 user_id=user_id,
                 original_name=file_info['file_name'],
@@ -1078,32 +1102,33 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 points_deducted=rename_cost
             )
     
-            # Update batch points if this is part of a batch
+            # Update batch tracking if applicable
             if user_file_queues.get(user_id, {}).get('batch_data'):
                 user_file_queues[user_id]['batch_data']["points_used"] += rename_cost
     
-            # Send success message (unless it's part of a batch which will get a completion message)
+            # Send success message for single files
             if not user_file_queues.get(user_id, {}).get('batch_data'):
                 await send_single_success_message(
                     client, message, file_info['file_name'], renamed_file_name,
                     start_time, rename_cost, metadata_added
                 )
     
-            break
-
-        except BadRequest as e:
-            if "FILE_PART_INVALID" in str(e):
-                if attempt == max_upload_retries - 1:
-                    raise
-                await asyncio.sleep(5 * (attempt + 1))
-                continue
-            raise
+            break  # Success - exit retry loop
+    
         except FloodWait as e:
             await asyncio.sleep(e.value + 5)
             await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
-            break
+            continue
+        except BadRequest as e:
+            if "FILE_PART_INVALID" in str(e) and attempt < max_upload_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            await message.reply_text(f"❌ Upload failed: {str(e)[:200]}")
+            raise
         except Exception as e:
+            logger.error(f"Upload attempt {attempt + 1} failed: {e}")
             if attempt == max_upload_retries - 1:
+                await message.reply_text("❌ Failed after multiple retries")
                 raise
             await asyncio.sleep(5 * (attempt + 1))
             continue
