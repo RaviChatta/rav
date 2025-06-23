@@ -1125,10 +1125,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     # Release semaphore
     user_semaphore.release()
 
-    except Exception as e:
-        logger.error(f"Error in auto_rename_files: {e}")
-        await message.reply_text("❌ An error occurred while processing your file. Please try again.")
-
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
     """Handle completion message for batch uploads"""
