@@ -663,8 +663,11 @@ async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
     start_time = time.time()
     
-    # Initialize global variables if not exists (defensive programming)
-    global user_file_queues, user_semaphores, renaming_operations
+    # Initialize global variables if not exists
+    global user_file_queues, user_semaphores, renaming_operations, file_processing_counters
+    
+    if 'file_processing_counters' not in globals():
+        file_processing_counters = {}
     
     # Check if this is part of a sequence
     if user_id in active_sequences:
@@ -750,9 +753,10 @@ async def auto_rename_files(client: Client, message: Message):
     user_file_queues[user_id]['queue'].append(file_info)
 
     # Send simplified queue confirmation
-    queue_msg = await message.reply_text(
-        f"📁 #{queue_position} - {file_info['file_name'] or 'Unknown'}"
-    )
+    try:
+        await message.reply_text(f"📁 #{queue_position} - {file_info['file_name'] or 'Unknown'}")
+    except Exception as e:
+        logger.error(f"Error sending queue message: {e}")
 
     # Start processing if not already running
     if not user_file_queues[user_id]['is_processing']:
@@ -760,49 +764,57 @@ async def auto_rename_files(client: Client, message: Message):
         asyncio.create_task(process_user_queue(client, user_id))
 
 async def process_user_queue(client: Client, user_id: int):
-    """Process all files in the user's queue with all features"""
+    """Process all files in the user's queue with semaphore control"""
+    # Initialize semaphore for this user if not exists
+    if user_id not in user_semaphores:
+        user_semaphores[user_id] = asyncio.Semaphore(2)  # Allow 2 concurrent processes
+    
     while user_file_queues.get(user_id, {}).get('queue'):
-        file_info = user_file_queues[user_id]['queue'].pop(0)
-        try:
-            # Get user data for each file (in case settings changed)
-            user_data = await hyoshcoder.read_user(user_id)
-            if not user_data:
-                await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
-                continue
+        async with user_semaphores[user_id]:
+            file_info = user_file_queues[user_id]['queue'].pop(0)
+            try:
+                # Get user data for each file
+                user_data = await hyoshcoder.read_user(user_id)
+                if not user_data:
+                    await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
+                    continue
 
-            # Check sequential mode from database
-            sequential_mode = user_data.get("sequential_mode", False)
-            
-            # Handle sequential mode
-            if sequential_mode:
-                if user_id not in sequential_operations:
-                    sequential_operations[user_id] = {"files": [], "expected_count": 0}
+                # Check sequential mode from database
+                sequential_mode = user_data.get("sequential_mode", False)
+                
+                # Handle sequential mode
+                if sequential_mode:
+                    if user_id not in sequential_operations:
+                        sequential_operations[user_id] = {"files": [], "expected_count": 0}
 
-                sequential_operations[user_id]["expected_count"] += 1
-                while len(sequential_operations[user_id]["files"]) > 0:
-                    await asyncio.sleep(1)
-                    if user_id in cancel_operations and cancel_operations[user_id]:
-                        await file_info['message'].reply_text("❌ Processing canceled by user")
-                        break
+                    sequential_operations[user_id]["expected_count"] += 1
+                    while len(sequential_operations[user_id]["files"]) > 0:
+                        await asyncio.sleep(1)
+                        if user_id in cancel_operations and cancel_operations[user_id]:
+                            await file_info['message'].reply_text("❌ Processing canceled by user")
+                            break
 
-            await process_single_file(client, file_info, user_data)
-            
-            # Handle batch completion if this was the last file in a batch
-            if (user_file_queues[user_id]['batch_data'] and 
-                len(user_file_queues[user_id]['queue']) == 0):
-                batch_data = user_file_queues[user_id]['batch_data']
-                await send_completion_message(
-                    client,
-                    user_id,
-                    batch_data["start_time"],
-                    batch_data["count"],
-                    batch_data["points_used"]
-                )
-                user_file_queues[user_id]['batch_data'] = None
-            
-        except Exception as e:
-            logger.error(f"Error processing file for {user_id}: {e}")
-            await file_info['message'].reply_text(f"❌ Error processing file: {str(e)[:500]}")
+                await process_single_file(client, file_info, user_data)
+                
+                # Handle batch completion if this was the last file in a batch
+                if (user_file_queues[user_id]['batch_data'] and 
+                    len(user_file_queues[user_id]['queue']) == 0):
+                    batch_data = user_file_queues[user_id]['batch_data']
+                    await send_completion_message(
+                        client,
+                        user_id,
+                        batch_data["start_time"],
+                        batch_data["count"],
+                        batch_data["points_used"]
+                    )
+                    user_file_queues[user_id]['batch_data'] = None
+                
+            except Exception as e:
+                logger.error(f"Error processing file for {user_id}: {e}")
+                try:
+                    await file_info['message'].reply_text(f"❌ Error processing file: {str(e)[:500]}")
+                except:
+                    pass
     
     # Cleanup when done
     if user_id in user_file_queues:
@@ -894,6 +906,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
 
     # Download file with retry logic
     max_download_retries = 1
+    queue_message = None
     for attempt in range(max_download_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
@@ -929,7 +942,10 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     if _bool_metadata:
         metadata = await hyoshcoder.get_metadata_code(user_id)
         if metadata:
-            await queue_message.edit_text(f"🔄 Adding metadata to file #{queue_position}...")
+            try:
+                await queue_message.edit_text(f"🔄 Adding metadata to file #{queue_position}...")
+            except:
+                queue_message = await message.reply_text(f"🔄 Adding metadata to file #{queue_position}...")
 
             success, error = await add_comprehensive_metadata(
                 renamed_file_path,
@@ -946,7 +962,11 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 path = renamed_file_path
 
     # Prepare for upload
-    await queue_message.edit_text(f"📤 Uploading #{queue_position}...")
+    try:
+        await queue_message.edit_text(f"📤 Uploading #{queue_position}...")
+    except:
+        queue_message = await message.reply_text(f"📤 Uploading #{queue_position}...")
+
     thumb_path = None
     custom_caption = await hyoshcoder.get_caption(message.chat.id)
     custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
@@ -1063,7 +1083,10 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                                     dump_success = True
                                     
                                 if dump_success:
-                                    await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
+                                    try:
+                                        await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
+                                    except:
+                                        pass
                 except Exception as e:
                     logger.error(f"Error sending to dump channel: {e}")
                     dump_success = False
@@ -1151,10 +1174,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
 
     if file_info['file_id'] in renaming_operations:
         del renaming_operations[file_info['file_id']]
-    
-    # Release semaphore
-    if user_id in user_semaphores:
-        user_semaphores[user_id].release()
 
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
@@ -1163,29 +1182,26 @@ async def handle_media_group_completion(client: Client, message: Message):
         user_id = message.from_user.id
 
         # If batch not tracked, skip
-        if user_id not in user_batch_trackers:
+        if user_id not in user_file_queues or not user_file_queues[user_id].get('batch_data'):
             return
 
-        batch_data = user_batch_trackers[user_id]
+        batch_data = user_file_queues[user_id]['batch_data']
         if not batch_data.get("is_batch"):
             return
 
-        expected_files = batch_data["count"]
-        completed_files = batch_data["count"]  # We've already counted all files when they were added
-
-        # Send completion message immediately since we track count at addition
+        # Send completion message
         await send_completion_message(
             client,
             user_id,
             batch_data["start_time"],
-            completed_files,
+            batch_data["count"],
             batch_data["points_used"]
         )
 
         # Cleanup
-        file_processing_counters.pop(user_id, None)
-        user_batch_trackers.pop(user_id, None)
-        sequential_operations.pop(user_id, None)
+        user_file_queues[user_id]['batch_data'] = None
+        if user_id in sequential_operations:
+            sequential_operations.pop(user_id)
 
     except Exception as e:
         logger.error(f"Error in handle_media_group_completion: {e}")
@@ -1193,6 +1209,23 @@ async def handle_media_group_completion(client: Client, message: Message):
             await client.send_message(user_id, "✅ Batch finished but error showing stats.")
         except:
             pass
+
+@Client.on_message(filters.command("cancel"))
+async def cancel_processing(client: Client, message: Message):
+    """Cancel current processing operations"""
+    user_id = message.from_user.id
+    cancel_operations[user_id] = True
+    
+    # Clean up any ongoing operations
+    if user_id in user_file_queues:
+        user_file_queues[user_id]['queue'] = []
+        if 'batch_data' in user_file_queues[user_id]:
+            user_file_queues[user_id]['batch_data'] = None
+    
+    if user_id in sequential_operations:
+        sequential_operations[user_id]["files"] = []
+    
+    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
 # LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
