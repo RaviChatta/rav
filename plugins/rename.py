@@ -658,7 +658,6 @@ async def end_sequence(client: Client, message: Message):
         # Avoid showing technical errors to users
         await message.reply_text(error_message)
 
-
 @Client.on_message((filters.document | filters.video | filters.audio) & (filters.group | filters.private))
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
@@ -750,11 +749,9 @@ async def auto_rename_files(client: Client, message: Message):
     file_info['start_time'] = start_time
     user_file_queues[user_id]['queue'].append(file_info)
 
-    # Send queue confirmation
+    # Send simplified queue confirmation
     queue_msg = await message.reply_text(
-        f"📁 File added to queue (#{queue_position})\n"
-        f"Name: {file_info['file_name'] or 'Unknown'}\n"
-        f"✅ Added to Queue: {len(user_file_queues[user_id]['queue'])}"
+        f"📁 #{queue_position} - {file_info['file_name'] or 'Unknown'}"
     )
 
     # Start processing if not already running
@@ -773,6 +770,7 @@ async def process_user_queue(client: Client, user_id: int):
                 await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
                 continue
 
+            # Check sequential mode from database
             sequential_mode = user_data.get("sequential_mode", False)
             
             # Handle sequential mode
@@ -901,12 +899,12 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             if user_id in cancel_operations and cancel_operations[user_id]:
                 return await message.reply_text("❌ Processing canceled by user")
 
-            await message.reply_text(f"📥 Downloading file #{queue_position} (Attempt {attempt + 1})")
+            queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
             path = await client.download_media(
                 message,
                 file_name=temp_file_path,
                 progress=progress_for_pyrogram,
-                progress_args=(f"Downloading #{queue_position}", None, time.time()),
+                progress_args=(f"Downloading #{queue_position}", queue_message, time.time()),
             )
             break
         except Exception as e:
@@ -931,8 +929,8 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     if _bool_metadata:
         metadata = await hyoshcoder.get_metadata_code(user_id)
         if metadata:
-            await message.reply_text(f"🔄 Adding metadata to file #{queue_position}")
-            
+            await queue_message.edit_text(f"🔄 Adding metadata to file #{queue_position}...")
+
             success, error = await add_comprehensive_metadata(
                 renamed_file_path,
                 metadata_file_path,
@@ -948,7 +946,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 path = renamed_file_path
 
     # Prepare for upload
-    await message.reply_text(f"📤 Uploading file #{queue_position}")
+    await queue_message.edit_text(f"📤 Uploading #{queue_position}...")
     thumb_path = None
     custom_caption = await hyoshcoder.get_caption(message.chat.id)
     custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
@@ -1000,7 +998,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 'parse_mode': ParseMode.HTML,
                 'thumb': thumb_path if thumb_path and os.path.exists(thumb_path) else None,
                 'progress': progress_for_pyrogram,
-                'progress_args': (f"Uploading #{queue_position}", None, time.time())
+                'progress_args': (f"Uploading #{queue_position}", queue_message, time.time())
             }
     
             # Try dump channel first if configured
@@ -1065,7 +1063,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                                     dump_success = True
                                     
                                 if dump_success:
-                                    await message.reply_text(f"✅ File #{queue_position} sent to dump channel!")
+                                    await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
                 except Exception as e:
                     logger.error(f"Error sending to dump channel: {e}")
                     dump_success = False
@@ -1134,7 +1132,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             continue
 
     # Cleanup
-    # Cleanup
     try:
         if os.path.exists(renamed_file_path):
             os.remove(renamed_file_path)
@@ -1144,6 +1141,11 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             os.remove(thumb_path)
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+        if queue_message:
+            try:
+                await queue_message.delete()
+            except:
+                pass
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
@@ -1191,7 +1193,6 @@ async def handle_media_group_completion(client: Client, message: Message):
             await client.send_message(user_id, "✅ Batch finished but error showing stats.")
         except:
             pass
-
 
 # LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
