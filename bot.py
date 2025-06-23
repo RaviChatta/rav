@@ -140,7 +140,9 @@ class Bot(Client):
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://files.catbox.moe/px9br5.png",
-                    caption=caption
+                    caption=caption,
+                    reply_markup=reply_markup
+
                 )
             except Exception as e:
                 logger.error(f"Failed to send message in chat {chat_id}: {e}", exc_info=False)
