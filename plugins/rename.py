@@ -128,7 +128,7 @@ def sanitize_filename(filename: str) -> str:
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
     """Get or create semaphore for user"""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(3)
+        user_semaphores[user_id] = asyncio.Semaphore(2)
     return user_semaphores[user_id]
 
 async def get_stream_indexes(input_path: str):
