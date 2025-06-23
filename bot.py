@@ -7,8 +7,12 @@ from pytz import timezone
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from aiohttp import web
+from pyrogram import Client, __version__
+from pyrogram.raw.all import layer
+import pyrogram.utils
 from route import web_server
 from config import settings
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 #from plugins.callback import start_cleanup
 #from plugins.rename import startup_tasks
 from database.data import initialize_database, hyoshcoder
