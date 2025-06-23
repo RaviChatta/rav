@@ -107,21 +107,11 @@ async def extract_quality(filename: str) -> str:
 # Add this at the top of your file with other globals
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
-    """Improved progress callback with robust error handling"""
-    if not message or not hasattr(message, 'chat'):
-        return  # Skip if invalid message object
-
     now = time.time()
     diff = now - start
 
-    # Initialize chat_id safely
-    try:
-        chat_id = message.chat.id
-    except AttributeError:
-        return  # Skip if message has no chat attribute
-
-    # Global control: Only update once every 1.5 seconds per message (minimum)
-    last_update = last_progress_edit.get(chat_id, 0)
+    # Global control: Only update once every 1.5 seconds per message
+    last = last_progress_edit.get(message.chat.id, 0)
     
     # Dynamic delay: adjust based on file size
     if total >= 1024 * 1024 * 1024:         # ≥ 1 GB
@@ -129,59 +119,46 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
     elif total >= 500 * 1024 * 1024:        # 500 MB – 1 GB
         delay = 5
     else:                                   # < 500 MB
-        delay = 2.5
+        delay = 1.5
     
-    # Skip update if too soon and not final update
-    if now - last_update < delay and current != total:
+    if now - last < delay and current != total:
         return
 
-    # Calculate progress metrics
+    last_progress_edit[message.chat.id] = now
+
     try:
-        percentage = current * 100 / total if total > 0 else 0
+        percentage = current * 100 / total
         speed = current / diff if diff > 0 else 0
-        
         elapsed_time = round(diff) * 1000
         time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
         estimated_total_time = elapsed_time + time_to_completion
-    
-        # Format time strings
+
         elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
         estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
-    
-        # Progress bar with exactly 15 blocks
-        total_blocks = 15
-        filled_blocks = min(math.floor((percentage / 100) * total_blocks), total_blocks)
-        empty_blocks = total_blocks - filled_blocks
-        progress = "▰" * filled_blocks + "▱" * empty_blocks
-    
-        # Build progress text
-        progress_text = (
-            f"{progress} {percentage:.2f}%\n"
-            f"├ {humanbytes(current)} / {humanbytes(total)}\n"
-            f"├ Speed: {humanbytes(speed)}/s\n"
-            f"└ ETA: {estimated_total_time_str if estimated_total_time_str else '0s'}"
+
+        # Smooth Gradient Style (10th style)
+        progress = "{0}{1}".format(
+            ''.join(["▰" for _ in range(math.floor(percentage * 15 / 100))]),
+            ''.join(["▱" for _ in range(15 - math.floor(percentage * 15 / 100))])
+        )
+        
+
+        tmp = progress + Txt.PROGRESS_BAR.format(
+            round(percentage, 2),
+            humanbytes(current),
+            humanbytes(total),
+            humanbytes(speed),
+            estimated_total_time_str if estimated_total_time_str != '' else "0s"
         )
 
-        # Update message
-        try:
-            await message.edit(
-                text=f"{ud_type}\n\n{progress_text}",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✕ Cancel ✕", callback_data="cancel_upload")]
-                ])
-            )
-            last_progress_edit[chat_id] = now
-        except (MessageNotModified, BadRequest):
-            pass  # Skip if message wasn't modified or other Telegram-side errors
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-        except Exception as e:
-            logger.debug(f"Progress update error: {e}")
-
-    except ZeroDivisionError:
-        pass  # Handle division by zero quietly
+        await message.edit(
+            text=f"{ud_type}\n\n{tmp}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("• Cancel •", callback_data="close")]
+            ])
+        )
     except Exception as e:
-        logger.debug(f"Progress calculation error: {e}")
+        pass  # Optionally log e
 
 
 def humanbytes(size):
