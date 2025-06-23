@@ -130,22 +130,22 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
         elapsed_time = round(diff) * 1000
         time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
         estimated_total_time = elapsed_time + time_to_completion
-
+    
         elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
         estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
-
-        # Smooth Gradient Style (10th style)
-        progress = "{0}{1}".format(
-            ''.join(["▰" for _ in range(math.floor(percentage / 5))]),
-            ''.join(["▱" for _ in range(15 - math.floor(percentage / 5))])
-        )
-
+    
+        # Fixed to use exactly 15 total blocks
+        total_blocks = 15
+        filled_blocks = math.floor((percentage / 100) * total_blocks)
+        empty_blocks = total_blocks - filled_blocks
+        progress = "▰" * filled_blocks + "▱" * empty_blocks
+    
         tmp = progress + Txt.PROGRESS_BAR.format(
             round(percentage, 2),
             humanbytes(current),
             humanbytes(total),
             humanbytes(speed),
-            estimated_total_time_str if estimated_total_time_str != '' else "0s"
+            estimated_total_time_str if estimated_total_time_str else "0s"
         )
 
         await message.edit(
