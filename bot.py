@@ -123,15 +123,17 @@ class Bot(Client):
             try:
                 curr = datetime.now(timezone("Asia/Kolkata"))
                 caption = (
-                     "**ʜᴀɴᴄᴏᴄᴋ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
-                     f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ​: `{uptime_string}`"
-                ),
-                reply_markup=InlineKeyboardMarkup(
-                        [[
-                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/TFIBOTS")
-                        ]]
+                    "**ʜᴀɴᴄᴏᴄᴋ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ !**\n\n"
+                    f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ​: `{uptime_string}`"
                 )
                 
+                reply_markup = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/TFIBOTS"),
+                        InlineKeyboardButton("ᴄʜᴇᴄᴋ", url="https://t.me/Autorenameboabot")
+                    ]
+                ])
+
                 if hasattr(Config, 'ANIME_FINDER_ENABLED'):
                     caption += f"Anime Finder: {'✅ Enabled' if anime_finder_status else '❌ Disabled'}\n"
                 
