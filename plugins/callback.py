@@ -660,7 +660,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     "• 2x Points Multiplier\n"
                     "• Priority Processing\n"
                     "• No Ads\n"
-                    "• Extended File Size Limits\n\n"
+                    "• if you want contact @sun_godnika_bot\n\n"
                     "Start earning points now!"
                 ),
                 'reply_markup': btn,
