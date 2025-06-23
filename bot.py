@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 Config = settings
-SUPPORT_CHAT = -1002563598431
+pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
+
+# Setting SUPPORT_CHAT properly
+SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", str(Config.LOG_CHANNEL)))
+
 
 class Bot(Client):
     def __init__(self):
@@ -115,8 +119,13 @@ class Bot(Client):
             try:
                 curr = datetime.now(timezone("Asia/Kolkata"))
                 caption = (
-                    "**Oops! The bot has restarted.**\n\n"
-                    f"I haven't slept since: `{uptime_string}`\n"
+                     "**ʜᴀɴᴄᴏᴄᴋ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
+                     f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ​: `{uptime_string}`"
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                        [[
+                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/TFIBOTS")
+                        ]]
                 )
                 
                 if hasattr(Config, 'ANIME_FINDER_ENABLED'):
