@@ -37,12 +37,12 @@ def escape_html(text: str) -> str:
 logger = logging.getLogger(__name__)
 
 # Global variables to manage operations
-renaming_operations = {}
-user_semaphores = {}
-user_queue_messages = {}
+user_file_queues = {}  # Tracks all files in queue per user
+user_semaphores = {}   # Semaphores per user for concurrency control
+renaming_operations = {}  # Tracks currently processing files
 user_batch_trackers = {}  # Track batch operations per user
 sequential_operations = {}  # For sequential mode
-file_processing_counters = {}  # Track individual file counters per user
+active_sequences = {}  # For sequence handling
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
 
@@ -663,7 +663,10 @@ async def end_sequence(client: Client, message: Message):
 async def auto_rename_files(client: Client, message: Message):
     user_id = message.from_user.id
     start_time = time.time()
-
+    
+    # Initialize global variables if not exists (defensive programming)
+    global user_file_queues, user_semaphores, renaming_operations
+    
     # Check if this is part of a sequence
     if user_id in active_sequences:
         if message.document:
@@ -1121,9 +1124,10 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
 
     if file_info['file_id'] in renaming_operations:
         del renaming_operations[file_info['file_id']]
-
+    
     # Release semaphore
-    user_semaphore.release()
+    if user_id in user_semaphores:
+        user_semaphores[user_id].release()
 
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
