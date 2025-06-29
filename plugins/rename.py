@@ -409,70 +409,49 @@ async def get_user_rank(user_id: int, time_range: str = "all") -> Tuple[Optional
         logger.error(f"Error getting user rank: {e}")
         return None, 0
 
-async def send_completion_message(client: Client, user_id: int, start_time: float, file_count: int, points_used: int):
-    """Send the unified completion message for batch operations"""
-    try:
-        # Check if operation was canceled
-        if user_id in cancel_operations and cancel_operations[user_id]:
-            del cancel_operations[user_id]
-            return await client.send_message(user_id, "❌ Batch processing was canceled!")
-        
-        user_rank, total_renames = await get_user_rank(user_id)
-        user_points = await hyoshcoder.get_points(user_id)
-        
-        time_taken = time.time() - start_time
-        mins, secs = divmod(int(time_taken), 60)
-        avg_time = time_taken / file_count if file_count > 0 else 0
-        avg_mins, avg_secs = divmod(int(avg_time), 60)
-        
-        completion_msg = (
-            f"❐ Batch Rename Completed\n\n"
-            f"⌬ Total Files Processed: {file_count}\n"
-            f"⌬ Total Points Used: {points_used}\n"
-            f"⌬ Points Remaining: {user_points}\n"
-            f"⌬ Total Time Taken: {mins}m {secs}s\n"
-            f"⌬ Average Time Per File: {avg_mins}m {avg_secs}s\n"
-            f"⌬ Your Total Renames: {total_renames}\n"
-            f"⌬ Global Rank: #{user_rank if user_rank else 'N/A'}"
-        )
-        
-        await client.send_message(user_id, completion_msg)
-    except Exception as e:
-        logger.error(f"Error sending completion message: {e}")
-        await client.send_message(user_id, "✅ Batch processing completed successfully!")
-
-async def send_single_success_message(client: Client, message: Message, file_name: str, renamed_file_name: str, 
-                                    start_time: float, rename_cost: int, metadata_added: bool):
-    """Send success message for single file operations"""
+async def send_success_message(client: Client, message: Message, file_info: dict, renamed_file_name: str, 
+                             start_time: float, points_used: int, metadata_added: bool, is_batch: bool = False):
+    """Unified success message handler that automatically detects batch vs single operations"""
     try:
         # Check if operation was canceled
         if message.from_user.id in cancel_operations and cancel_operations[message.from_user.id]:
-            del cancel_operations[message.from_user.id]
             return await message.reply_text("❌ Processing was canceled!")
         
         elapsed_seconds = time.time() - start_time
         minutes, seconds = divmod(int(elapsed_seconds), 60)
+        time_taken_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
         
-        if minutes > 0:
-            time_taken_str = f"{minutes}m {seconds}s"
+        remaining_points = (await hyoshcoder.get_points(message.from_user.id)) - points_used
+        
+        # Determine if this is part of a batch by checking queue length
+        user_queue = user_file_queues.get(message.from_user.id, {}).get('queue', [])
+        actual_is_batch = len(user_queue) > 1 or is_batch
+        
+        if actual_is_batch:
+            # Batch success message
+            success_msg = (
+                f"✅ 𝗕𝗮𝘁𝗰𝗵 𝗥𝗲𝗻𝗮𝗺𝗲 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗲𝗱\n\n"
+                f"▫️ 𝗧𝗶𝗺𝗲 𝗧𝗮𝗸𝗲𝗻: {time_taken_str}\n"
+                f"▫️ 𝗣𝗼𝗶𝗻𝘁𝘀 𝗨𝘀𝗲𝗱: {points_used}\n"
+                f"▫️ 𝗥𝗲𝗺𝗮𝗶𝗻𝗶𝗻𝗴 𝗣𝗼𝗶𝗻𝘁𝘀: {remaining_points}\n"
+                f"▫️ 𝗠𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝗔𝗱𝗱𝗲𝗱: {'Yes' if metadata_added else 'No'}"
+            )
         else:
-            time_taken_str = f"{seconds}s"
-
-        remaining_points = (await hyoshcoder.get_points(message.from_user.id)) - rename_cost
-        success_msg = (
-            f"✅ 𝗙𝗶𝗹𝗲 𝗥𝗲𝗻𝗮𝗺𝗲𝗱 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹𝗹𝘆!\n\n"
-            f"➲ 𝗢𝗿𝗶𝗴𝗶𝗻𝗮𝗹: `{file_name}`\n"
-            f"➲ 𝗥𝗲𝗻𝗮𝗺𝗲𝗱: `{renamed_file_name}`\n"
-            f"➲ 𝗧𝗶𝗺𝗲 𝗧𝗮𝗸𝗲𝗻: {time_taken_str}\n"
-            f"➲ 𝗠𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝗔𝗱𝗱𝗲𝗱: {'𝗬𝗲𝘀' if metadata_added else '𝗡𝗼'}\n"
-            f"➲ 𝗣𝗼𝗶𝗻𝘁𝘀 𝗨𝘀𝗲𝗱: {rename_cost}\n"
-            f"➲ 𝗥𝗲𝗺𝗮𝗶𝗻𝗶𝗻𝗴 𝗣𝗼𝗶𝗻𝘁𝘀: {remaining_points}"
-        )
-
+            # Single file success message
+            success_msg = (
+                f"✅ 𝗙𝗶𝗹𝗲 𝗥𝗲𝗻𝗮𝗺𝗲𝗱 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹𝗹𝘆!\n\n"
+                f"➲ 𝗢𝗿𝗶𝗴𝗶𝗻𝗮𝗹: `{file_info['file_name']}`\n"
+                f"➲ 𝗥𝗲𝗻𝗮𝗺𝗲𝗱: `{renamed_file_name}`\n"
+                f"➲ 𝗧𝗶𝗺𝗲 𝗧𝗮𝗸𝗲𝗻: {time_taken_str}\n"
+                f"➲ 𝗠𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝗔𝗱𝗱𝗲𝗱: {'Yes' if metadata_added else 'No'}\n"
+                f"➲ 𝗣𝗼𝗶𝗻𝘁𝘀 𝗨𝘀𝗲𝗱: {points_used}\n"
+                f"➲ 𝗥𝗲𝗺𝗮𝗶𝗻𝗶𝗻𝗴 𝗣𝗼𝗶𝗻𝘁𝘀: {remaining_points}"
+            )
+        
         await message.reply_text(success_msg)
     except Exception as e:
         logger.error(f"Error sending success message: {e}")
-        await message.reply_text("✅ File processed successfully!")
+        await message.reply_text("✅ Operation completed successfully!")
 
 @Client.on_message(filters.command("cancel"))
 async def cancel_processing(client: Client, message: Message):
@@ -763,12 +742,13 @@ async def auto_rename_files(client: Client, message: Message):
         user_file_queues[user_id]['is_processing'] = True
         asyncio.create_task(process_user_queue(client, user_id))
 
+
 async def process_user_queue(client: Client, user_id: int):
-    """Process all files in the user's queue with semaphore control"""
+    """Process all files in the user's queue with enhanced batch detection"""
     # Initialize semaphore for this user if not exists
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)  # Allow 2 concurrent processes
-    
+        user_semaphores[user_id] = asyncio.Semaphore(3)  # Increased concurrency
+        
     while user_file_queues.get(user_id, {}).get('queue'):
         async with user_semaphores[user_id]:
             file_info = user_file_queues[user_id]['queue'].pop(0)
@@ -779,33 +759,22 @@ async def process_user_queue(client: Client, user_id: int):
                     await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
                     continue
 
-                # Check sequential mode from database
-                sequential_mode = user_data.get("sequential_mode", False)
+                # Determine if this is part of a batch by checking remaining queue
+                is_batch = len(user_file_queues[user_id]['queue']) > 0
                 
-                # Handle sequential mode
-                if sequential_mode:
-                    if user_id not in sequential_operations:
-                        sequential_operations[user_id] = {"files": [], "expected_count": 0}
-
-                    sequential_operations[user_id]["expected_count"] += 1
-                    while len(sequential_operations[user_id]["files"]) > 0:
-                        await asyncio.sleep(1)
-                        if user_id in cancel_operations and cancel_operations[user_id]:
-                            await file_info['message'].reply_text("❌ Processing canceled by user")
-                            break
-
-                await process_single_file(client, file_info, user_data)
+                # Process the file
+                await process_single_file(client, file_info, user_data, is_batch)
                 
                 # Handle batch completion if this was the last file in a batch
-                if (user_file_queues[user_id]['batch_data'] and 
+                if (is_batch and 
                     len(user_file_queues[user_id]['queue']) == 0):
-                    batch_data = user_file_queues[user_id]['batch_data']
+                    batch_data = user_file_queues[user_id].get('batch_data', {})
                     await send_completion_message(
                         client,
                         user_id,
-                        batch_data["start_time"],
-                        batch_data["count"],
-                        batch_data["points_used"]
+                        batch_data.get("start_time", time.time()),
+                        batch_data.get("count", 0),
+                        batch_data.get("points_used", 0)
                     )
                     user_file_queues[user_id]['batch_data'] = None
                 
