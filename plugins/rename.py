@@ -1081,75 +1081,78 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict, 
                     )
     
             # Track successful operation
-            await track_rename_operation(
-                user_id=user_id,
-                original_name=file_info['file_name'],
-                new_name=renamed_file_name,
-                points_deducted=rename_cost
-            )
-
-            # Update batch tracking if applicable
-            batch_data = user_file_queues.get(user_id, {}).get('batch_data')
-            if batch_data:
-                batch_data["points_used"] += rename_cost
-
-            # Determine if we should show success message
-            is_batch_operation = bool(batch_data) or len(user_file_queues.get(user_id, {}).get('queue', [])) > 0
-            is_last_in_batch = is_batch_operation and len(user_file_queues.get(user_id, {}).get('queue', [])) == 0
-
-            # Prepare common message elements
-            elapsed = time.time() - start_time
-            mins, secs = divmod(int(elapsed), 60)
-            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-            remaining_points = (await hyoshcoder.get_points(user_id)) - rename_cost
-
-            if not is_batch_operation:
-                # Single file success message
-                await message.reply_text(
-                    f"✅ <b>File Renamed Successfully!</b>\n\n"
-                    f"├ <b>Original:</b> <code>{html.escape(file_info['file_name'])}</code>\n"
-                    f"├ <b>Renamed:</b> <code>{html.escape(renamed_file_name)}</code>\n"
-                    f"├ <b>Time Taken:</b> {time_str}\n"
-                    f"├ <b>Metadata Added:</b> {'Yes' if metadata_added else 'No'}\n"
-                    f"├ <b>Points Used:</b> {rename_cost}\n"
-                    f"└ <b>Remaining Points:</b> {remaining_points}",
-                    parse_mode=ParseMode.HTML
-                )
-            elif is_last_in_batch:
-                # Batch completion message
-                batch_count = batch_data.get("count", 1)
-                total_points = batch_data.get("points_used", rename_cost)
-                await message.reply_text(
-                    f"🎉 <b>Batch Completed Successfully!</b>\n\n"
-                    f"├ <b>Total Files:</b> {batch_count}\n"
-                    f"├ <b>Time Taken:</b> {time_str}\n"
-                    f"├ <b>Total Points Used:</b> {total_points}\n"
-                    f"└ <b>Remaining Points:</b> {remaining_points}",
-                    parse_mode=ParseMode.HTML
-                )
-
-            break  # Success - exit retry loop
-
-    # Cleanup
-    try:
-        if os.path.exists(renamed_file_path):
-            os.remove(renamed_file_path)
-        if os.path.exists(metadata_file_path):
-            os.remove(metadata_file_path)
-        if thumb_path and os.path.exists(thumb_path):
-            os.remove(thumb_path)
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-        if queue_message:
+                      # Track successful operation
             try:
-                await queue_message.delete()
-            except:
-                pass
-    except Exception as e:
-        logger.error(f"Cleanup error: {e}")
+                await track_rename_operation(
+                    user_id=user_id,
+                    original_name=file_info['file_name'],
+                    new_name=renamed_file_name,
+                    points_deducted=rename_cost
+                )
 
-    if file_info['file_id'] in renaming_operations:
-        del renaming_operations[file_info['file_id']]
+                # Update batch tracking if applicable
+                batch_data = user_file_queues.get(user_id, {}).get('batch_data')
+                if batch_data:
+                    batch_data["points_used"] += rename_cost
+
+                # Determine message type
+                is_batch_operation = bool(batch_data) or len(user_file_queues.get(user_id, {}).get('queue', [])) > 0
+                is_last_in_batch = is_batch_operation and len(user_file_queues.get(user_id, {}).get('queue', [])) == 0
+
+                # Prepare common message elements
+                elapsed = time.time() - start_time
+                mins, secs = divmod(int(elapsed), 60)
+                time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+                remaining_points = (await hyoshcoder.get_points(user_id)) - rename_cost
+
+                if not is_batch_operation:
+                    # Single file success message
+                    await message.reply_text(
+                        f"✅ <b>File Renamed Successfully!</b>\n\n"
+                        f"├ <b>Original:</b> <code>{html.escape(file_info['file_name'])}</code>\n"
+                        f"├ <b>Renamed:</b> <code>{html.escape(renamed_file_name)}</code>\n"
+                        f"├ <b>Time Taken:</b> {time_str}\n"
+                        f"├ <b>Metadata Added:</b> {'Yes' if metadata_added else 'No'}\n"
+                        f"├ <b>Points Used:</b> {rename_cost}\n"
+                        f"└ <b>Remaining Points:</b> {remaining_points}",
+                        parse_mode=ParseMode.HTML
+                    )
+                elif is_last_in_batch:
+                    # Batch completion message
+                    batch_count = batch_data.get("count", 1)
+                    total_points = batch_data.get("points_used", rename_cost)
+                    await message.reply_text(
+                        f"🎉 <b>Batch Completed Successfully!</b>\n\n"
+                        f"├ <b>Total Files:</b> {batch_count}\n"
+                        f"├ <b>Time Taken:</b> {time_str}\n"
+                        f"├ <b>Total Points Used:</b> {total_points}\n"
+                        f"└ <b>Remaining Points:</b> {remaining_points}",
+                        parse_mode=ParseMode.HTML
+                    )
+
+                break  # Success - exit retry loop
+
+            except Exception as e:
+                logger.error(f"Error in success handling: {e}")
+                await message.reply_text("✅ Operation completed (stats unavailable)")
+                break
+        except FloodWait as e:
+            await asyncio.sleep(e.value + 5)
+            await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
+            continue
+        except BadRequest as e:
+            if "FILE_PART_INVALID" in str(e) and attempt < max_upload_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            await message.reply_text(f"❌ Upload failed: {str(e)[:200]}")
+            raise
+        except Exception as e:
+            logger.error(f"Upload attempt {attempt + 1} failed: {e}")
+            if attempt == max_upload_retries - 1:
+                await message.reply_text("❌ Failed after multiple retries")
+                raise
+            await asyncio.sleep(5 * (attempt + 1))
+            continue
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
     """Handle batch completion for media groups"""
