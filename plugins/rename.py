@@ -788,371 +788,412 @@ async def process_user_queue(client: Client, user_id: int):
             del user_file_queues[user_id]
 
 async def process_single_file(client: Client, file_info: dict, user_data: dict, is_batch: bool = False):
-    """Process a single file with all the renaming logic"""
-    message = file_info['message']
-    user_id = message.from_user.id
-    queue_position = file_info['queue_position']
-    start_time = file_info['start_time']
-    
-    points_data = user_data.get("points", {})
-    user_points = points_data.get("balance", 0)
-    format_template = user_data.get("format_template", "")
-    media_preference = user_data.get("media_preference", file_info['media_type'])
-    src_info = await hyoshcoder.get_src_info(user_id)
-
-    # Get points config
-    points_config = await hyoshcoder.get_config("points_config", {})
-    rename_cost = points_config.get("rename_cost", 1)
-
-    if user_points < rename_cost:
-        return await message.reply_text(
-            f"❌ You don't have enough points (Needed: {rename_cost})",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="freepoints")]])
-        )
-
-    if not format_template:
-        return await message.reply_text("Please set your rename format with /autorename")
-
-    # Check file size (2GB limit)
-    if file_info['size'] > 2 * 1024 * 1024 * 1024:
-        return await message.reply_text("ᴛʜᴇ ғɪʟᴇ ᴇxᴄᴇᴇᴅs 2GB. ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴀ sᴍᴀʟʟᴇʀ ғɪʟᴇ ᴏʀ ᴍᴇᴅɪᴀ.")
-
-    # Check for duplicate processing
-    if file_info['file_id'] in renaming_operations:
-        elapsed_time = (datetime.now() - renaming_operations[file_info['file_id']]).seconds
-        if elapsed_time < 10:
-            return await message.reply_text("⚠️ Please wait for your current file operation to complete.")
-
-    renaming_operations[file_info['file_id']] = datetime.now()
-
-    # Extract metadata from filename/caption
-    if src_info == "file_name":
-        episode_number = await extract_episode(file_info['file_name'])
-        season = await extract_season(file_info['file_name'])
-        extracted_qualities = await extract_quality(file_info['file_name'])
-    elif src_info == "caption":
-        caption = message.caption if message.caption else ""
-        episode_number = await extract_episode(caption)
-        season = await extract_season(caption)
-        extracted_qualities = await extract_quality(caption)
-    else:
-        episode_number = await extract_episode(file_info['file_name'])
-        season = await extract_season(file_info['file_name'])
-        extracted_qualities = await extract_quality(file_info['file_name'])
-
-    # Apply format template
-    if episode_number or season:
-        placeholders = ["episode", "Episode", "EPISODE", "{episode}", "season", "Season", "SEASON", "{season}"]
-        for placeholder in placeholders:
-            if placeholder.lower() in ["episode", "{episode}"] and episode_number:
-                format_template = format_template.replace(placeholder, str(episode_number), 1)
-            elif placeholder.lower() in ["season", "{season}"] and season:
-                format_template = format_template.replace(placeholder, str(season), 1)
-
-        quality_placeholders = ["quality", "Quality", "QUALITY", "{quality}"]
-        for quality_placeholder in quality_placeholders:
-            if quality_placeholder in format_template:
-                if extracted_qualities == "Unknown":
-                    await message.reply_text("**Using 'Unknown' for quality**")
-                    format_template = format_template.replace(quality_placeholder, "Unknown")
-                else:
-                    format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
-
-    # Prepare file paths
-    _, file_extension = os.path.splitext(file_info['file_name'])
-    renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
-    renamed_file_path = os.path.join("downloads", renamed_file_name)
-    metadata_file_path = os.path.join("Metadata", renamed_file_name)
-    os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
-    os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
-
-    file_uuid = str(uuid.uuid4())[:8]
-    temp_file_path = f"{renamed_file_path}_{file_uuid}"
-
-    # Download file with retry logic
-    max_download_retries = 1
-    queue_message = None
-    for attempt in range(max_download_retries):
-        try:
-            if user_id in cancel_operations and cancel_operations[user_id]:
-                return await message.reply_text("❌ Processing canceled by user")
-
-            queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
-            path = await client.download_media(
-                message,
-                file_name=temp_file_path,
-                progress=progress_for_pyrogram,
-                progress_args=(f"Downloading #{queue_position}", queue_message, time.time()),
-            )
-            break
-        except Exception as e:
-            if attempt == max_download_retries - 1:
-                del renaming_operations[file_info['file_id']]
-                return await message.reply_text(f"❌ Download failed: {e}")
-            await asyncio.sleep(2 ** attempt)
-
-    # Rename file
+    """Process a single file with all the renaming logic including batch handling"""
     try:
-        os.rename(path, renamed_file_path)
-        path = renamed_file_path
-    except Exception as e:
-        await message.reply_text(f"❌ Rename failed: {e}")
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-        return
+        # Initial validation checks
+        message = file_info.get('message')
+        if not message:
+            logger.error("No message object in file_info")
+            return
 
-    # Add metadata if enabled
-    metadata_added = False
-    _bool_metadata = await hyoshcoder.get_metadata(user_id)
-    if _bool_metadata:
-        metadata = await hyoshcoder.get_metadata_code(user_id)
-        if metadata:
-            try:
-                await queue_message.edit_text(f"🔄 Adding metadata to file #{queue_position}...")
-            except:
-                queue_message = await message.reply_text(f"🔄 Adding metadata to file #{queue_position}...")
+        user_id = message.from_user.id if message.from_user else None
+        if not user_id:
+            logger.error("No user_id found")
+            return
 
-            success, error = await add_comprehensive_metadata(
-                renamed_file_path,
-                metadata_file_path,
-                metadata
+        queue_position = file_info.get('queue_position', 0)
+        start_time = file_info.get('start_time', time.time())
+        
+        # Initialize user_data if None
+        if not user_data:
+            user_data = await hyoshcoder.read_user(user_id) or {}
+        
+        points_data = user_data.get("points", {})
+        user_points = points_data.get("balance", 0)
+        format_template = user_data.get("format_template", "")
+        media_preference = user_data.get("media_preference", file_info.get('media_type', 'document'))
+        src_info = await hyoshcoder.get_src_info(user_id)
+
+        # Get points config with defaults
+        points_config = await hyoshcoder.get_config("points_config", {}) or {}
+        rename_cost = points_config.get("rename_cost", 1)
+
+        # Check points
+        if user_points < rename_cost:
+            return await message.reply_text(
+                f"❌ You don't have enough points (Needed: {rename_cost})",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="freepoints")]])
             )
-            
-            if success:
-                metadata_added = True
-                path = metadata_file_path
-            else:
-                error_msg = error[:500] if error else "Unknown error"
-                await message.reply_text(f"⚠️ Metadata failed: {error_msg}\nUsing original file")
-                path = renamed_file_path
 
-    # Prepare for upload
-    try:
-        await queue_message.edit_text(f"📤 Uploading #{queue_position}...")
-    except:
-        queue_message = await message.reply_text(f"📤 Uploading #{queue_position}...")
+        if not format_template:
+            return await message.reply_text("Please set your rename format with /autorename")
 
-    thumb_path = None
-    custom_caption = await hyoshcoder.get_caption(message.chat.id)
-    custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
-    
-    # Get file info
-    file_size_human = humanbytes(file_info['size'])
-    duration = convert(file_info.get('duration', 0))
-    
-    # Create caption
-    if custom_caption:
-        formatted_text = custom_caption.format(
-            filename=html.escape(renamed_file_name),
-            filesize=file_size_human,
-            duration=duration
-        )
-        caption = f"""<b><blockquote>{formatted_text}</blockquote></b>"""
-    else:
-        caption = f"""<b><blockquote>{html.escape(renamed_file_name)}</blockquote></b>"""
-    
-    # Handle thumbnail
-    if custom_thumb:
-        thumb_path = await client.download_media(custom_thumb)
-    elif file_info['media_type'] == "video" and hasattr(message.video, 'thumbs') and message.video.thumbs:
-        thumb_path = await client.download_media(message.video.thumbs[0].file_id)
-    elif file_info['media_type'] == "audio" and hasattr(message.audio, 'thumbs') and message.audio.thumbs:
-        thumb_path = await client.download_media(message.audio.thumbs[0].file_id)
-    
-    if thumb_path:
-        try:
-            with Image.open(thumb_path) as img:
-                img = img.convert("RGB")
-                img.thumbnail((320, 320))
-                img.save(thumb_path, "JPEG", quality=85)
-        except Exception as e:
-            logger.warning(f"Thumbnail error: {e}")
-            thumb_path = None
-    
-    # Upload flow with retry logic
-    max_upload_retries = 3
-    for attempt in range(max_upload_retries):
-        try:
-            if user_id in cancel_operations and cancel_operations[user_id]:
-                await message.reply_text("❌ Processing canceled by user")
-                return
-    
-            # Prepare common upload parameters
-            common_params = {
-                'caption': caption,
-                'parse_mode': ParseMode.HTML,
-                'thumb': thumb_path if thumb_path and os.path.exists(thumb_path) else None,
-                'progress': progress_for_pyrogram,
-                'progress_args': (f"Uploading #{queue_position}", queue_message, time.time())
-            }
-    
-            # Try dump channel first if configured
-            dump_success = False
-            dump_channel = await hyoshcoder.get_user_channel(user_id)
-            
-            if dump_channel:
-                try:
-                    channel_id = int(dump_channel)
-                    if channel_id < 0:  # Negative ID indicates a channel
-                        chat = await client.get_chat(channel_id)
-                        if chat.type in ("channel", "supergroup"):
-                            member = await client.get_chat_member(channel_id, client.me.id)
-                            if member and member.privileges and member.privileges.can_post_messages:
-                                # Prepare dump channel caption
-                                user = message.from_user
-                                full_name = user.first_name
-                                if user.last_name:
-                                    full_name += f" {user.last_name}"
-                                username = f"@{user.username}" if user.username else "N/A"
-                                
-                                user_data = await hyoshcoder.read_user(user_id)
-                                is_premium = user_data.get("is_premium", False) if user_data else False
-                                premium_status = '✅' if is_premium else '❌'
-                                
-                                dump_caption = (
-                                    f"<b>File Details</b>\n"
-                                    f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
-                                    f"Size: {humanbytes(file_info['size'])}\n"
-                                )
-                                
-                                # Send to dump channel based on file type
-                                if file_info['media_type'] == "document":
-                                    await client.send_document(
-                                        chat_id=channel_id,
-                                        document=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
-                                        parse_mode=ParseMode.HTML
-                                    )
-                                    dump_success = True
-                                elif file_info['media_type'] == "video":
-                                    await client.send_video(
-                                        chat_id=channel_id,
-                                        video=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
-                                        duration=file_info.get('duration', 0),
-                                        supports_streaming=True,
-                                        parse_mode=ParseMode.HTML
-                                    )
-                                    dump_success = True
-                                elif file_info['media_type'] == "audio":
-                                    await client.send_audio(
-                                        chat_id=channel_id,
-                                        audio=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
-                                        duration=file_info.get('duration', 0),
-                                        parse_mode=ParseMode.HTML
-                                    )
-                                    dump_success = True
-                                    
-                                if dump_success:
-                                    try:
-                                        await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
-                                    except:
-                                        pass
-                except Exception as e:
-                    logger.error(f"Error sending to dump channel: {e}")
-                    dump_success = False
-    
-            # If dump channel not set or failed, send to original chat
-            if not dump_success:
-                if file_info['media_type'] == "document":
-                    await client.send_document(
-                        chat_id=message.chat.id,
-                        document=path,
-                        **common_params
-                    )
-                elif file_info['media_type'] == "video":
-                    await client.send_video(
-                        chat_id=message.chat.id,
-                        video=path,
-                        duration=file_info.get('duration', 0),
-                        supports_streaming=True,
-                        **common_params
-                    )
-                elif file_info['media_type'] == "audio":
-                    await client.send_audio(
-                        chat_id=message.chat.id,
-                        audio=path,
-                        duration=file_info.get('duration', 0),
-                        **common_params
-                    )
-    
-            # Track successful operation
-                      # Track successful operation
+        # File size check
+        file_size = file_info.get('size', 0)
+        if file_size > 2 * 1024 * 1024 * 1024:
+            return await message.reply_text("The file exceeds 2GB. Please send a smaller file.")
+
+        # Check for cancel request
+        if cancel_operations.get(user_id, False):
+            return await message.reply_text("❌ Processing canceled by user")
+
+        # Check for duplicate processing
+        if file_info.get('file_id') in renaming_operations:
+            elapsed_time = (datetime.now() - renaming_operations[file_info['file_id']]).seconds
+            if elapsed_time < 10:
+                return await message.reply_text("⚠️ Please wait for your current file operation to complete.")
+
+        renaming_operations[file_info['file_id']] = datetime.now()
+
+        # Extract metadata from filename/caption
+        if src_info == "file_name":
+            episode_number = await extract_episode(file_info.get('file_name', ''))
+            season = await extract_season(file_info.get('file_name', ''))
+            extracted_qualities = await extract_quality(file_info.get('file_name', ''))
+        elif src_info == "caption":
+            caption = message.caption if message.caption else ""
+            episode_number = await extract_episode(caption)
+            season = await extract_season(caption)
+            extracted_qualities = await extract_quality(caption)
+        else:
+            episode_number = await extract_episode(file_info.get('file_name', ''))
+            season = await extract_season(file_info.get('file_name', ''))
+            extracted_qualities = await extract_quality(file_info.get('file_name', ''))
+
+        # Apply format template
+        if episode_number or season:
+            placeholders = ["episode", "Episode", "EPISODE", "{episode}", "season", "Season", "SEASON", "{season}"]
+            for placeholder in placeholders:
+                if placeholder.lower() in ["episode", "{episode}"] and episode_number:
+                    format_template = format_template.replace(placeholder, str(episode_number), 1)
+                elif placeholder.lower() in ["season", "{season}"] and season:
+                    format_template = format_template.replace(placeholder, str(season), 1)
+
+            quality_placeholders = ["quality", "Quality", "QUALITY", "{quality}"]
+            for quality_placeholder in quality_placeholders:
+                if quality_placeholder in format_template:
+                    if extracted_qualities == "Unknown":
+                        await message.reply_text("**Using 'Unknown' for quality**")
+                        format_template = format_template.replace(quality_placeholder, "Unknown")
+                    else:
+                        format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
+
+        # Prepare file paths
+        file_name = file_info.get('file_name', '')
+        _, file_extension = os.path.splitext(file_name)
+        renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
+        renamed_file_path = os.path.join("downloads", renamed_file_name)
+        metadata_file_path = os.path.join("Metadata", renamed_file_name)
+        os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
+        os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+
+        file_uuid = str(uuid.uuid4())[:8]
+        temp_file_path = f"{renamed_file_path}_{file_uuid}"
+
+        # Download file with retry logic
+        max_download_retries = 1
+        queue_message = None
+        path = None
+        for attempt in range(max_download_retries):
             try:
-                await track_rename_operation(
-                    user_id=user_id,
-                    original_name=file_info['file_name'],
-                    new_name=renamed_file_name,
-                    points_deducted=rename_cost
+                if cancel_operations.get(user_id, False):
+                    return await message.reply_text("❌ Processing canceled by user")
+
+                queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
+                path = await client.download_media(
+                    message,
+                    file_name=temp_file_path,
+                    progress=progress_for_pyrogram,
+                    progress_args=(f"Downloading #{queue_position}", queue_message, time.time()),
                 )
+                break
+            except Exception as e:
+                if attempt == max_download_retries - 1:
+                    if file_info.get('file_id') in renaming_operations:
+                        del renaming_operations[file_info['file_id']]
+                    return await message.reply_text(f"❌ Download failed: {e}")
+                await asyncio.sleep(2 ** attempt)
 
-                # Update batch tracking if applicable
-                batch_data = user_file_queues.get(user_id, {}).get('batch_data')
-                if batch_data:
-                    batch_data["points_used"] += rename_cost
+        # Rename file
+        try:
+            if path and os.path.exists(path):
+                os.rename(path, renamed_file_path)
+                path = renamed_file_path
+            else:
+                raise Exception("Downloaded file not found")
+        except Exception as e:
+            await message.reply_text(f"❌ Rename failed: {e}")
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            return
 
-                # Determine message type
-                is_batch_operation = bool(batch_data) or len(user_file_queues.get(user_id, {}).get('queue', [])) > 0
-                is_last_in_batch = is_batch_operation and len(user_file_queues.get(user_id, {}).get('queue', [])) == 0
+        # Add metadata if enabled
+        metadata_added = False
+        _bool_metadata = await hyoshcoder.get_metadata(user_id)
+        if _bool_metadata:
+            metadata = await hyoshcoder.get_metadata_code(user_id)
+            if metadata:
+                try:
+                    await queue_message.edit_text(f"🔄 Adding metadata to file #{queue_position}...")
+                except:
+                    queue_message = await message.reply_text(f"🔄 Adding metadata to file #{queue_position}...")
 
-                # Prepare common message elements
-                elapsed = time.time() - start_time
-                mins, secs = divmod(int(elapsed), 60)
-                time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-                remaining_points = (await hyoshcoder.get_points(user_id)) - rename_cost
+                success, error = await add_comprehensive_metadata(
+                    renamed_file_path,
+                    metadata_file_path,
+                    metadata
+                )
+                
+                if success:
+                    metadata_added = True
+                    path = metadata_file_path
+                else:
+                    error_msg = error[:500] if error else "Unknown error"
+                    await message.reply_text(f"⚠️ Metadata failed: {error_msg}\nUsing original file")
+                    path = renamed_file_path
 
-                if not is_batch_operation:
-                    # Single file success message
-                    await message.reply_text(
-                        f"✅ <b>File Renamed Successfully!</b>\n\n"
-                        f"├ <b>Original:</b> <code>{html.escape(file_info['file_name'])}</code>\n"
-                        f"├ <b>Renamed:</b> <code>{html.escape(renamed_file_name)}</code>\n"
-                        f"├ <b>Time Taken:</b> {time_str}\n"
-                        f"├ <b>Metadata Added:</b> {'Yes' if metadata_added else 'No'}\n"
-                        f"├ <b>Points Used:</b> {rename_cost}\n"
-                        f"└ <b>Remaining Points:</b> {remaining_points}",
-                        parse_mode=ParseMode.HTML
+        # Prepare for upload
+        try:
+            await queue_message.edit_text(f"📤 Uploading #{queue_position}...")
+        except:
+            queue_message = await message.reply_text(f"📤 Uploading #{queue_position}...")
+
+        thumb_path = None
+        custom_caption = await hyoshcoder.get_caption(message.chat.id)
+        custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
+        
+        # Get file info
+        file_size_human = humanbytes(file_info.get('size', 0))
+        duration = convert(file_info.get('duration', 0))
+        
+        # Create caption
+        if custom_caption:
+            formatted_text = custom_caption.format(
+                filename=html.escape(renamed_file_name),
+                filesize=file_size_human,
+                duration=duration
+            )
+            caption = f"""<b><blockquote>{formatted_text}</blockquote></b>"""
+        else:
+            caption = f"""<b><blockquote>{html.escape(renamed_file_name)}</blockquote></b>"""
+        
+        # Handle thumbnail
+        if custom_thumb:
+            thumb_path = await client.download_media(custom_thumb)
+        elif file_info.get('media_type') == "video" and hasattr(message.video, 'thumbs') and message.video.thumbs:
+            thumb_path = await client.download_media(message.video.thumbs[0].file_id)
+        elif file_info.get('media_type') == "audio" and hasattr(message.audio, 'thumbs') and message.audio.thumbs:
+            thumb_path = await client.download_media(message.audio.thumbs[0].file_id)
+        
+        if thumb_path:
+            try:
+                with Image.open(thumb_path) as img:
+                    img = img.convert("RGB")
+                    img.thumbnail((320, 320))
+                    img.save(thumb_path, "JPEG", quality=85)
+            except Exception as e:
+                logger.warning(f"Thumbnail error: {e}")
+                thumb_path = None
+        
+        # Upload flow with retry logic
+        max_upload_retries = 3
+        for attempt in range(max_upload_retries):
+            try:
+                if cancel_operations.get(user_id, False):
+                    await message.reply_text("❌ Processing canceled by user")
+                    return
+        
+                # Prepare common upload parameters
+                common_params = {
+                    'caption': caption,
+                    'parse_mode': ParseMode.HTML,
+                    'thumb': thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                    'progress': progress_for_pyrogram,
+                    'progress_args': (f"Uploading #{queue_position}", queue_message, time.time())
+                }
+        
+                # Try dump channel first if configured
+                dump_success = False
+                dump_channel = await hyoshcoder.get_user_channel(user_id)
+                
+                if dump_channel:
+                    try:
+                        channel_id = int(dump_channel)
+                        if channel_id < 0:  # Negative ID indicates a channel
+                            chat = await client.get_chat(channel_id)
+                            if chat.type in ("channel", "supergroup"):
+                                member = await client.get_chat_member(channel_id, client.me.id)
+                                if member and member.privileges and member.privileges.can_post_messages:
+                                    # Prepare dump channel caption
+                                    user = message.from_user
+                                    full_name = user.first_name
+                                    if user.last_name:
+                                        full_name += f" {user.last_name}"
+                                    username = f"@{user.username}" if user.username else "N/A"
+                                    
+                                    user_data = await hyoshcoder.read_user(user_id)
+                                    is_premium = user_data.get("is_premium", False) if user_data else False
+                                    premium_status = '✅' if is_premium else '❌'
+                                    
+                                    dump_caption = (
+                                        f"<b>File Details</b>\n"
+                                        f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
+                                        f"Size: {humanbytes(file_info.get('size', 0))}\n"
+                                    )
+                                    
+                                    # Send to dump channel based on file type
+                                    if file_info.get('media_type') == "document":
+                                        await client.send_document(
+                                            chat_id=channel_id,
+                                            document=path,
+                                            caption=dump_caption,
+                                            thumb=common_params['thumb'],
+                                            parse_mode=ParseMode.HTML
+                                        )
+                                        dump_success = True
+                                    elif file_info.get('media_type') == "video":
+                                        await client.send_video(
+                                            chat_id=channel_id,
+                                            video=path,
+                                            caption=dump_caption,
+                                            thumb=common_params['thumb'],
+                                            duration=file_info.get('duration', 0),
+                                            supports_streaming=True,
+                                            parse_mode=ParseMode.HTML
+                                        )
+                                        dump_success = True
+                                    elif file_info.get('media_type') == "audio":
+                                        await client.send_audio(
+                                            chat_id=channel_id,
+                                            audio=path,
+                                            caption=dump_caption,
+                                            thumb=common_params['thumb'],
+                                            duration=file_info.get('duration', 0),
+                                            parse_mode=ParseMode.HTML
+                                        )
+                                        dump_success = True
+                                        
+                                    if dump_success:
+                                        try:
+                                            await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
+                                        except:
+                                            pass
+                    except Exception as e:
+                        logger.error(f"Error sending to dump channel: {e}")
+                        dump_success = False
+        
+                # If dump channel not set or failed, send to original chat
+                if not dump_success:
+                    if file_info.get('media_type') == "document":
+                        await client.send_document(
+                            chat_id=message.chat.id,
+                            document=path,
+                            **common_params
+                        )
+                    elif file_info.get('media_type') == "video":
+                        await client.send_video(
+                            chat_id=message.chat.id,
+                            video=path,
+                            duration=file_info.get('duration', 0),
+                            supports_streaming=True,
+                            **common_params
+                        )
+                    elif file_info.get('media_type') == "audio":
+                        await client.send_audio(
+                            chat_id=message.chat.id,
+                            audio=path,
+                            duration=file_info.get('duration', 0),
+                            **common_params
+                        )
+        
+                # Track successful operation and show appropriate message
+                current_queue = user_file_queues.get(user_id, {}).get('queue', [])
+                is_actually_batch = len(current_queue) > 0 or is_batch
+                
+                try:
+                    await track_rename_operation(
+                        user_id=user_id,
+                        original_name=file_info.get('file_name', ''),
+                        new_name=renamed_file_name,
+                        points_deducted=rename_cost
                     )
-                elif is_last_in_batch:
-                    # Batch completion message
-                    batch_count = batch_data.get("count", 1)
-                    total_points = batch_data.get("points_used", rename_cost)
-                    await message.reply_text(
-                        f"🎉 <b>Batch Completed Successfully!</b>\n\n"
-                        f"├ <b>Total Files:</b> {batch_count}\n"
-                        f"├ <b>Time Taken:</b> {time_str}\n"
-                        f"├ <b>Total Points Used:</b> {total_points}\n"
-                        f"└ <b>Remaining Points:</b> {remaining_points}",
-                        parse_mode=ParseMode.HTML
-                    )
+
+                    # Update batch tracking if applicable
+                    if is_actually_batch and user_id in user_file_queues and 'batch_data' in user_file_queues[user_id]:
+                        user_file_queues[user_id]['batch_data']['points_used'] = user_file_queues[user_id]['batch_data'].get('points_used', 0) + rename_cost
+
+                    # Prepare success message details
+                    elapsed = time.time() - start_time
+                    mins, secs = divmod(int(elapsed), 60)
+                    time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+                    remaining_points = (await hyoshcoder.get_points(user_id)) - rename_cost
+
+                    # Show appropriate success message
+                    if is_actually_batch:
+                        # For batch operations, only show message after last file
+                        if len(current_queue) == 0:  # This is the last file in batch
+                            batch_data = user_file_queues.get(user_id, {}).get('batch_data', {})
+                            await message.reply_text(
+                                f"✅ <b>Batch Completed Successfully!</b>\n\n"
+                                f"├ <b>Total Files:</b> {batch_data.get('count', 1)}\n"
+                                f"├ <b>Time Taken:</b> {time_str}\n"
+                                f"├ <b>Total Points Used:</b> {batch_data.get('points_used', rename_cost)}\n"
+                                f"└ <b>Remaining Points:</b> {remaining_points}",
+                                parse_mode=ParseMode.HTML
+                            )
+                        # Else: don't show message for intermediate files
+                    else:
+                        # Single file success message
+                        await message.reply_text(
+                            f"✅ <b>File Renamed Successfully!</b>\n\n"
+                            f"├ <b>Original:</b> <code>{html.escape(file_info.get('file_name', 'Unknown'))}</code>\n"
+                            f"├ <b>Renamed:</b> <code>{html.escape(renamed_file_name)}</code>\n"
+                            f"├ <b>Time Taken:</b> {time_str}\n"
+                            f"├ <b>Metadata Added:</b> {'Yes' if metadata_added else 'No'}\n"
+                            f"├ <b>Points Used:</b> {rename_cost}\n"
+                            f"└ <b>Remaining Points:</b> {remaining_points}",
+                            parse_mode=ParseMode.HTML
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error in success handling: {e}")
+                    await message.reply_text("✅ Operation completed (stats unavailable)")
 
                 break  # Success - exit retry loop
 
+            except FloodWait as e:
+                await asyncio.sleep(e.value + 5)
+                await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
+                continue
+            except BadRequest as e:
+                if "FILE_PART_INVALID" in str(e) and attempt < max_upload_retries - 1:
+                    await asyncio.sleep(5 * (attempt + 1))
+                    continue
+                await message.reply_text(f"❌ Upload failed: {str(e)[:200]}")
+                raise
             except Exception as e:
-                logger.error(f"Error in success handling: {e}")
-                await message.reply_text("✅ Operation completed (stats unavailable)")
-                break
-        except FloodWait as e:
-            await asyncio.sleep(e.value + 5)
-            await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
-            continue
-        except BadRequest as e:
-            if "FILE_PART_INVALID" in str(e) and attempt < max_upload_retries - 1:
+                logger.error(f"Upload attempt {attempt + 1} failed: {e}")
+                if attempt == max_upload_retries - 1:
+                    await message.reply_text("❌ Failed after multiple retries")
+                    raise
                 await asyncio.sleep(5 * (attempt + 1))
                 continue
-            await message.reply_text(f"❌ Upload failed: {str(e)[:200]}")
-            raise
-        except Exception as e:
-            logger.error(f"Upload attempt {attempt + 1} failed: {e}")
-            if attempt == max_upload_retries - 1:
-                await message.reply_text("❌ Failed after multiple retries")
-                raise
-            await asyncio.sleep(5 * (attempt + 1))
-            continue
+
+    except Exception as e:
+        logger.error(f"Error in process_single_file: {str(e)}", exc_info=True)
+        if message:
+            await message.reply_text(f"❌ An error occurred: {str(e)[:200]}")
+    finally:
+        # Cleanup
+        try:
+            if 'file_id' in file_info and file_info['file_id'] in renaming_operations:
+                del renaming_operations[file_info['file_id']]
+            if thumb_path and os.path.exists(thumb_path):
+                os.remove(thumb_path)
+            if path and os.path.exists(path) and path != renamed_file_path:
+                os.remove(path)
+        except Exception as cleanup_error:
+            logger.warning(f"Cleanup error: {cleanup_error}")
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
     """Handle batch completion for media groups"""
