@@ -787,7 +787,7 @@ async def process_user_queue(client: Client, user_id: int):
         if len(user_file_queues[user_id]['queue']) == 0:
             del user_file_queues[user_id]
 
-async def process_single_file(client: Client, file_info: dict, user_data: dict, is_batch: bool = False):
+async def process_single_file(client: Client, file_info: dict, is_batch: bool = False):
     """Process a single file with complete NoneType protection and batch handling"""
     try:
         # ===== INITIAL VALIDATION =====
@@ -814,18 +814,19 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict, 
         file_id = file_info.get('file_id')
 
         # ===== USER DATA HANDLING =====
-        user_data = user_data if isinstance(user_data, dict) else {}
-        if not user_data:
-            user_data = await hyoshcoder.read_user(user_id) or {}
-
+        user_data = await hyoshcoder.read_user(user_id) or {}  # Ensure it's never None
         points_data = user_data.get("points", {})
         user_points = points_data.get("balance", 0)
+        
+        # Safe format template handling
         format_template = user_data.get("format_template", "")
         if not format_template:
             return await message.reply_text("Please set your rename format with /autorename")
 
         # ===== POINTS VALIDATION =====
-        points_config = await hyoshcoder.get_config("points_config", {}) or {}
+        points_config = await hyoshcoder.get_config("points_config", {})
+        if points_config is None:  # Explicit None check
+            points_config = {}
         rename_cost = points_config.get("rename_cost", 1)
 
         if user_points < rename_cost:
@@ -840,6 +841,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict, 
 
         if cancel_operations.get(user_id, False):
             return await message.reply_text("❌ Processing canceled")
+
 
         # ===== DUPLICATE CHECK =====
         if file_id and file_id in renaming_operations:
@@ -919,18 +921,15 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict, 
 
         # ===== METADATA ADDITION =====
         metadata_added = False
-        if await hyoshcoder.get_metadata(user_id):
-            try:
-                meta_code = await hyoshcoder.get_metadata_code(user_id)
-                if meta_code:
-                    await queue_msg.edit_text(f"🔄 Adding metadata...")
-                    success, _ = await add_comprehensive_metadata(dl_path, meta_path, meta_code)
-                    if success:
-                        metadata_added = True
-                        downloaded_path = meta_path
-            except Exception as e:
-                logger.warning(f"Metadata addition failed: {e}")
-
+        metadata_enabled = await hyoshcoder.get_metadata(user_id)
+        if metadata_enabled is not None and metadata_enabled:  # Explicit None check
+            meta_code = await hyoshcoder.get_metadata_code(user_id)
+            if meta_code:  # Only proceed if meta_code exists
+                await queue_msg.edit_text(f"🔄 Adding metadata...")
+                success, _ = await add_comprehensive_metadata(dl_path, meta_path, meta_code)
+                if success:
+                    metadata_added = True
+                    downloaded_path = meta_path
         # ===== UPLOAD PROCESS =====
         try:
             await queue_msg.edit_text(f"📤 Uploading #{queue_position}...")
