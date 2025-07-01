@@ -815,6 +815,10 @@ async def process_single_file(client: Client, file_info: dict, is_batch: bool = 
 
         # ===== USER DATA HANDLING =====
         user_data = await hyoshcoder.read_user(user_id) or {}  # Ensure it's never None
+        if not user_data:
+            await message.reply_text("❌ Your account data couldn't be loaded. Please try /start again.")
+            return
+
         points_data = user_data.get("points", {})
         user_points = points_data.get("balance", 0)
         
@@ -824,9 +828,7 @@ async def process_single_file(client: Client, file_info: dict, is_batch: bool = 
             return await message.reply_text("Please set your rename format with /autorename")
 
         # ===== POINTS VALIDATION =====
-        points_config = await hyoshcoder.get_config("points_config", {})
-        if points_config is None:  # Explicit None check
-            points_config = {}
+        points_config = await hyoshcoder.get_config("points_config", {}) or {}  # Double None protection
         rename_cost = points_config.get("rename_cost", 1)
 
         if user_points < rename_cost:
@@ -842,32 +844,30 @@ async def process_single_file(client: Client, file_info: dict, is_batch: bool = 
         if cancel_operations.get(user_id, False):
             return await message.reply_text("❌ Processing canceled")
 
-
         # ===== DUPLICATE CHECK =====
         if file_id and file_id in renaming_operations:
-            elapsed = (datetime.now() - renaming_operations[file_id]).seconds
-            if elapsed < 10:
-                return await message.reply_text("⚠️ Please wait before retrying")
+            elapsed_time = (datetime.now() - renaming_operations[file_id]).seconds
+            if elapsed_time < 10:
+                return await message.reply_text("⚠️ Please wait for your current file operation to complete.")
 
-        if file_id:
-            renaming_operations[file_id] = datetime.now()
+        renaming_operations[file_id] = datetime.now()
 
         # ===== METADATA EXTRACTION =====
-        episode = season = None
-        quality = "Unknown"
-        try:
-            src_info = await hyoshcoder.get_src_info(user_id) or "file_name"
-            if src_info == "file_name":
-                episode = await extract_episode(file_name)
-                season = await extract_season(file_name)
-                quality = await extract_quality(file_name)
-            elif src_info == "caption":
-                caption = getattr(message, 'caption', '')
-                episode = await extract_episode(caption)
-                season = await extract_season(caption)
-                quality = await extract_quality(caption)
-        except Exception as e:
-            logger.warning(f"Metadata extraction error: {e}")
+        src_info = await hyoshcoder.get_src_info(user_id) or "file_name"  # Default to file_name
+        
+        if src_info == "file_name":
+            episode = await extract_episode(file_name)
+            season = await extract_season(file_name)
+            quality = await extract_quality(file_name)
+        elif src_info == "caption":
+            caption = message.caption or ""
+            episode = await extract_episode(caption)
+            season = await extract_season(caption)
+            quality = await extract_quality(caption)
+        else:
+            episode = await extract_episode(file_name)
+            season = await extract_season(file_name)
+            quality = await extract_quality(file_name)
 
         # ===== FORMAT TEMPLATE APPLICATION =====
         try:
@@ -875,8 +875,10 @@ async def process_single_file(client: Client, file_info: dict, is_batch: bool = 
                 replacements = {
                     'episode': str(episode) if episode else '',
                     'season': str(season) if season else '',
-                    'quality': quality
+                    'quality': quality or 'Unknown'
                 }
+                
+                # Handle all possible placeholder variations
                 for placeholder in ['episode', 'Episode', 'EPISODE', '{episode}',
                                   'season', 'Season', 'SEASON', '{season}',
                                   'quality', 'Quality', 'QUALITY', '{quality}']:
@@ -885,6 +887,7 @@ async def process_single_file(client: Client, file_info: dict, is_batch: bool = 
                         format_template = format_template.replace(placeholder, replacements[key])
         except Exception as e:
             logger.warning(f"Template formatting error: {e}")
+            await message.reply_text("⚠️ Error applying template - using basic formatting")
 
         # ===== FILE PATH PREPARATION =====
         try:
@@ -897,6 +900,7 @@ async def process_single_file(client: Client, file_info: dict, is_batch: bool = 
         except Exception as e:
             logger.error(f"Path preparation failed: {e}")
             return await message.reply_text("❌ Error preparing file paths")
+
 
         # ===== DOWNLOAD PROCESS =====
         queue_msg = None
