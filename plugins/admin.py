@@ -1459,6 +1459,17 @@ async def reset_database_command(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Reset DB command error: {e}")
         await message.reply("❌ Error processing reset command")
+@Client.on_message(filters.command("restart") & filters.user(ADMIN_USER_ID))
+async def restart_command(client: Client, message: Message):
+    """Improved simple restart"""
+    try:
+        msg = await message.reply_text("🔄 Preparing to restart...")
+        await client.stop()  # Properly stop Pyrogram first
+        import os
+        import sys
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        await message.reply_text(f"❌ Restart failed: {str(e)}")
 @Client.on_message(filters.command("admin") & filters.user(ADMIN_USER_ID))
 async def admin_command(client: Client, message: Message):
     await AdminPanel.show_main_menu(client, message)
