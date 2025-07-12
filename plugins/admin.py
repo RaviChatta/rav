@@ -5,7 +5,10 @@ import secrets
 import asyncio
 import re
 from contextlib import suppress
-
+import os
+import sys
+import asyncio
+from pathlib import Path
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     Message,
@@ -1461,15 +1464,25 @@ async def reset_database_command(client: Client, message: Message):
         await message.reply("❌ Error processing reset command")
 @Client.on_message(filters.command("restart") & filters.user(ADMIN_USER_ID))
 async def restart_command(client: Client, message: Message):
-    """Improved simple restart"""
+    """Graceful restart with .restart file tracking"""
     try:
-        msg = await message.reply_text("🔄 Preparing to restart...")
-        await client.stop()  # Properly stop Pyrogram first
-        import os
-        import sys
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        # Create .restart file with chat info
+        restart_file = Path(".restart")
+        restart_file.write_text(f"{message.chat.id}\n{message.id}")
+        
+        # Send restart notification
+        msg = await message.reply("🔄 Restarting bot... Please wait 10 seconds")
+        
+        # Properly disconnect
+        await client.stop()
+        
+        # Start new process
+        os.execl(sys.executable, sys.executable, *sys.argv)
+        
     except Exception as e:
-        await message.reply_text(f"❌ Restart failed: {str(e)}")
+        await message.reply(f"❌ Restart failed: {str(e)}")
+        if 'restart_file' in locals():
+            restart_file.unlink(missing_ok=True)
 @Client.on_message(filters.command("admin") & filters.user(ADMIN_USER_ID))
 async def admin_command(client: Client, message: Message):
     await AdminPanel.show_main_menu(client, message)
