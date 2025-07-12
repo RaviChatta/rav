@@ -153,7 +153,8 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
-        
+        await self.check_restart_status()
+
         await initialize_database()
         hyoshcoder.set_client(self)
         me = await self.get_me()
