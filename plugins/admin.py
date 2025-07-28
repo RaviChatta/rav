@@ -9,6 +9,7 @@ import os
 import sys
 import asyncio
 from pathlib import Path
+from pyrogram import Client as Bot
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     Message,
