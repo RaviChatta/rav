@@ -1234,7 +1234,7 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
                 raise ValueError(
                     "I'm missing these permissions:\n" +
                     "\n".join(f"• {perm.replace('_', ' ')}" for perm in missing_perms)
-                
+		)
         except (PeerIdInvalid, ChannelPrivate):
             raise ValueError(
                 "Channel not found or I'm not a member.\n"
