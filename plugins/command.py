@@ -1369,3 +1369,57 @@ async def command_dispatcher(client: Client, message: Message):
         msg = await message.reply_text("⚠️ An error occurred. Please try again.")
         asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
+
+
+@Client.on_message(filters.command("setdump"))
+async def set_dump_channel(client: Client, message: Message):
+    """Alternative more reliable dump channel setup"""
+    if not message.from_user:
+        return
+    
+    if not message.reply_to_message or not message.reply_to_message.forward_from_chat:
+        return await message.reply(
+            "🔧 <b>How to set dump channel:</b>\n"
+            "1. Add me as ADMIN to your channel (with ALL permissions)\n"
+            "2. Forward any message FROM your channel TO me\n"
+            "3. Reply to that forwarded message with <code>/setdump</code>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    channel = message.reply_to_message.forward_from_chat
+    if channel.type not in ("channel", "supergroup"):
+        return await message.reply("❌ Only channels and supergroups can be dump channels")
+    
+    try:
+        # Verify permissions
+        member = await client.get_chat_member(channel.id, client.me.id)
+        if not member or not member.privileges:
+            return await message.reply("❌ I'm not an admin in that channel")
+        
+        required_perms = [
+            'can_post_messages',
+            'can_send_media_messages',
+            'can_send_other_messages'
+        ]
+        
+        missing = [p for p in required_perms if not getattr(member.privileges, p, False)]
+        if missing:
+            return await message.reply(
+                f"❌ Missing permissions:\n" + 
+                "\n".join(f"• {p.replace('_', ' ')}" for p in missing)
+            )
+        
+        # Save channel
+        success = await hyoshcoder.set_user_channel(message.from_user.id, str(channel.id))
+        if not success:
+            return await message.reply("❌ Failed to save channel. Please try again.")
+        
+        await message.reply(
+            f"✅ <b>Dump channel set successfully!</b>\n"
+            f"Channel: {channel.title}\n"
+            f"ID: <code>{channel.id}</code>",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        await message.reply(f"❌ Error: {str(e)[:200]}")
