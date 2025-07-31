@@ -872,6 +872,7 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
             message.chat.id,
             "❌ An unexpected error occurred while setting dump channel. Please try again.",
             delete_after=30
+	)
 @Client.on_message(filters.command("setmedia") & filters.private)
 async def handle_setmedia(client: Client, message: Message):
     """Handle media preference setting."""
