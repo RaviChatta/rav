@@ -279,27 +279,11 @@ async def send_to_dump_channel(
     client: Client,
     user_id: int,
     file_path: str,
-    caption: str = "",
-    thumb_path: Optional[str] = None,
+    original_message: Message,
+    queue_position: int,
     **kwargs
 ) -> bool:
-    """
-    Enhanced send to dump channel with better error handling and logging
-    
-    Args:
-        client: Pyrogram Client
-        user_id: User ID to lookup dump channel
-        file_path: Path to media file
-        caption: Caption text (max 1024 chars)
-        thumb_path: Path to thumbnail image
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if not os.path.exists(file_path):
-        logger.error(f"File not found: {file_path}")
-        return False
-
+    """Send file to dump channel with comprehensive error handling"""
     try:
         # Get dump channel from database
         dump_channel = await hyoshcoder.get_user_channel(user_id)
@@ -307,78 +291,91 @@ async def send_to_dump_channel(
             logger.debug(f"No dump channel set for user {user_id}")
             return False
 
-        # Verify channel exists and bot has permissions
-        try:
-            channel_id = int(dump_channel)
-            if channel_id >= 0:
-                logger.warning(f"Invalid channel ID format (must be negative): {dump_channel}")
-                return False
-                
-            chat = await client.get_chat(channel_id)
-            if chat.type not in ("channel", "supergroup"):
-                logger.warning(f"Invalid chat type {chat.type} for {channel_id}")
-                return False
-                
-            # Check bot permissions
-            member = await client.get_chat_member(channel_id, client.me.id)
-            if not member or not member.privileges or not member.privileges.can_post_messages:
-                logger.warning(f"Bot lacks posting permissions in channel {channel_id}")
-                return False
-                
-        except (ValueError, PeerIdInvalid) as e:
-            logger.error(f"Invalid channel ID or can't access channel {dump_channel}: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Can't access dump channel {dump_channel}: {e}")
+        # Verify channel
+        is_valid, error_msg = await verify_dump_channel(client, dump_channel)
+        if not is_valid:
+            logger.warning(f"Invalid dump channel for user {user_id}: {error_msg}")
+            await original_message.reply_text(
+                f"⚠️ Your dump channel is not properly configured: {error_msg}\n"
+                "Please update it with /set_dump",
+                parse_mode=ParseMode.HTML
+            )
             return False
 
-        # Determine media type and send appropriately
+        # Prepare user info
+        user = original_message.from_user
+        full_name = user.first_name
+        if user.last_name:
+            full_name += f" {user.last_name}"
+        username = f"@{user.username}" if user.username else "N/A"
+
+        # Prepare caption
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        dump_caption = (
+            f"<b>📁 File Details</b>\n"
+            f"├ <b>Name:</b> <code>{html.escape(file_name)}</code>\n"
+            f"├ <b>Size:</b> {humanbytes(file_size)}\n"
+            f"├ <b>User:</b> {full_name} ({username})\n"
+            f"└ <b>User ID:</b> <code>{user_id}</code>\n"
+            f"<b>Queue Position:</b> #{queue_position}"
+        )
+
+        # Prepare common parameters
+        common_params = {
+            "chat_id": int(dump_channel),
+            "caption": dump_caption,
+            "parse_mode": ParseMode.HTML,
+            "progress": progress_for_pyrogram,
+            "progress_args": (f"Uploading to dump channel #{queue_position}", None, time.time())
+        }
+
+        # Add thumb if available
+        if kwargs.get("thumb_path") and os.path.exists(kwargs["thumb_path"]):
+            common_params["thumb"] = kwargs["thumb_path"]
+
+        # Determine file type and send
         ext = os.path.splitext(file_path)[1].lower()
-        
         try:
             if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm'):
                 await client.send_video(
-                    chat_id=channel_id,
                     video=file_path,
-                    caption=caption[:1024],
-                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                    duration=kwargs.get("duration", 0),
                     supports_streaming=True,
-                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
+                    **common_params
                 )
             elif ext in ('.mp3', '.flac', '.m4a', '.wav', '.ogg'):
                 await client.send_audio(
-                    chat_id=channel_id,
                     audio=file_path,
-                    caption=caption[:1024],
-                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
-                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
+                    duration=kwargs.get("duration", 0),
+                    **common_params
                 )
             elif ext in ('.jpg', '.jpeg', '.png', '.webp'):
                 await client.send_photo(
-                    chat_id=channel_id,
                     photo=file_path,
-                    caption=caption[:1024],
-                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
+                    **common_params
                 )
             else:
                 await client.send_document(
-                    chat_id=channel_id,
                     document=file_path,
-                    caption=caption[:1024],
-                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
-                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
+                    **common_params
                 )
             
-            logger.info(f"Successfully sent {file_path} to dump channel {channel_id}")
+            logger.info(f"Successfully sent file to dump channel {dump_channel}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to send to dump channel: {e}")
+            
+        except FloodWait as e:
+            logger.warning(f"Flood wait for {e.value} seconds")
+            await asyncio.sleep(e.value + 2)
+            return False
+            
+        except Exception as send_error:
+            logger.error(f"Error sending to dump channel: {send_error}")
             return False
 
     except Exception as e:
-        logger.error(f"Unexpected error in send_to_dump_channel: {e}")
+        logger.error(f"Unexpected error in dump channel processing: {e}")
         return False
-
 async def get_user_rank(user_id: int, time_range: str = "all") -> Tuple[Optional[int], int]:
     """Get user's global rank and total renames with time range support"""
     try:
@@ -449,7 +446,45 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
 
     except Exception as e:
         logger.error(f"Error in completion message: {e}")
-
+async def verify_dump_channel(client: Client, channel_id: str) -> Tuple[bool, str]:
+    """Verify dump channel exists and has proper permissions"""
+    try:
+        channel_id_int = int(channel_id)
+        chat = await client.get_chat(channel_id_int)
+        
+        # Check if it's a channel or supergroup
+        if chat.type not in ("channel", "supergroup"):
+            return False, f"Invalid chat type: {chat.type}"
+            
+        # Check bot permissions
+        member = await client.get_chat_member(channel_id_int, client.me.id)
+        if not member or not member.privileges:
+            return False, "Bot has no privileges"
+            
+        # Check required permissions
+        required_perms = {
+            "can_post_messages": "Post messages",
+            "can_send_media_messages": "Send media",
+            "can_send_other_messages": "Send other content"
+        }
+        
+        missing_perms = [
+            desc for perm, desc in required_perms.items()
+            if not getattr(member.privileges, perm, False)
+        ]
+        
+        if missing_perms:
+            return False, f"Missing permissions: {', '.join(missing_perms)}"
+            
+        return True, ""
+        
+    except PeerIdInvalid:
+        return False, "Channel not found"
+    except ChannelPrivate:
+        return False, "Channel is private"
+    except Exception as e:
+        logger.error(f"Error verifying channel: {e}")
+        return False, f"Verification error: {str(e)[:100]}"
 # SEQUENCE HANDLERS
 @Client.on_message(filters.command(["ssequence", "startsequence"]))
 async def start_sequence(client: Client, message: Message):
