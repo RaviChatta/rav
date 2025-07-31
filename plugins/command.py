@@ -1369,57 +1369,68 @@ async def command_dispatcher(client: Client, message: Message):
         msg = await message.reply_text("⚠️ An error occurred. Please try again.")
         asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
-
-
+	    
 @Client.on_message(filters.command("setdump"))
-async def set_dump_channel(client: Client, message: Message):
-    """Alternative more reliable dump channel setup"""
-    if not message.from_user:
-        return
-    
-    if not message.reply_to_message or not message.reply_to_message.forward_from_chat:
-        return await message.reply(
-            "🔧 <b>How to set dump channel:</b>\n"
-            "1. Add me as ADMIN to your channel (with ALL permissions)\n"
-            "2. Forward any message FROM your channel TO me\n"
-            "3. Reply to that forwarded message with <code>/setdump</code>",
-            parse_mode=ParseMode.HTML
-        )
-    
-    channel = message.reply_to_message.forward_from_chat
-    if channel.type not in ("channel", "supergroup"):
-        return await message.reply("❌ Only channels and supergroups can be dump channels")
-    
+async def set_dump_via_forward(client: Client, message: Message):
+    """Set dump channel by forwarding a channel message"""
     try:
-        # Verify permissions
-        member = await client.get_chat_member(channel.id, client.me.id)
-        if not member or not member.privileges:
-            return await message.reply("❌ I'm not an admin in that channel")
+        user_id = message.from_user.id
         
-        required_perms = [
-            'can_post_messages',
-            'can_send_media_messages',
-            'can_send_other_messages'
-        ]
-        
-        missing = [p for p in required_perms if not getattr(member.privileges, p, False)]
-        if missing:
+        if not message.reply_to_message or not message.reply_to_message.forward_from_chat:
             return await message.reply(
-                f"❌ Missing permissions:\n" + 
-                "\n".join(f"• {p.replace('_', ' ')}" for p in missing)
+                "🔧 <b>How to set dump channel:</b>\n"
+                "1. Add me as ADMIN to your channel (with ALL permissions)\n"
+                "2. Forward any message FROM your channel TO this chat\n"
+                "3. Reply to that forwarded message with <code>/set_dump_alt</code>",
+                parse_mode=ParseMode.HTML
             )
         
-        # Save channel
-        success = await hyoshcoder.set_user_channel(message.from_user.id, str(channel.id))
-        if not success:
-            return await message.reply("❌ Failed to save channel. Please try again.")
+        channel = message.reply_to_message.forward_from_chat
+        channel_id = channel.id
         
-        await message.reply(
-            f"✅ <b>Dump channel set successfully!</b>\n"
-            f"Channel: {channel.title}\n"
-            f"ID: <code>{channel.id}</code>",
-            parse_mode=ParseMode.HTML
-        )
+        # Verify channel type
+        chat_type = str(channel.type).lower()
+        if 'channel' not in chat_type and 'supergroup' not in chat_type:
+            return await message.reply("❌ Only channels and supergroups can be dump channels")
         
+        # Verify bot permissions
+        try:
+            member = await client.get_chat_member(channel_id, client.me.id)
+            if not member or not member.privileges:
+                return await message.reply("❌ I'm not an admin in that channel")
+            
+            required_perms = [
+                'can_post_messages',
+                'can_send_media_messages',
+                'can_send_other_messages'
+            ]
+            
+            missing_perms = [
+                perm for perm in required_perms
+                if not getattr(member.privileges, perm, False)
+            ]
+            
+            if missing_perms:
+                return await message.reply(
+                    "❌ Missing permissions:\n" + 
+                    "\n".join(f"• {perm.replace('_', ' ')}" for perm in missing_perms)
+                )
+            
+            # Save to database
+            success = await hyoshcoder.set_user_channel(user_id, str(channel_id))
+            if not success:
+                return await message.reply("❌ Failed to save channel. Please try again.")
+            
+            await message.reply(
+                f"✅ <b>Dump channel set successfully!</b>\n\n"
+                f"<b>Channel:</b> {channel.title}\n"
+                f"<b>ID:</b> <code>{channel_id}</code>",
+                parse_mode=ParseMode.HTML
+            )
+            
+        except Exception as e:
+            await message.reply(f"❌ Error verifying channel: {str(e)[:200]}")
+    
     except Exception as e:
-        await message.reply(f"❌ Error: {str(e)[:200]}")
+        logger.error(f"Error in set_dump_alt: {e}", exc_info=True)
+        await message.reply("❌ An error occurred. Please try again.")
