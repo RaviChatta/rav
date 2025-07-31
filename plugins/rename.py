@@ -1092,12 +1092,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                     
                     except ValueError as ve:
                         logger.warning(f"Channel verification failed: {ve}")
-                        # Notify user about channel issues
-                        await file_info['message'].reply_text(
-                            f"⚠️ Dump channel issue: {ve}\n"
-                            f"Please check my permissions in the channel and use /setchannel to update.",
-                            parse_mode=ParseMode.HTML
-                        )
+                
                         dump_success = False
                     
                     except Exception as channel_error:
