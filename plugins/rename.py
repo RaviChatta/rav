@@ -977,73 +977,140 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             }
     
             # Try dump channel first if configured
+            # Try dump channel first if configured
             dump_success = False
-            dump_channel = await hyoshcoder.get_user_channel(user_id)
-            
-            if dump_channel:
-                try:
-                    channel_id = int(dump_channel)
-                    if channel_id < 0:  # Negative ID indicates a channel
-                        chat = await client.get_chat(channel_id)
-                        if chat.type in ("channel", "supergroup"):
+            try:
+                dump_channel = await hyoshcoder.get_user_channel(user_id)
+                
+                if dump_channel:
+                    try:
+                        channel_id = int(dump_channel)
+                        if channel_id < 0:  # Negative ID indicates a channel/supergroup
+                            # Verify channel and permissions
+                            chat = await client.get_chat(channel_id)
+                            if chat.type not in ("channel", "supergroup"):
+                                logger.warning(f"Invalid chat type {chat.type} for dump channel {channel_id}")
+                                raise ValueError("Not a channel or supergroup")
+                            
                             member = await client.get_chat_member(channel_id, client.me.id)
-                            if member and member.privileges and member.privileges.can_post_messages:
-                                # Prepare dump channel caption
-                                user = message.from_user
-                                full_name = user.first_name
-                                if user.last_name:
-                                    full_name += f" {user.last_name}"
-                                username = f"@{user.username}" if user.username else "N/A"
-                                
-                                dump_caption = (
-                                    f"<b>File Details</b>\n"
-                                    f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
-                                    f"Size: {humanbytes(file_info['size'])}\n"
-                                    f"User: {full_name} ({username})\n"
-                                    f"User ID: <code>{user_id}</code>"
-                                )
-                                
-                                # Send to dump channel based on file type
+                            if not member or not member.privileges:
+                                logger.warning(f"Bot has no privileges in channel {channel_id}")
+                                raise ValueError("No privileges in channel")
+                            
+                            if not member.privileges.can_post_messages:
+                                logger.warning(f"Bot can't post messages in channel {channel_id}")
+                                raise ValueError("No post permission")
+                            
+                            if not member.privileges.can_send_media_messages:
+                                logger.warning(f"Bot can't send media in channel {channel_id}")
+                                raise ValueError("No media permission")
+                            
+                            # Prepare user info for caption
+                            user = file_info['message'].from_user
+                            full_name = user.first_name
+                            if user.last_name:
+                                full_name += f" {user.last_name}"
+                            username = f"@{user.username}" if user.username else "N/A"
+                            
+                            # Prepare dump channel caption
+                            dump_caption = (
+                                f"<b>📁 File Details</b>\n"
+                                f"├ <b>Name:</b> <code>{html.escape(renamed_file_name)}</code>\n"
+                                f"├ <b>Size:</b> {humanbytes(file_info['size'])}\n"
+                                f"├ <b>User:</b> {full_name} ({username})\n"
+                                f"└ <b>User ID:</b> <code>{user_id}</code>\n"
+                                f"<b>Original Name:</b> <code>{html.escape(file_info['file_name'])}</code>"
+                            )
+                            
+                            # Common parameters for all media types
+                            common_params = {
+                                "chat_id": channel_id,
+                                "caption": dump_caption,
+                                "parse_mode": ParseMode.HTML,
+                                "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                                "progress": progress_for_pyrogram,
+                                "progress_args": (f"Uploading to dump channel #{queue_position}", queue_message, time.time())
+                            }
+                            
+                            # Send based on file type
+                            try:
                                 if file_info['media_type'] == "document":
                                     await client.send_document(
-                                        chat_id=channel_id,
                                         document=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
-                                        parse_mode=ParseMode.HTML
+                                        **common_params
                                     )
-                                    dump_success = True
                                 elif file_info['media_type'] == "video":
                                     await client.send_video(
-                                        chat_id=channel_id,
                                         video=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
                                         duration=file_info.get('duration', 0),
                                         supports_streaming=True,
-                                        parse_mode=ParseMode.HTML
+                                        **common_params
                                     )
-                                    dump_success = True
                                 elif file_info['media_type'] == "audio":
                                     await client.send_audio(
-                                        chat_id=channel_id,
                                         audio=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
                                         duration=file_info.get('duration', 0),
-                                        parse_mode=ParseMode.HTML
+                                        **common_params
                                     )
+                                
+                                dump_success = True
+                                logger.info(f"Successfully sent file to dump channel {channel_id}")
+                                
+                            except FloodWait as e:
+                                logger.warning(f"Flood wait for {e.value} seconds")
+                                await asyncio.sleep(e.value + 2)
+                                # Retry once after flood wait
+                                try:
+                                    if file_info['media_type'] == "document":
+                                        await client.send_document(
+                                            document=path,
+                                            **common_params
+                                        )
+                                    elif file_info['media_type'] == "video":
+                                        await client.send_video(
+                                            video=path,
+                                            duration=file_info.get('duration', 0),
+                                            supports_streaming=True,
+                                            **common_params
+                                        )
+                                    elif file_info['media_type'] == "audio":
+                                        await client.send_audio(
+                                            audio=path,
+                                            duration=file_info.get('duration', 0),
+                                            **common_params
+                                        )
                                     dump_success = True
-                                    
-                                if dump_success:
-                                    try:
-                                        await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
-                                    except:
-                                        pass
-                except Exception as e:
-                    logger.error(f"Error sending to dump channel: {e}")
-                    dump_success = False
-    
+                                except Exception as retry_error:
+                                    logger.error(f"Retry failed for dump channel: {retry_error}")
+                                    dump_success = False
+                            
+                            except Exception as send_error:
+                                logger.error(f"Error sending to dump channel: {send_error}")
+                                dump_success = False
+                            
+                            if dump_success:
+                                try:
+                                    await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
+                                except Exception as edit_error:
+                                    logger.warning(f"Couldn't update queue message: {edit_error}")
+                    
+                    except ValueError as ve:
+                        logger.warning(f"Channel verification failed: {ve}")
+                        # Notify user about channel issues
+                        await file_info['message'].reply_text(
+                            f"⚠️ Dump channel issue: {ve}\n"
+                            f"Please check my permissions in the channel and use /setchannel to update.",
+                            parse_mode=ParseMode.HTML
+                        )
+                        dump_success = False
+                    
+                    except Exception as channel_error:
+                        logger.error(f"Unexpected error with dump channel: {channel_error}")
+                        dump_success = False
+            
+            except Exception as e:
+                logger.error(f"Error in dump channel processing: {e}")
+                dump_success = False
             # If dump channel not set or failed, send to original chat
             if not dump_success:
                 if file_info['media_type'] == "document":
