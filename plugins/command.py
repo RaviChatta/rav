@@ -1182,63 +1182,139 @@ async def handle_help(client: Client, message: Message):
     asyncio.create_task(auto_delete_message(message, 120))
 
 async def handle_set_dump(client: Client, message: Message, args: List[str]):
-    """Handle /set_dump command to configure dump channel."""
-    if not args:
-        msg = await message.reply_text(
+    """Handle setting dump channel with comprehensive validation"""
+    if not message.from_user:
+        return await message.delete()
+    
+    if len(args) == 0:
+        return await send_auto_delete_message(
+            client,
+            message.chat.id,
             "❗️ Please provide the dump channel ID after the command.\n"
-            "Example: `/set_dump -1001234567890`",
-            quote=True
+            "Example: `/set_dump -1001234567890`\n\n"
+            "To get your channel ID:\n"
+            "1. Add me to your channel as admin\n"
+            "2. Forward a message from your channel to me\n"
+            "3. I'll show you the channel ID",
+            delete_after=45
         )
-        asyncio.create_task(auto_delete_message(msg, 60))
-        asyncio.create_task(auto_delete_message(message, 60))
-        return
 
-    channel_id = args[0]
+    channel_id = args[0].strip()
     user_id = message.from_user.id
 
     try:
         # Validate channel ID format
-        if not channel_id.startswith('-100') or not channel_id[4:].isdigit():
-            raise ValueError("Invalid channel ID format. Must be like -1001234567890")
+        if not re.match(r'^-100\d+$', channel_id):
+            raise ValueError(
+                "Invalid channel ID format.\n"
+                "Must start with -100 followed by numbers (e.g., -1001234567890)"
+            )
 
-        # Check bot's permissions in the channel
+        # Convert to integer for validation
+        channel_id_int = int(channel_id)
+        
+        # Check if bot has admin rights in the channel
         try:
-            member = await client.get_chat_member(int(channel_id), client.me.id)
-            if not member or not member.privileges or not member.privileges.can_post_messages:
-                raise ValueError("I need admin rights with post permissions in that channel")
-        except PeerIdInvalid:
-            raise ValueError("Channel not found or I'm not a member")
-        except ChatAdminRequired:
-            raise ValueError("I don't have admin rights in that channel")
+            member = await client.get_chat_member(channel_id_int, client.me.id)
+            if not member or not member.privileges:
+                raise ValueError("I don't have admin rights in that channel")
+            
+            required_perms = [
+                "can_post_messages",
+                "can_send_media_messages",
+                "can_send_other_messages"
+            ]
+            
+            missing_perms = [
+                perm for perm in required_perms
+                if not getattr(member.privileges, perm, False)
+            ]
+            
+            if missing_perms:
+                raise ValueError(
+                    "I'm missing these permissions:\n" +
+                    "\n".join(f"• {perm.replace('_', ' ')}" for perm in missing_perms)
+                
+        except (PeerIdInvalid, ChannelPrivate):
+            raise ValueError(
+                "Channel not found or I'm not a member.\n"
+                "Please add me to the channel as admin first."
+            )
 
         # Save to database
-        await hyoshcoder.set_user_channel(user_id, channel_id)
+        success = await hyoshcoder.set_user_channel(user_id, channel_id)
+        if not success:
+            raise ValueError("Failed to save channel to database. Please try again.")
+
+        # Get channel info for confirmation
+        chat = await client.get_chat(channel_id_int)
         
         msg = await message.reply_text(
-            f"✅ Channel `{channel_id}` has been successfully set as your dump channel.",
-            quote=True
+            f"✅ <b>Dump channel successfully set!</b>\n\n"
+            f"<b>Channel:</b> {chat.title}\n"
+            f"<b>ID:</b> <code>{channel_id}</code>\n\n"
+            "All your renamed files will now be sent here automatically.",
+            parse_mode=ParseMode.HTML
         )
-        asyncio.create_task(auto_delete_message(msg, 60))
-        asyncio.create_task(auto_delete_message(message, 60))
+        
+        asyncio.create_task(auto_delete_message(msg, 45))
+        asyncio.create_task(auto_delete_message(message, 45))
 
     except ValueError as e:
-        msg = await message.reply_text(
-            f"❌ Error: {str(e)}\n\n"
-            "Ensure the channel exists, and I'm an admin with posting rights.",
-            quote=True
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            f"❌ <b>Error setting dump channel:</b>\n{str(e)}",
+            parse_mode=ParseMode.HTML,
+            delete_after=45
         )
-        asyncio.create_task(auto_delete_message(msg, 60))
-        asyncio.create_task(auto_delete_message(message, 60))
     except Exception as e:
-        logger.error(f"Error setting dump channel: {e}")
-        msg = await message.reply_text(
-            f"❌ Error: {str(e)}\n\n"
-            "Failed to set dump channel. Please try again.",
-            quote=True
+        logger.error(f"Error setting dump channel: {e}", exc_info=True)
+        await send_auto_delete_message(
+            client,
+            message.chat.id,
+            "❌ An unexpected error occurred while setting dump channel. Please try again.",
+            delete_after=30
         )
-        asyncio.create_task(auto_delete_message(msg, 60))
-        asyncio.create_task(auto_delete_message(message, 60))
-
+async def verify_dump_channel(client: Client, channel_id: str) -> Tuple[bool, str]:
+    """Verify dump channel exists and has proper permissions"""
+    try:
+        channel_id_int = int(channel_id)
+        chat = await client.get_chat(channel_id_int)
+        
+        # Check if it's a channel or supergroup
+        if chat.type not in ("channel", "supergroup"):
+            return False, f"Invalid chat type: {chat.type}"
+            
+        # Check bot permissions
+        member = await client.get_chat_member(channel_id_int, client.me.id)
+        if not member or not member.privileges:
+            return False, "Bot has no privileges"
+            
+        # Check required permissions
+        required_perms = {
+            "can_post_messages": "Post messages",
+            "can_send_media_messages": "Send media",
+            "can_send_other_messages": "Send other content"
+        }
+        
+        missing_perms = [
+            desc for perm, desc in required_perms.items()
+            if not getattr(member.privileges, perm, False)
+        ]
+        
+        if missing_perms:
+            return False, f"Missing permissions: {', '.join(missing_perms)}"
+            
+        return True, ""
+        
+    except PeerIdInvalid:
+        return False, "Channel not found"
+    except ChannelPrivate:
+        return False, "Channel is private"
+    except Exception as e:
+        logger.error(f"Error verifying channel: {e}")
+        return False, f"Verification error: {str(e)[:100]}"
 @Client.on_message(filters.command(["start", "help", "autorename", "set_caption", "del_caption", 
                                   "view_caption", "viewthumb", "delthumb", "set_dump",
                                   "view_dump", "del_dump", "freepoints", "genpoints",
