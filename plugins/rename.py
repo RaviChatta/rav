@@ -446,52 +446,7 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
 
     except Exception as e:
         logger.error(f"Error in completion message: {e}")
-async def verify_dump_channel(client: Client, channel_id: str) -> Tuple[bool, str]:
-    """Enhanced channel verification with proper type checking"""
-    try:
-        channel_id_int = int(channel_id)
-        chat = await client.get_chat(channel_id_int)
         
-        # Debug logging
-        logger.info(f"Channel type detected: {type(chat.type)}, value: {chat.type}")
-        
-        # Handle both string and enum types
-        chat_type = str(chat.type).lower().replace("chattype.", "")
-        
-        valid_types = ["channel", "supergroup"]
-        if chat_type not in valid_types:
-            return False, f"Invalid chat type: {chat_type}. Must be channel or supergroup"
-            
-        # Check bot permissions
-        member = await client.get_chat_member(channel_id_int, client.me.id)
-        if not member or not member.privileges:
-            return False, "Bot has no admin privileges"
-            
-        # Check required permissions
-        required_perms = {
-            "can_post_messages": "Post messages",
-            "can_send_media_messages": "Send media",
-            "can_send_other_messages": "Send other content"
-        }
-        
-        missing_perms = [
-            desc for perm, desc in required_perms.items()
-            if not getattr(member.privileges, perm, False)
-        ]
-        
-        if missing_perms:
-            return False, f"Missing permissions: {', '.join(missing_perms)}"
-            
-        return True, ""
-        
-    except PeerIdInvalid:
-        return False, "Channel not found or bot not added"
-    except ChannelPrivate:
-        return False, "Channel is private or bot not member"
-    except Exception as e:
-        logger.error(f"Channel verification error: {str(e)}", exc_info=True)
-        return False, f"Verification error: {str(e)[:100]}"
-# SEQUENCE HANDLERS
 @Client.on_message(filters.command(["ssequence", "startsequence"]))
 async def start_sequence(client: Client, message: Message):
     """Start a file sequence collection"""
