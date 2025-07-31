@@ -1681,27 +1681,49 @@ class Database:
             logger.error(f"Error toggling sequential mode for {user_id}: {e}")
             return False
 
-    async def get_user_channel(self, user_id: int) -> Optional[str]:
-        """Get user's dump channel ID."""
-        try:
-            user = await self.users.find_one({"_id": user_id})
-            return user.get("settings", {}).get("user_channel") if user else None
-        except Exception as e:
-            logger.error(f"Error getting user channel for {user_id}: {e}")
-            return None
-
     async def set_user_channel(self, user_id: int, channel_id: str) -> bool:
-        """Set user's dump channel ID."""
+        """Set user's dump channel with validation"""
         try:
+            # Convert to integer to validate format
+            channel_id_int = int(channel_id)
+            if channel_id_int >= 0:
+                raise ValueError("Channel ID must be negative")
+                
+            # Update database
             result = await self.users.update_one(
                 {"_id": user_id},
                 {"$set": {"settings.user_channel": channel_id}},
                 upsert=True
             )
-            return result.acknowledged
-        except Exception as e:
-            logger.error(f"Error setting user channel for {user_id}: {e}")
+            return result.modified_count > 0 or result.upserted_id is not None
+            
+        except ValueError as e:
+            logger.error(f"Invalid channel ID format: {e}")
             return False
+        except Exception as e:
+            logger.error(f"Error setting user channel: {e}")
+            return False
+    
+    async def get_user_channel(self, user_id: int) -> Optional[str]:
+        """Get user's dump channel with validation"""
+        try:
+            user_data = await self.users.find_one({"_id": user_id})
+            if not user_data:
+                return None
+                
+            channel_id = user_data.get("settings", {}).get("user_channel")
+            if not channel_id:
+                return None
+                
+            # Validate the stored channel ID
+            if not channel_id.startswith('-100') or not channel_id[4:].isdigit():
+                logger.warning(f"Invalid channel ID format in DB for user {user_id}")
+                return None
+                
+            return channel_id
+        except Exception as e:
+            logger.error(f"Error getting user channel: {e}")
+            return None
 
     async def ban_user(self, user_id: int, duration_days: int, reason: str) -> bool:
         """Ban a user from using the bot."""
