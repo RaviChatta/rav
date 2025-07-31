@@ -10,6 +10,7 @@ import pytz
 import asyncio
 import random
 import shutil
+import html 
 from pyrogram.types import InputMediaPhoto
 import uuid
 import logging
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Global variables to manage operations
 user_file_queues = {}  # Tracks all files in queue per user
 user_semaphores = {}   # Semaphores per user for concurrency control
+user_active_tasks = {}  # Tracks active tasks per user
 renaming_operations = {}  # Tracks currently processing files
 user_batch_trackers = {}  # Track batch operations per user
 sequential_operations = {}  # For sequential mode
@@ -124,9 +126,10 @@ def sanitize_filename(filename: str) -> str:
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
     """Get or create semaphore for user with max 3 concurrent processes"""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(3)  # Increased to 3 concurrent processes
+        user_semaphores[user_id] = asyncio.Semaphore(3)
+        user_active_tasks[user_id] = 0
     return user_semaphores[user_id]
-
+    
 async def get_stream_indexes(input_path: str):
     try:
         probe = await asyncio.create_subprocess_exec(
@@ -701,62 +704,79 @@ async def auto_rename_files(client: Client, message: Message):
         asyncio.create_task(process_user_queue(client, user_id))
 
 async def process_user_queue(client: Client, user_id: int):
-    """Process all files in the user's queue with semaphore control"""
-    # Initialize semaphore for this user if not exists
+    """Process all files in the user's queue with proper semaphore control"""
     semaphore = await get_user_semaphore(user_id)
     
-    while user_file_queues.get(user_id, {}).get('queue'):
-        async with semaphore:
+    while True:
+        # Check if we should stop processing
+        if user_id not in user_file_queues or not user_file_queues[user_id].get('queue'):
+            break
+            
+        # Check if we've reached max concurrent tasks
+        if user_active_tasks[user_id] >= 3:
+            await asyncio.sleep(1)
+            continue
+            
+        # Get the next file
+        try:
             file_info = user_file_queues[user_id]['queue'].pop(0)
-            try:
-                # Get user data for each file
-                user_data = await hyoshcoder.read_user(user_id)
-                if not user_data:
-                    await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
-                    continue
-
-                # Check sequential mode from database
-                sequential_mode = user_data.get("sequential_mode", False)
-                
-                # Handle sequential mode
-                if sequential_mode:
-                    if user_id not in sequential_operations:
-                        sequential_operations[user_id] = {"files": [], "expected_count": 0}
-
-                    sequential_operations[user_id]["expected_count"] += 1
-                    while len(sequential_operations[user_id]["files"]) > 0:
-                        await asyncio.sleep(1)
-                        if user_id in cancel_operations and cancel_operations[user_id]:
-                            await file_info['message'].reply_text("❌ Processing canceled by user")
-                            break
-
-                await process_single_file(client, file_info, user_data)
-                
-                # Handle batch completion if this was the last file in a batch
-                if (user_file_queues[user_id]['batch_data'] and 
-                    len(user_file_queues[user_id]['queue']) == 0):
-                    batch_data = user_file_queues[user_id]['batch_data']
-                    await send_completion_message(
-                        client,
-                        user_id,
-                        batch_data["start_time"],
-                        batch_data["count"],
-                        batch_data["points_used"]
-                    )
-                    user_file_queues[user_id]['batch_data'] = None
-                
-            except Exception as e:
-                logger.error(f"Error processing file for {user_id}: {e}")
-                try:
-                    await file_info['message'].reply_text(f"❌ Error processing file: {str(e)[:500]}")
-                except:
-                    pass
+        except IndexError:
+            break
+            
+        # Acquire semaphore and increment active tasks
+        await semaphore.acquire()
+        user_active_tasks[user_id] += 1
+        
+        # Process the file in a separate task
+        task = asyncio.create_task(
+            process_single_file_wrapper(client, file_info, user_id, semaphore)
+        )
+        
+        # Small delay to prevent flooding
+        await asyncio.sleep(0.5)
     
     # Cleanup when done
-    if user_id in user_file_queues:
-        user_file_queues[user_id]['is_processing'] = False
-        if len(user_file_queues[user_id]['queue']) == 0:
-            del user_file_queues[user_id]
+    if user_id in user_file_queues and not user_file_queues[user_id].get('queue'):
+        del user_file_queues[user_id]
+
+async def process_single_file_wrapper(client: Client, file_info: dict, user_id: int, semaphore: asyncio.Semaphore):
+    """Wrapper to ensure semaphore is properly released"""
+    try:
+        # Get user data
+        user_data = await hyoshcoder.read_user(user_id)
+        if not user_data:
+            await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
+            return
+            
+        # Process the file
+        await process_single_file(client, file_info, user_data)
+        
+    except Exception as e:
+        logger.error(f"Error processing file for {user_id}: {e}")
+        try:
+            await file_info['message'].reply_text(f"❌ Error processing file: {str(e)[:500]}")
+        except:
+            pass
+    finally:
+        # Release semaphore and decrement active tasks
+        semaphore.release()
+        user_active_tasks[user_id] -= 1
+        
+        # Handle batch completion if this was the last file
+        if (user_id in user_file_queues and 
+            user_file_queues[user_id].get('batch_data') and 
+            len(user_file_queues[user_id]['queue']) == 0 and
+            user_active_tasks[user_id] == 0):
+            
+            batch_data = user_file_queues[user_id]['batch_data']
+            await send_completion_message(
+                client,
+                user_id,
+                batch_data["start_time"],
+                batch_data["count"],
+                batch_data["points_used"]
+            )
+            user_file_queues[user_id]['batch_data'] = None
 
 async def process_single_file(client: Client, file_info: dict, user_data: dict):
     """Process a single file with all the renaming logic"""
