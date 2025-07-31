@@ -447,19 +447,25 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
     except Exception as e:
         logger.error(f"Error in completion message: {e}")
 async def verify_dump_channel(client: Client, channel_id: str) -> Tuple[bool, str]:
-    """Verify dump channel exists and has proper permissions"""
+    """Enhanced channel verification with proper type checking"""
     try:
         channel_id_int = int(channel_id)
         chat = await client.get_chat(channel_id_int)
         
-        # Check if it's a channel or supergroup
-        if chat.type not in ("channel", "supergroup"):
-            return False, f"Invalid chat type: {chat.type}"
+        # Debug logging
+        logger.info(f"Channel type detected: {type(chat.type)}, value: {chat.type}")
+        
+        # Handle both string and enum types
+        chat_type = str(chat.type).lower().replace("chattype.", "")
+        
+        valid_types = ["channel", "supergroup"]
+        if chat_type not in valid_types:
+            return False, f"Invalid chat type: {chat_type}. Must be channel or supergroup"
             
         # Check bot permissions
         member = await client.get_chat_member(channel_id_int, client.me.id)
         if not member or not member.privileges:
-            return False, "Bot has no privileges"
+            return False, "Bot has no admin privileges"
             
         # Check required permissions
         required_perms = {
@@ -479,11 +485,11 @@ async def verify_dump_channel(client: Client, channel_id: str) -> Tuple[bool, st
         return True, ""
         
     except PeerIdInvalid:
-        return False, "Channel not found"
+        return False, "Channel not found or bot not added"
     except ChannelPrivate:
-        return False, "Channel is private"
+        return False, "Channel is private or bot not member"
     except Exception as e:
-        logger.error(f"Error verifying channel: {e}")
+        logger.error(f"Channel verification error: {str(e)}", exc_info=True)
         return False, f"Verification error: {str(e)[:100]}"
 # SEQUENCE HANDLERS
 @Client.on_message(filters.command(["ssequence", "startsequence"]))
