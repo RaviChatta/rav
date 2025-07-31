@@ -807,7 +807,6 @@ async def delete_dump_channel(client: Client, message: Message):
             asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
 
-
 async def handle_set_dump(client: Client, message: Message, args: List[str]):
     """Handle setting dump channel with proper validation."""
     if not message.from_user:
@@ -873,8 +872,6 @@ async def handle_set_dump(client: Client, message: Message, args: List[str]):
             message.chat.id,
             "❌ An unexpected error occurred while setting dump channel. Please try again.",
             delete_after=30
-        )
-
 @Client.on_message(filters.command("setmedia") & filters.private)
 async def handle_setmedia(client: Client, message: Message):
     """Handle media preference setting."""
