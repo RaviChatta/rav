@@ -11,7 +11,6 @@ import logging
 from urllib.parse import quote
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Union, Tuple, AsyncGenerator, Any
-
 from pyrogram import Client, filters
 from pyrogram.types import (
     CallbackQuery, 
@@ -22,7 +21,7 @@ from pyrogram.types import (
     Message,
     User
 )
-from pyrogram.errors import FloodWait, ChatAdminRequired, PeerIdInvalid, QueryIdInvalid
+from pyrogram.errors import FloodWait, ChatAdminRequired, PeerIdInvalid, QueryIdInvalid , ChannelPrivate ,   UserNotParticipant 
 from pyrogram.enums import ChatMemberStatus, ParseMode
 
 from config import settings
