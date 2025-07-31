@@ -1158,8 +1158,13 @@ async def cancel_processing(client: Client, message: Message):
     if user_id in sequential_operations:
         sequential_operations[user_id]["files"] = []
     
-    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
-
+    if user_id in user_active_tasks:
+        user_active_tasks[user_id] = 0
+    
+    await message.reply_text(
+        "🛑 Cancel request received. Current operations will be stopped.\n"
+        f"Active downloads cancelled: {user_active_tasks.get(user_id, 0)}"
+    )
 # LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
