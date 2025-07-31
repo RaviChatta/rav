@@ -1,5 +1,5 @@
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait, MessageNotModified, BadRequest
+from pyrogram.errors import FloodWait, MessageNotModified, BadRequest, PeerIdInvalid
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image
 from datetime import datetime, timedelta
@@ -7,7 +7,6 @@ import os
 import time
 import re
 import pytz
-
 import asyncio
 import random
 import shutil
@@ -17,23 +16,13 @@ import logging
 from pyrogram.enums import ParseMode, ChatAction
 import json
 from typing import Optional, Tuple, Dict, List, Set
+from html import escape as html_escape
+
 # Database imports
 from database.data import hyoshcoder
 from config import settings
 from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
-from pyrogram.errors import MessageNotModified, BadRequest
-import html
-from html import escape as html_escape
 
-def escape_markdown(text: str) -> str:
-    """Custom Markdown escaper for Telegram"""
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return ''.join(f'\\{char}' if char in escape_chars else char for char in text)
-
-def escape_html(text: str) -> str:
-    """Escape text for HTML parse mode"""
-    return html_escape(text, quote=False)
-    
 logger = logging.getLogger(__name__)
 
 # Global variables to manage operations
@@ -45,6 +34,7 @@ sequential_operations = {}  # For sequential mode
 active_sequences = {}  # For sequence handling
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
+file_processing_counters = {}  # Track concurrent file processing
 
 # Sequence handling variables
 active_sequences: Dict[int, List[Dict[str, str]]] = {}
@@ -86,6 +76,12 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
             "date": datetime.now().date().isoformat()
         })
 
+        user_data = await hyoshcoder.users.find_one({"_id": user_id})
+        if not user_data:
+            return False
+
+        balance_after = user_data.get("points", {}).get("balance", 0) - points_deducted
+
         await hyoshcoder.users.update_one(
             {"_id": user_id},
             {
@@ -108,7 +104,7 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
             "amount": -points_deducted,
             "description": f"Renamed {original_name} to {new_name}",
             "timestamp": datetime.now(),
-            "balance_after": (await hyoshcoder.get_points(user_id)) - points_deducted
+            "balance_after": balance_after
         })
 
         # Mark file as processed
@@ -126,9 +122,9 @@ def sanitize_filename(filename: str) -> str:
     return sanitized.encode('ascii', 'ignore').decode('ascii').strip()
 
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
-    """Get or create semaphore for user"""
+    """Get or create semaphore for user with max 3 concurrent processes"""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)
+        user_semaphores[user_id] = asyncio.Semaphore(3)  # Increased to 3 concurrent processes
     return user_semaphores[user_id]
 
 async def get_stream_indexes(input_path: str):
@@ -310,7 +306,6 @@ async def send_to_dump_channel(
 
         # Verify channel exists and bot has permissions
         try:
-            # Convert to integer and validate
             channel_id = int(dump_channel)
             if channel_id >= 0:
                 logger.warning(f"Invalid channel ID format (must be negative): {dump_channel}")
@@ -334,38 +329,41 @@ async def send_to_dump_channel(
             logger.error(f"Can't access dump channel {dump_channel}: {e}")
             return False
 
-        # Rest of the function remains the same...
-        send_params = {
-            "chat_id": channel_id,
-            "caption": caption[:1024],
-            "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None,
-            **kwargs
-        }
-
         # Determine media type and send appropriately
         ext = os.path.splitext(file_path)[1].lower()
         
         try:
             if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm'):
                 await client.send_video(
+                    chat_id=channel_id,
                     video=file_path,
+                    caption=caption[:1024],
+                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
                     supports_streaming=True,
-                    **send_params
+                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
                 )
             elif ext in ('.mp3', '.flac', '.m4a', '.wav', '.ogg'):
                 await client.send_audio(
+                    chat_id=channel_id,
                     audio=file_path,
-                    **send_params
+                    caption=caption[:1024],
+                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
                 )
             elif ext in ('.jpg', '.jpeg', '.png', '.webp'):
                 await client.send_photo(
+                    chat_id=channel_id,
                     photo=file_path,
-                    **{k: v for k, v in send_params.items() if k != "thumb"}
+                    caption=caption[:1024],
+                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
                 )
             else:
                 await client.send_document(
+                    chat_id=channel_id,
                     document=file_path,
-                    **send_params
+                    caption=caption[:1024],
+                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                    **{k: v for k, v in kwargs.items() if k not in ['chat_id', 'caption', 'thumb']}
                 )
             
             logger.info(f"Successfully sent {file_path} to dump channel {channel_id}")
@@ -425,24 +423,29 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
         avg_time = time_taken / file_count if file_count > 0 else 0
         avg_mins, avg_secs = divmod(int(avg_time), 60)
         
-    except Exception as e:
-        logger.error(f"Error sending completion message: {e}")
+        completion_text = (
+            f"✅ **Batch Processing Complete**\n\n"
+            f"📊 **Files Processed:** {file_count}\n"
+            f"⏱ **Total Time:** {mins}m {secs}s\n"
+            f"⏳ **Avg Time/File:** {avg_mins}m {avg_secs}s\n"
+            f"💎 **Points Used:** {points_used}\n"
+            f"💰 **Remaining Points:** {user_points}\n"
+        )
+        
+        if user_rank:
+            completion_text += f"\n🏆 **Your Rank:** #{user_rank}\n"
+            completion_text += f"📝 **Total Renames:** {total_renames}\n"
+        
+        try:
+            await client.send_message(
+                chat_id=user_id,
+                text=completion_text
+            )
+        except Exception as e:
+            logger.error(f"Error sending completion message: {e}")
 
-@Client.on_message(filters.command("cancel"))
-async def cancel_processing(client: Client, message: Message):
-    """Cancel current processing operations"""
-    user_id = message.from_user.id
-    cancel_operations[user_id] = True
-    
-    # Clean up any ongoing operations
-    if user_id in user_batch_trackers:
-        del user_batch_trackers[user_id]
-    if user_id in file_processing_counters:
-        del file_processing_counters[user_id]
-    if user_id in sequential_operations:
-        sequential_operations[user_id]["files"] = []
-    
-    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
+    except Exception as e:
+        logger.error(f"Error in completion message: {e}")
 
 # SEQUENCE HANDLERS
 @Client.on_message(filters.command(["ssequence", "startsequence"]))
@@ -700,11 +703,10 @@ async def auto_rename_files(client: Client, message: Message):
 async def process_user_queue(client: Client, user_id: int):
     """Process all files in the user's queue with semaphore control"""
     # Initialize semaphore for this user if not exists
-    if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)  # Allow 2 concurrent processes
+    semaphore = await get_user_semaphore(user_id)
     
     while user_file_queues.get(user_id, {}).get('queue'):
-        async with user_semaphores[user_id]:
+        async with semaphore:
             file_info = user_file_queues[user_id]['queue'].pop(0)
             try:
                 # Get user data for each file
@@ -973,14 +975,12 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                                     full_name += f" {user.last_name}"
                                 username = f"@{user.username}" if user.username else "N/A"
                                 
-                                user_data = await hyoshcoder.read_user(user_id)
-                                is_premium = user_data.get("is_premium", False) if user_data else False
-                                premium_status = '✅' if is_premium else '❌'
-                                
                                 dump_caption = (
                                     f"<b>File Details</b>\n"
                                     f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
                                     f"Size: {humanbytes(file_info['size'])}\n"
+                                    f"User: {full_name} ({username})\n"
+                                    f"User ID: <code>{user_id}</code>"
                                 )
                                 
                                 # Send to dump channel based on file type
@@ -1234,7 +1234,6 @@ async def show_leaderboard(client: Client, message: Message):
         except:
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
-# SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
     """Generate screenshots at the video's native resolution using ffmpeg."""
