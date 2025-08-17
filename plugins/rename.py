@@ -795,37 +795,30 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     renaming_operations[file_info['file_id']] = datetime.now()
 
     # Extract metadata from filename/caption
-    if src_info == "file_name":
-        episode_number = await extract_episode(file_info['file_name'])
-        season = await extract_season(file_info['file_name'])
-        extracted_qualities = await extract_quality(file_info['file_name'])
-    elif src_info == "caption":
-        caption = message.caption if message.caption else ""
-        episode_number = await extract_episode(caption)
-        season = await extract_season(caption)
-        extracted_qualities = await extract_quality(caption)
-    else:
-        episode_number = await extract_episode(file_info['file_name'])
-        season = await extract_season(file_info['file_name'])
-        extracted_qualities = await extract_quality(file_info['file_name'])
+    # Apply format template with all available placeholders
+    if format_template:
+        placeholders = {
+            "episode": episode_number,
+            "Episode": episode_number,
+            "EPISODE": episode_number,
+            "{episode}": episode_number,
+            "season": season,
+            "Season": season,
+            "SEASON": season,
+            "{season}": season,
+            "quality": extracted_qualities,
+            "Quality": extracted_qualities,
+            "QUALITY": extracted_qualities,
+            "{quality}": extracted_qualities,
+            "name": extracted_name,
+            "Name": extracted_name,
+            "NAME": extracted_name,
+            "{name}": extracted_name
+        }
 
-    # Apply format template
-    if episode_number or season:
-        placeholders = ["episode", "Episode", "EPISODE", "{episode}", "season", "Season", "SEASON", "{season}"]
-        for placeholder in placeholders:
-            if placeholder.lower() in ["episode", "{episode}"] and episode_number:
-                format_template = format_template.replace(placeholder, str(episode_number), 1)
-            elif placeholder.lower() in ["season", "{season}"] and season:
-                format_template = format_template.replace(placeholder, str(season), 1)
-
-        quality_placeholders = ["quality", "Quality", "QUALITY", "{quality}"]
-        for quality_placeholder in quality_placeholders:
-            if quality_placeholder in format_template:
-                if extracted_qualities == "Unknown":
-                    await message.reply_text("**Using 'Unknown' for quality**")
-                    format_template = format_template.replace(quality_placeholder, "Unknown")
-                else:
-                    format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
+        for placeholder, value in placeholders.items():
+            if value and placeholder in format_template:
+                format_template = format_template.replace(placeholder, str(value))
 
     # Prepare file paths
     _, file_extension = os.path.splitext(file_info['file_name'])
@@ -1372,3 +1365,4 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
