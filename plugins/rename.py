@@ -7,7 +7,7 @@ import os
 import time
 import re
 import pytz
-
+import pymongo
 import asyncio
 import random
 import shutil
@@ -17,10 +17,11 @@ import logging
 from pyrogram.enums import ParseMode, ChatAction
 import json
 from typing import Optional, Tuple, Dict, List, Set
+from pyrogram.errors import PeerIdInvalid
 # Database imports
 from database.data import hyoshcoder
 from config import settings
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season , extract_name
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, extract_name
 from pyrogram.errors import MessageNotModified, BadRequest
 import html
 from html import escape as html_escape
@@ -45,6 +46,7 @@ sequential_operations = {}  # For sequential mode
 active_sequences = {}  # For sequence handling
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
+file_processing_counters = {}  # Track processing counts per user
 
 # Sequence handling variables
 active_sequences: Dict[int, List[Dict[str, str]]] = {}
@@ -432,15 +434,23 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
 async def cancel_processing(client: Client, message: Message):
     """Cancel current processing operations"""
     user_id = message.from_user.id
+    
+    # Mark cancel request
     cancel_operations[user_id] = True
     
     # Clean up any ongoing operations
-    if user_id in user_batch_trackers:
-        del user_batch_trackers[user_id]
-    if user_id in file_processing_counters:
-        del file_processing_counters[user_id]
+    if user_id in user_file_queues:
+        user_file_queues[user_id]['queue'] = []
+        if 'batch_data' in user_file_queues[user_id]:
+            user_file_queues[user_id]['batch_data'] = None
+    
     if user_id in sequential_operations:
         sequential_operations[user_id]["files"] = []
+    
+    # Clear any active sequences
+    if user_id in active_sequences:
+        active_sequences.pop(user_id, None)
+        sequence_message_ids.pop(user_id, None)
     
     await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
@@ -707,6 +717,11 @@ async def process_user_queue(client: Client, user_id: int):
         async with user_semaphores[user_id]:
             file_info = user_file_queues[user_id]['queue'].pop(0)
             try:
+                # Check for cancel request before processing each file
+                if user_id in cancel_operations and cancel_operations[user_id]:
+                    await file_info['message'].reply_text("❌ Processing canceled by user")
+                    continue
+
                 # Get user data for each file
                 user_data = await hyoshcoder.read_user(user_id)
                 if not user_data:
@@ -771,6 +786,11 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
         queue_position = file_info['queue_position']
         start_time = file_info['start_time']
         
+        # Check for cancel request before starting
+        if user_id in cancel_operations and cancel_operations[user_id]:
+            await message.reply_text("❌ Processing canceled by user")
+            return
+
         # Initialize all possible metadata variables
         episode_number = None
         season = None
@@ -807,63 +827,62 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             return await message.reply_text("The file exceeds 2GB. Please send a smaller file or media.")
 
         # Extract all metadata from filename/caption with proper fallbacks
-    try:
-        if src_info == "file_name":
-            source_text = file_info['file_name']
-        elif src_info == "caption":
-            source_text = message.caption if message.caption else ""
-        else:
-            source_text = file_info['file_name']
+        try:
+            if src_info == "file_name":
+                source_text = file_info['file_name']
+            elif src_info == "caption":
+                source_text = message.caption if message.caption else ""
+            else:
+                source_text = file_info['file_name']
 
-        # Extract components
-        extracted_name = await extract_name(source_text) or "Unknown"
-        season = await extract_season(source_text)
-        episode = await extract_episode(source_text)
-        quality = await extract_quality(source_text) or "Unknown"
+            # Extract components
+            extracted_name = await extract_name(source_text) or "Unknown"
+            season = await extract_season(source_text)
+            episode = await extract_episode(source_text)
+            quality = await extract_quality(source_text) or "Unknown"
 
-        # Clean each component
-        if extracted_name != "Unknown":
-            extracted_name = re.sub(r'\[.*?\]|\(.*?\)|\s+$', '', extracted_name).strip()
-            extracted_name = re.sub(r'\s{2,}', ' ', extracted_name)
-        
-        clean_season = season.zfill(2) if season else "01"
-        clean_episode = episode.zfill(2) if episode else "01"
-        clean_quality = quality.replace('[', '').replace(']', '').strip()
+            # Clean each component
+            if extracted_name != "Unknown":
+                extracted_name = re.sub(r'\[.*?\]|\(.*?\)|\s+$', '', extracted_name).strip()
+                extracted_name = re.sub(r'\s{2,}', ' ', extracted_name)
+            
+            clean_season = season.zfill(2) if season else "01"
+            clean_episode = episode.zfill(2) if episode else "01"
+            clean_quality = quality.replace('[', '').replace(']', '').strip()
 
-    except Exception as e:
-        logger.error(f"Error extracting metadata: {e}")
-        await message.reply_text("⚠️ Error extracting metadata from file. Using fallback values.")
-        extracted_name = "Unknown"
-        clean_season = "01"
-        clean_episode = "01"
-        clean_quality = "Unknown"
+        except Exception as e:
+            logger.error(f"Error extracting metadata: {e}")
+            await message.reply_text("⚠️ Error extracting metadata from file. Using fallback values.")
+            extracted_name = "Unknown"
+            clean_season = "01"
+            clean_episode = "01"
+            clean_quality = "Unknown"
 
-    # Apply format template
-    if format_template:
-        placeholders = {
-            "{name}": extracted_name,
-            "{season}": clean_season,
-            "{episode}": clean_episode,
-            "{quality}": clean_quality,
-            # Add all variations (Name, NAME, etc.)
-            "name": extracted_name,
-            "Name": extracted_name,
-            "NAME": extracted_name,
-            "season": clean_season,
-            "Season": clean_season,
-            "SEASON": clean_season,
-            "episode": clean_episode,
-            "Episode": clean_episode,
-            "EPISODE": clean_episode,
-            "quality": clean_quality,
-            "Quality": clean_quality,
-            "QUALITY": clean_quality
-        }
+        # Apply format template
+        if format_template:
+            placeholders = {
+                "{name}": extracted_name,
+                "{season}": clean_season,
+                "{episode}": clean_episode,
+                "{quality}": clean_quality,
+                # Add all variations (Name, NAME, etc.)
+                "name": extracted_name,
+                "Name": extracted_name,
+                "NAME": extracted_name,
+                "season": clean_season,
+                "Season": clean_season,
+                "SEASON": clean_season,
+                "episode": clean_episode,
+                "Episode": clean_episode,
+                "EPISODE": clean_episode,
+                "quality": clean_quality,
+                "Quality": clean_quality,
+                "QUALITY": clean_quality
+            }
 
-        for placeholder, value in placeholders.items():
-            if placeholder in format_template:
-                format_template = format_template.replace(placeholder, value)
-
+            for placeholder, value in placeholders.items():
+                if placeholder in format_template:
+                    format_template = format_template.replace(placeholder, value)
 
         # Prepare file paths
         _, file_extension = os.path.splitext(file_info['file_name'])
@@ -882,7 +901,9 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
         
         for attempt in range(max_download_retries):
             try:
+                # Check for cancel request during download
                 if user_id in cancel_operations and cancel_operations[user_id]:
+                    await message.reply_text("❌ Processing canceled by user")
                     return
 
                 queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
@@ -993,7 +1014,9 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
         max_upload_retries = 3
         for attempt in range(max_upload_retries):
             try:
+                # Check for cancel request during upload
                 if user_id in cancel_operations and cancel_operations[user_id]:
+                    await message.reply_text("❌ Processing canceled by user")
                     return
         
                 # Prepare common upload parameters
@@ -1158,6 +1181,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
 
         if file_info['file_id'] in renaming_operations:
             del renaming_operations[file_info['file_id']]
+
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
     """Handle completion message for batch uploads"""
@@ -1179,23 +1203,6 @@ async def handle_media_group_completion(client: Client, message: Message):
 
     except Exception as e:
         logger.error(f"Error in handle_media_group_completion: {e}")
-
-@Client.on_message(filters.command("cancel"))
-async def cancel_processing(client: Client, message: Message):
-    """Cancel current processing operations"""
-    user_id = message.from_user.id
-    cancel_operations[user_id] = True
-    
-    # Clean up any ongoing operations
-    if user_id in user_file_queues:
-        user_file_queues[user_id]['queue'] = []
-        if 'batch_data' in user_file_queues[user_id]:
-            user_file_queues[user_id]['batch_data'] = None
-    
-    if user_id in sequential_operations:
-        sequential_operations[user_id]["files"] = []
-    
-    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
 
 # LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
@@ -1291,7 +1298,6 @@ async def show_leaderboard(client: Client, message: Message):
         except:
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
-# SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
     """Generate screenshots at the video's native resolution using ffmpeg."""
@@ -1429,8 +1435,3 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
-
-
-
-
-
