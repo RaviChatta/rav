@@ -27,11 +27,12 @@ class Scripts:
 ➲ <b>ǫᴜᴀʟɪᴛʏ</b> – ᴛᴏ ʀᴇᴘʟᴀᴄᴇ ǫᴜᴀʟɪᴛʏ
 
 <b>⟩ ᴇxᴀᴍᴘʟᴇ:</b>  
-<code>/autorename {name} - S{season}E{episode} [{quality}] </code>
+<code>/autorename [name] - S[season]E[episode] [quality]</code>
 
 <b>⟩ ᴄᴏᴍᴍᴀɴᴅ:</b>  
 <code>/autorename</code> – ᴜꜱᴇ ᴘʟᴀᴄᴇʜᴏʟᴅᴇʀꜱ ᴛᴏ ᴍᴀɴᴀɢᴇ ꜰɪʟᴇɴᴀᴍᴇꜱ.
 """
+
 
     ABOUT_TXT = """
 🌌 <b>ᴀʙᴏᴜᴛ ꜰɪʟᴇ ʀᴇɴᴀᴍᴇ ᴘʀᴏ</b> 🌌
@@ -149,4 +150,5 @@ class Scripts:
 """
 
 Txt = Scripts()
+
 
