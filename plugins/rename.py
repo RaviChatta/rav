@@ -758,110 +758,144 @@ async def process_user_queue(client: Client, user_id: int):
 
 async def process_single_file(client: Client, file_info: dict, user_data: dict):
     """Process a single file with all the renaming logic"""
-    message = file_info['message']
-    user_id = message.from_user.id
-    queue_position = file_info['queue_position']
-    start_time = file_info['start_time']
-    
-    points_data = user_data.get("points", {})
-    user_points = points_data.get("balance", 0)
-    format_template = user_data.get("format_template", "")
-    media_preference = user_data.get("media_preference", file_info['media_type'])
-    src_info = await hyoshcoder.get_src_info(user_id)
-
-    # Get points config
-    points_config = await hyoshcoder.get_config("points_config", {})
-    rename_cost = points_config.get("rename_cost", 1)
-
-    if user_points < rename_cost:
-        return await message.reply_text(
-            f"❌ You don't have enough points (Needed: {rename_cost})",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="freepoints")]])
-        )
-
-    if not format_template:
-        return await message.reply_text("Please set your rename format with /autorename")
-
-    # Check file size (2GB limit)
-    if file_info['size'] > 2 * 1024 * 1024 * 1024:
-        return await message.reply_text("ᴛʜᴇ ғɪʟᴇ ᴇxᴄᴇᴇᴅs 2GB. ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴀ sᴍᴀʟʟᴇʀ ғɪʟᴇ ᴏʀ ᴍᴇᴅɪᴀ.")
-
-    # Check for duplicate processing
-    if file_info['file_id'] in renaming_operations:
-        elapsed_time = (datetime.now() - renaming_operations[file_info['file_id']]).seconds
-        if elapsed_time < 10:
-            return await message.reply_text("⚠️ Please wait for your current file operation to complete.")
-
-    renaming_operations[file_info['file_id']] = datetime.now()
-
-    # Extract metadata from filename/caption
-    # Apply format template with all available placeholders
-    if format_template:
-        placeholders = {
-            "episode": episode_number,
-            "Episode": episode_number,
-            "EPISODE": episode_number,
-            "{episode}": episode_number,
-            "season": season,
-            "Season": season,
-            "SEASON": season,
-            "{season}": season,
-            "quality": extracted_qualities,
-            "Quality": extracted_qualities,
-            "QUALITY": extracted_qualities,
-            "{quality}": extracted_qualities,
-            "name": extracted_name,
-            "Name": extracted_name,
-            "NAME": extracted_name,
-            "{name}": extracted_name
-        }
-
-        for placeholder, value in placeholders.items():
-            if value and placeholder in format_template:
-                format_template = format_template.replace(placeholder, str(value))
-
-    # Prepare file paths
-    _, file_extension = os.path.splitext(file_info['file_name'])
-    renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
-    renamed_file_path = os.path.join("downloads", renamed_file_name)
-    metadata_file_path = os.path.join("Metadata", renamed_file_name)
-    os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
-    os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
-
-    file_uuid = str(uuid.uuid4())[:8]
-    temp_file_path = f"{renamed_file_path}_{file_uuid}"
-
-    # Download file with retry logic
-    max_download_retries = 1
-    queue_message = None
-    for attempt in range(max_download_retries):
-        try:
-            if user_id in cancel_operations and cancel_operations[user_id]:
-                return
-
-            queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
-            path = await client.download_media(
-                message,
-                file_name=temp_file_path,
-                progress=progress_for_pyrogram,
-                progress_args=(f"Downloading #{queue_position}", queue_message, time.time()),
-            )
-            break
-        except Exception as e:
-            if attempt == max_download_retries - 1:
-                del renaming_operations[file_info['file_id']]
-                return await message.reply_text(f"❌ Download failed: {e}")
-            await asyncio.sleep(2 ** attempt)
-
-    # Rename file
     try:
-        os.rename(path, renamed_file_path)
-        path = renamed_file_path
-    except Exception as e:
-        await message.reply_text(f"❌ Rename failed: {e}")
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-        return
+        message = file_info['message']
+        user_id = message.from_user.id
+        queue_position = file_info['queue_position']
+        start_time = file_info['start_time']
+        
+        # Initialize all possible metadata variables
+        episode_number = None
+        season = None
+        extracted_qualities = "Unknown"
+        extracted_name = "Unknown"
+        
+        # Get user configuration
+        points_data = user_data.get("points", {})
+        user_points = points_data.get("balance", 0)
+        format_template = user_data.get("format_template", "")
+        media_preference = user_data.get("media_preference", file_info['media_type'])
+        src_info = await hyoshcoder.get_src_info(user_id)
+
+        # Get points config with fallback
+        try:
+            points_config = await hyoshcoder.get_config("points_config", {})
+            rename_cost = points_config.get("rename_cost", 1)
+        except Exception as e:
+            logger.error(f"Error getting points config: {e}")
+            rename_cost = 1  # Default fallback
+
+        # Check user points
+        if user_points < rename_cost:
+            return await message.reply_text(
+                f"❌ You don't have enough points (Needed: {rename_cost})",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="freepoints")]])
+            )
+
+        if not format_template:
+            return await message.reply_text("Please set your rename format with /autorename")
+
+        # Check file size (2GB limit)
+        if file_info['size'] > 2 * 1024 * 1024 * 1024:
+            return await message.reply_text("The file exceeds 2GB. Please send a smaller file or media.")
+
+        # Extract all metadata from filename/caption with proper fallbacks
+        try:
+            if src_info == "file_name":
+                source_text = file_info['file_name']
+            elif src_info == "caption":
+                source_text = message.caption if message.caption else ""
+            else:  # Default to filename
+                source_text = file_info['file_name']
+
+            # Extract all metadata components
+            episode_number = await extract_episode(source_text)
+            season = await extract_season(source_text)
+            extracted_qualities = await extract_quality(source_text) or "Unknown"
+            extracted_name = await extract_name(source_text) or "Unknown"
+            
+        except Exception as e:
+            logger.error(f"Error extracting metadata: {e}")
+            await message.reply_text("⚠️ Error extracting metadata from file. Using fallback values.")
+
+        # Apply format template with all available placeholders
+        if format_template:
+            placeholders = {
+                "episode": episode_number,
+                "Episode": episode_number,
+                "EPISODE": episode_number,
+                "{episode}": episode_number,
+                "season": season,
+                "Season": season,
+                "SEASON": season,
+                "{season}": season,
+                "quality": extracted_qualities,
+                "Quality": extracted_qualities,
+                "QUALITY": extracted_qualities,
+                "{quality}": extracted_qualities,
+                "name": extracted_name,
+                "Name": extracted_name,
+                "NAME": extracted_name,
+                "{name}": extracted_name
+            }
+
+            # Replace placeholders that exist in the template
+            for placeholder, value in placeholders.items():
+                if value and placeholder in format_template:
+                    format_template = format_template.replace(placeholder, str(value))
+
+        # Prepare file paths
+        _, file_extension = os.path.splitext(file_info['file_name'])
+        renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
+        renamed_file_path = os.path.join("downloads", renamed_file_name)
+        metadata_file_path = os.path.join("Metadata", renamed_file_name)
+        os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
+        os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+
+        file_uuid = str(uuid.uuid4())[:8]
+        temp_file_path = f"{renamed_file_path}_{file_uuid}"
+
+        # Download file with retry logic
+        max_download_retries = 3
+        queue_message = None
+        path = None
+        
+        for attempt in range(max_download_retries):
+            try:
+                if user_id in cancel_operations and cancel_operations[user_id]:
+                    return
+
+                queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
+                path = await client.download_media(
+                    message,
+                    file_name=temp_file_path,
+                    progress=progress_for_pyrogram,
+                    progress_args=(f"Downloading #{queue_position}", queue_message, time.time()),
+                )
+                break
+            except Exception as e:
+                if attempt == max_download_retries - 1:
+                    if path and os.path.exists(path):
+                        os.remove(path)
+                    if queue_message:
+                        await queue_message.delete()
+                    return await message.reply_text(f"❌ Download failed after {max_download_retries} attempts: {str(e)[:200]}")
+                await asyncio.sleep(2 ** attempt)
+
+        # Rename file
+        try:
+            if path and os.path.exists(path):
+                os.rename(path, renamed_file_path)
+                path = renamed_file_path
+            else:
+                raise Exception("Downloaded file not found")
+        except Exception as e:
+            await message.reply_text(f"❌ Rename failed: {e}")
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            if queue_message:
+                await queue_message.delete()
+            return
 
     # Add metadata if enabled
     metadata_added = False
@@ -1365,4 +1399,5 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
