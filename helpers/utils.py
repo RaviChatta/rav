@@ -53,11 +53,14 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*converted\s*[)\]>}]?', re.IGNORECASE): lambda _: "converted",
 }
 
+# Patterns for extracting the name (clean title)
+NAME_PATTERNS = [
+    re.compile(r'(.*?)(?:S\d+E\d+|Season\s*\d+|S\d+\s*-\s*E\d+|\d{3,4}p|4k|HDRip|\[.*?\]|@.*?|\.mkv|\.mp4).*', re.IGNORECASE),
+    re.compile(r'(.*?)(?:\b\d{1,4}\b(?!\s*[pP])).*'),  # Removes standalone numbers (episode numbers)
+]
+
 async def extract_season(filename: str) -> Optional[str]:
-    """
-    Extracts season number as string.
-    Returns None if no season number is found.
-    """
+    """Extracts season number as string. Returns None if not found."""
     for pattern in SEASON_PATTERNS:
         match = pattern.search(filename)
         if match:
@@ -65,10 +68,7 @@ async def extract_season(filename: str) -> Optional[str]:
     return None
 
 async def extract_episode(filename: str) -> Optional[str]:
-    """
-    Extracts episode number as string.
-    Returns None if no episode number is found.
-    """
+    """Extracts episode number as string. Returns None if not found."""
     for pattern in EPISODE_PATTERNS:
         match = pattern.search(filename)
         if match:
@@ -76,10 +76,7 @@ async def extract_episode(filename: str) -> Optional[str]:
     return None
 
 async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
-    """
-    Extracts both season and episode numbers as strings.
-    Returns None if neither is found.
-    """
+    """Extracts both season and episode numbers. Returns None if neither is found."""
     season = await extract_season(filename)
     episode = await extract_episode(filename)
     
@@ -91,17 +88,23 @@ async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
     return None
 
 async def extract_quality(filename: str) -> str:
-    """
-    Extracts video quality.
-    Returns "Unknown" if no quality is found.
-    """
+    """Extracts video quality. Returns 'Unknown' if not found."""
     for pattern, extractor in QUALITY_PATTERNS.items():
         match = pattern.search(filename)
         if match:
             return extractor(match)
     return "Unknown"
 
-
+async def extract_name(filename: str) -> str:
+    """Extracts the clean name/title from the filename by removing metadata."""
+    for pattern in NAME_PATTERNS:
+        match = pattern.match(filename)
+        if match and match.group(1):
+            # Clean extra spaces and trailing separators
+            name = match.group(1).strip()
+            name = re.sub(r'[-._]+$', '', name)  # Remove trailing separators like ".", "-", "_"
+            return name.strip()
+    return filename  # Fallback: return original if no patterns match
 
 
 # Add this at the top of your file with other globals
@@ -312,3 +315,4 @@ async def get_safe_media(media_type: str, user_id: int, fallback=None):
     except Exception as e:
         logger.error(f"Error getting {media_type}: {e}")
     return fallback
+
