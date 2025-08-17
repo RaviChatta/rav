@@ -713,6 +713,7 @@ async def process_user_queue(client: Client, user_id: int):
     if user_id not in user_semaphores:
         user_semaphores[user_id] = asyncio.Semaphore(3)  # Allow 3 concurrent processes
     
+    async with user_semaphores[user_id]:
     while user_file_queues.get(user_id, {}).get('queue'):
         async with user_semaphores[user_id]:
             file_info = user_file_queues[user_id]['queue'].pop(0)
@@ -821,7 +822,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             return await message.reply_text("The file exceeds 2GB. Please send a smaller file or media.")
 
         # Extract metadata from filename/caption
-        try:
+       try:
             if src_info == "file_name":
                 source_text = file_info['file_name']
             elif src_info == "caption":
@@ -847,38 +848,40 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             # Clean quality string
             clean_quality = quality.replace('[', '').replace(']', '').strip()
 
-            # Apply format template with all possible placeholders
-            formatted_name = format_template
-            formatted_name = formatted_name.replace("{name}", extracted_name)
-            formatted_name = formatted_name.replace("{season}", clean_season)
-            formatted_name = formatted_name.replace("{episode}", clean_episode)
-            formatted_name = formatted_name.replace("{quality}", clean_quality)
-            
-            # Handle case variations
-            formatted_name = formatted_name.replace("{Name}", extracted_name)
-            formatted_name = formatted_name.replace("{NAME}", extracted_name.upper())
-            formatted_name = formatted_name.replace("{Season}", f"Season {clean_season}")
-            formatted_name = formatted_name.replace("{SEASON}", f"SEASON {clean_season}")
-            formatted_name = formatted_name.replace("{Episode}", f"Episode {clean_episode}")
-            formatted_name = formatted_name.replace("{EPISODE}", f"EPISODE {clean_episode}")
-            formatted_name = formatted_name.replace("{Quality}", clean_quality.title())
-            formatted_name = formatted_name.replace("{QUALITY}", clean_quality.upper())
+            # NEW: Improved template processing
+            replacements = {
+                '[name]': extracted_name,
+                '[season]': clean_season,
+                '[episode]': clean_episode,
+                '[quality]': clean_quality,
+                # Add variations
+                '[Name]': extracted_name.title(),
+                '[NAME]': extracted_name.upper(),
+                '[Season]': f"Season {clean_season}",
+                '[SEASON]': f"SEASON {clean_season}",
+                '[Episode]': f"Episode {clean_episode}",
+                '[EPISODE]': f"EPISODE {clean_episode}",
+                '[Quality]': clean_quality.title(),
+                '[QUALITY]': clean_quality.upper()
+            }
 
-            # Remove any remaining placeholder tags
-            formatted_name = re.sub(r'\{.*?\}', '', formatted_name)
+            # Apply replacements to template
+            formatted_name = format_template
+            for placeholder, value in replacements.items():
+                formatted_name = formatted_name.replace(placeholder, value)
+
+            # Final cleanup of any unmatched placeholders
+            formatted_name = re.sub(r'\[.*?\]', '', formatted_name).strip()
 
         except Exception as e:
             logger.error(f"Error extracting metadata: {e}")
             await message.reply_text("⚠️ Error extracting metadata from file. Using fallback values.")
-            extracted_name = "Unknown"
-            clean_season = "01"
-            clean_episode = "01"
-            clean_quality = "Unknown"
-            formatted_name = f"{extracted_name} - S{clean_season}E{clean_episode} [{clean_quality}]"
+            formatted_name = f"{file_info['file_name']} (failed rename)"
 
         # Prepare file paths
         _, file_extension = os.path.splitext(file_info['file_name'])
         renamed_file_name = sanitize_filename(f"{formatted_name}{file_extension}")
+        
         renamed_file_path = os.path.join("downloads", renamed_file_name)
         metadata_file_path = os.path.join("Metadata", renamed_file_name)
         os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
@@ -1428,5 +1431,6 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
 
