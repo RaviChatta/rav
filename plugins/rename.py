@@ -791,12 +791,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             await message.reply_text("❌ Processing canceled by user")
             return
 
-        # Initialize all possible metadata variables
-        episode_number = None
-        season = None
-        extracted_qualities = "Unknown"
-        extracted_name = "Unknown"
-        
         # Get user configuration
         points_data = user_data.get("points", {})
         user_points = points_data.get("balance", 0)
@@ -826,7 +820,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
         if file_info['size'] > 2 * 1024 * 1024 * 1024:
             return await message.reply_text("The file exceeds 2GB. Please send a smaller file or media.")
 
-        # Extract all metadata from filename/caption with proper fallbacks
+        # Extract metadata from filename/caption
         try:
             if src_info == "file_name":
                 source_text = file_info['file_name']
@@ -835,10 +829,10 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             else:
                 source_text = file_info['file_name']
 
-            # Extract components
+            # Extract components with improved patterns
             extracted_name = await extract_name(source_text) or "Unknown"
-            season = await extract_season(source_text)
-            episode = await extract_episode(source_text)
+            season = await extract_season(source_text) or "01"
+            episode = await extract_episode(source_text) or "01"
             quality = await extract_quality(source_text) or "Unknown"
 
             # Clean each component
@@ -846,9 +840,32 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 extracted_name = re.sub(r'\[.*?\]|\(.*?\)|\s+$', '', extracted_name).strip()
                 extracted_name = re.sub(r'\s{2,}', ' ', extracted_name)
             
-            clean_season = season.zfill(2) if season else "01"
-            clean_episode = episode.zfill(2) if episode else "01"
+            # Ensure proper zero-padding
+            clean_season = season.zfill(2)
+            clean_episode = episode.zfill(2)
+            
+            # Clean quality string
             clean_quality = quality.replace('[', '').replace(']', '').strip()
+
+            # Apply format template with all possible placeholders
+            formatted_name = format_template
+            formatted_name = formatted_name.replace("{name}", extracted_name)
+            formatted_name = formatted_name.replace("{season}", clean_season)
+            formatted_name = formatted_name.replace("{episode}", clean_episode)
+            formatted_name = formatted_name.replace("{quality}", clean_quality)
+            
+            # Handle case variations
+            formatted_name = formatted_name.replace("{Name}", extracted_name)
+            formatted_name = formatted_name.replace("{NAME}", extracted_name.upper())
+            formatted_name = formatted_name.replace("{Season}", f"Season {clean_season}")
+            formatted_name = formatted_name.replace("{SEASON}", f"SEASON {clean_season}")
+            formatted_name = formatted_name.replace("{Episode}", f"Episode {clean_episode}")
+            formatted_name = formatted_name.replace("{EPISODE}", f"EPISODE {clean_episode}")
+            formatted_name = formatted_name.replace("{Quality}", clean_quality.title())
+            formatted_name = formatted_name.replace("{QUALITY}", clean_quality.upper())
+
+            # Remove any remaining placeholder tags
+            formatted_name = re.sub(r'\{.*?\}', '', formatted_name)
 
         except Exception as e:
             logger.error(f"Error extracting metadata: {e}")
@@ -857,36 +874,11 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             clean_season = "01"
             clean_episode = "01"
             clean_quality = "Unknown"
-
-        # Apply format template
-        if format_template:
-            placeholders = {
-                "{name}": extracted_name,
-                "{season}": clean_season,
-                "{episode}": clean_episode,
-                "{quality}": clean_quality,
-                # Add all variations (Name, NAME, etc.)
-                "name": extracted_name,
-                "Name": extracted_name,
-                "NAME": extracted_name,
-                "season": clean_season,
-                "Season": clean_season,
-                "SEASON": clean_season,
-                "episode": clean_episode,
-                "Episode": clean_episode,
-                "EPISODE": clean_episode,
-                "quality": clean_quality,
-                "Quality": clean_quality,
-                "QUALITY": clean_quality
-            }
-
-            for placeholder, value in placeholders.items():
-                if placeholder in format_template:
-                    format_template = format_template.replace(placeholder, value)
+            formatted_name = f"{extracted_name} - S{clean_season}E{clean_episode} [{clean_quality}]"
 
         # Prepare file paths
         _, file_extension = os.path.splitext(file_info['file_name'])
-        renamed_file_name = sanitize_filename(f"{format_template}{file_extension}")
+        renamed_file_name = sanitize_filename(f"{formatted_name}{file_extension}")
         renamed_file_path = os.path.join("downloads", renamed_file_name)
         metadata_file_path = os.path.join("Metadata", renamed_file_name)
         os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
@@ -926,6 +918,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                         await queue_message.delete()
                     return await message.reply_text(f"❌ Download failed after {max_download_retries} attempts: {str(e)[:200]}")
                 await asyncio.sleep(2 ** attempt)
+
 
         # Rename file
         try:
@@ -1435,3 +1428,4 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
