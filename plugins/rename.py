@@ -807,49 +807,63 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             return await message.reply_text("The file exceeds 2GB. Please send a smaller file or media.")
 
         # Extract all metadata from filename/caption with proper fallbacks
-        try:
-            if src_info == "file_name":
-                source_text = file_info['file_name']
-            elif src_info == "caption":
-                source_text = message.caption if message.caption else ""
-            else:  # Default to filename
-                source_text = file_info['file_name']
+    try:
+        if src_info == "file_name":
+            source_text = file_info['file_name']
+        elif src_info == "caption":
+            source_text = message.caption if message.caption else ""
+        else:
+            source_text = file_info['file_name']
 
-            # Extract all metadata components
-            episode_number = await extract_episode(source_text)
-            season = await extract_season(source_text)
-            extracted_qualities = await extract_quality(source_text) or "Unknown"
-            extracted_name = await extract_name(source_text) or "Unknown"
-            
-        except Exception as e:
-            logger.error(f"Error extracting metadata: {e}")
-            await message.reply_text("⚠️ Error extracting metadata from file. Using fallback values.")
+        # Extract components
+        extracted_name = await extract_name(source_text) or "Unknown"
+        season = await extract_season(source_text)
+        episode = await extract_episode(source_text)
+        quality = await extract_quality(source_text) or "Unknown"
 
-        # Apply format template with all available placeholders
-        if format_template:
-            placeholders = {
-                "episode": episode_number,
-                "Episode": episode_number,
-                "EPISODE": episode_number,
-                "{episode}": episode_number,
-                "season": season,
-                "Season": season,
-                "SEASON": season,
-                "{season}": season,
-                "quality": extracted_qualities,
-                "Quality": extracted_qualities,
-                "QUALITY": extracted_qualities,
-                "{quality}": extracted_qualities,
-                "name": extracted_name,
-                "Name": extracted_name,
-                "NAME": extracted_name,
-                "{name}": extracted_name
-            }
+        # Clean each component
+        if extracted_name != "Unknown":
+            extracted_name = re.sub(r'\[.*?\]|\(.*?\)|\s+$', '', extracted_name).strip()
+            extracted_name = re.sub(r'\s{2,}', ' ', extracted_name)
+        
+        clean_season = season.zfill(2) if season else "01"
+        clean_episode = episode.zfill(2) if episode else "01"
+        clean_quality = quality.replace('[', '').replace(']', '').strip()
 
-            # Replace placeholders that exist in the template
-            for placeholder, value in placeholders.items():
-                if value and placeholder in format_template:
-                    format_template = format_template.replace(placeholder, str(value))
+    except Exception as e:
+        logger.error(f"Error extracting metadata: {e}")
+        await message.reply_text("⚠️ Error extracting metadata from file. Using fallback values.")
+        extracted_name = "Unknown"
+        clean_season = "01"
+        clean_episode = "01"
+        clean_quality = "Unknown"
+
+    # Apply format template
+    if format_template:
+        placeholders = {
+            "{name}": extracted_name,
+            "{season}": clean_season,
+            "{episode}": clean_episode,
+            "{quality}": clean_quality,
+            # Add all variations (Name, NAME, etc.)
+            "name": extracted_name,
+            "Name": extracted_name,
+            "NAME": extracted_name,
+            "season": clean_season,
+            "Season": clean_season,
+            "SEASON": clean_season,
+            "episode": clean_episode,
+            "Episode": clean_episode,
+            "EPISODE": clean_episode,
+            "quality": clean_quality,
+            "Quality": clean_quality,
+            "QUALITY": clean_quality
+        }
+
+        for placeholder, value in placeholders.items():
+            if placeholder in format_template:
+                format_template = format_template.replace(placeholder, value)
+
 
         # Prepare file paths
         _, file_extension = os.path.splitext(file_info['file_name'])
@@ -1415,6 +1429,7 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
 
 
