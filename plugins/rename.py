@@ -711,7 +711,7 @@ async def process_user_queue(client: Client, user_id: int):
     """Process all files in the user's queue with semaphore control"""
     # Initialize semaphore for this user if not exists
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)  # Allow 2 concurrent processes
+        user_semaphores[user_id] = asyncio.Semaphore(3)  # Allow 3 concurrent processes
     
     while user_file_queues.get(user_id, {}).get('queue'):
         async with user_semaphores[user_id]:
@@ -1428,4 +1428,5 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
