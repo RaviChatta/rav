@@ -346,7 +346,7 @@ async def get_safe_media(media_type: str, user_id: int, fallback=None):
         logger.error(f"Error getting {media_type}: {e}")
     return fallback
 
-async def get_file_path(client: Client, file_id: str) -> str:
+async def get_file_url(client: Client, file_id: str) -> str:
     try:
         # Downloads to local disk and returns the path
         file_path = await client.download_media(file_id)
@@ -382,19 +382,21 @@ async def check_aria2_status() -> Dict[str, Any]:
         return {"status": "disabled", "active": False}
     
     try:
-        stats = aria2_manager.api.get_global_stats()
-        downloads = aria2_manager.api.get_downloads()
+        # Using aria2p API correctly
+        stats = aria2_manager.api.get_global_stats()  # returns an object
+        downloads = aria2_manager.api.get_downloads()  # returns list of Download objects
+        
+        active_downloads = len([d for d in downloads if d.is_active])
         
         return {
             "status": "active",
-            "download_speed": stats.download_speed,
-            "upload_speed": stats.upload_speed,
-            "active_downloads": len([d for d in downloads if d.is_active]),
+            "download_speed": stats.download_speed,  # bytes/sec
+            "upload_speed": stats.upload_speed,      # bytes/sec
+            "active_downloads": active_downloads,
             "total_downloads": len(downloads)
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
-
 
 
 
