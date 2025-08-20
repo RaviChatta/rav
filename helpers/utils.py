@@ -335,7 +335,7 @@ async def get_safe_media(media_type: str, user_id: int, fallback=None):
         logger.error(f"Error getting {media_type}: {e}")
     return fallback
 
-async def get_file_path(client: Client, file_id: str) -> str:
+async def get_file_url(client: Client, file_id: str) -> str:
     try:
         # Downloads to local disk and returns the path
         file_path = await client.download_media(file_id)
@@ -361,6 +361,7 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
 
 
 
