@@ -27,7 +27,7 @@ from pyrogram.enums import ChatMemberStatus, ParseMode
 
 from config import settings
 from scripts import Txt
-from helpers.utils import get_random_photo, get_random_animation, get_shortlink
+from helpers.utils import get_random_photo, get_random_animation, get_shortlink, check_aria2_status
 from plugins.rename import *
 from database.data import hyoshcoder
 
@@ -1319,3 +1319,4 @@ async def aria_status(client: Client, message: Message):
     )
     
     await message.reply_text(text)
+
