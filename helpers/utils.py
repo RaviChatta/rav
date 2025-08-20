@@ -335,15 +335,14 @@ async def get_safe_media(media_type: str, user_id: int, fallback=None):
         logger.error(f"Error getting {media_type}: {e}")
     return fallback
 
-async def get_file_url(client: Client, file_id: str) -> Optional[str]:
-    """Get direct download URL for a file"""
+async def get_file_path(client: Client, file_id: str) -> str:
     try:
-        file = await client.get_file(file_id)
-        return f"https://api.telegram.org/file/bot{client.bot_token}/{file.file_path}"
+        # Downloads to local disk and returns the path
+        file_path = await client.download_media(file_id)
+        return file_path
     except Exception as e:
-        logger.error(f"Error getting file URL: {e}")
+        print(f"Error getting file path: {e}")
         return None
-
 async def check_aria2_status() -> Dict[str, Any]:
     """Check aria2c service status"""
     if not settings.ARIA2_ENABLED or not aria2_manager.initialized:
@@ -362,5 +361,6 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
 
 
