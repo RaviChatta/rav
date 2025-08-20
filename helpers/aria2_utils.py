@@ -5,6 +5,7 @@ import os
 import aiohttp
 import subprocess
 import time
+import re
 import json
 from typing import Optional, Dict, Any
 from config import settings
