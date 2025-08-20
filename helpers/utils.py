@@ -17,6 +17,7 @@ from typing import (
 import math, time
 from shortzy import Shortzy
 import asyncio
+import aiohttp
 from pyrogram.types import (
     Message,
     User,
@@ -119,79 +120,57 @@ async def extract_quality(filename: str) -> str:
 # Add this at the top of your file with other globals
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
+    """
+    Unified progress bar for both Pyrogram and Aria2c downloads/uploads,
+    using Txt.PROGRESS_BAR formatting.
+    """
     now = time.time()
     diff = now - start
 
-    # Global control: Only update once every X seconds per message
+    # Control message edit frequency
     last = last_progress_edit.get(message.chat.id, 0)
-    
-    # Dynamic delay: adjust based on file size
-    if total >= 1024 * 1024 * 1024:         # ≥ 1 GB
+    if total >= 1024 * 1024 * 1024:  # ≥ 1 GB
         delay = 8
-    elif total >= 500 * 1024 * 1024:        # 500 MB – 1 GB
+    elif total >= 500 * 1024 * 1024:  # 500 MB – 1 GB
         delay = 5
-    else:                                   # < 500 MB
+    else:  # < 500 MB
         delay = 1.5
-    
+
     if now - last < delay and current != total:
         return
-
     last_progress_edit[message.chat.id] = now
 
     try:
-        # Detect aria2c-style download messages
-        is_aria2c_download = "Aria2c" in (message.text or "") and "Downloading" in ud_type
-        
-        if is_aria2c_download:
-            # Aria2c: we may not have exact progress, so show a fun spinner bar
-            elapsed = diff
-            speed = current / elapsed if elapsed > 0 else 0
-            remaining = (total - current) / speed if speed > 0 else 0
+        percentage = (current / total * 100) if total else 0
+        speed = (current / diff) if diff else 0
+        elapsed_time_ms = round(diff * 1000)
+        remaining_time_ms = round((total - current) / speed * 1000) if speed else 0
+        estimated_total_time = elapsed_time_ms + remaining_time_ms
+        estimated_total_time_str = TimeFormatter(estimated_total_time)
 
-            progress_text = (
-                f"🚀 **Aria2c Turbo Download**\n\n"
-                f"{''.join(['▰' for _ in range(min(10, int(elapsed % 10)))])}"
-                f"{''.join(['▱' for _ in range(10 - min(10, int(elapsed % 10)))])}\n\n"
-                f"**Speed:** {humanbytes(speed)}/s\n"
-                f"**Downloaded:** {humanbytes(current)} / {humanbytes(total)}\n"
-                f"**Time:** {TimeFormatter(elapsed * 1000)}\n"
-                f"**ETA:** {TimeFormatter(remaining * 1000) if remaining > 0 else 'Calculating...'}"
-            )
+        # Build 15-character progress bar
+        progress_bar = (
+            "▰" * int(percentage * 15 / 100) +
+            "▱" * (15 - int(percentage * 15 / 100))
+        )
 
-            await message.edit_text(progress_text)
+        # Use Txt.PROGRESS_BAR for numbers & formatting
+        tmp = progress_bar + Txt.PROGRESS_BAR.format(
+            round(percentage, 2),
+            humanbytes(current),
+            humanbytes(total),
+            humanbytes(speed),
+            estimated_total_time_str if estimated_total_time_str else "0s"
+        )
 
-        else:
-            # Regular Pyrogram download progress
-            percentage = current * 100 / total if total > 0 else 0
-            speed = current / diff if diff > 0 else 0
-            elapsed_time = round(diff) * 1000
-            time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
-            estimated_total_time = elapsed_time + time_to_completion
-
-            estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
-
-            progress = "{0}{1}".format(
-                ''.join(["▰" for _ in range(math.floor(percentage * 15 / 100))]),
-                ''.join(["▱" for _ in range(15 - math.floor(percentage * 15 / 100))])
-            )
-
-            tmp = progress + Txt.PROGRESS_BAR.format(
-                round(percentage, 2),
-                humanbytes(current),
-                humanbytes(total),
-                humanbytes(speed),
-                estimated_total_time_str if estimated_total_time_str != '' else "0s"
-            )
-
-            await message.edit(
-                text=f"{ud_type}\n\n{tmp}",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("• Cancel •", callback_data="close")]
-                ])
-            )
-
+        await message.edit(
+            text=f"{ud_type}\n\n{tmp}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("• Cancel •", callback_data="close")]
+            ])
+        )
     except Exception as e:
-        pass  # optionally log error
+        logger.error(f"Progress update failed: {e}")
 
 
 def humanbytes(size):
@@ -354,16 +333,21 @@ async def get_file_url(client: Client, file_id: str) -> str:
     except Exception as e:
         print(f"Error getting file path: {e}")
         return None
-async def get_telegram_file_url(client, file_id: str) -> str:
-    from config import BOT_TOKEN
+async def get_telegram_file_url(client, file_id: str, bot_token: str = None) -> str:
+    """
+    Returns a direct Telegram file URL using the provided bot_token, 
+    or settings.BOT_TOKEN if none is provided.
+    """
     try:
+        token = bot_token or settings.BOT_TOKEN
+        # Use aiohttp as before
         async with aiohttp.ClientSession() as session:
-            api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}"
+            api_url = f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}"
             async with session.get(api_url) as response:
                 data = await response.json()
                 if data.get("ok") and data.get("result"):
                     file_path = data["result"]["file_path"]
-                    return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+                    return f"https://api.telegram.org/file/bot{token}/{file_path}"
         return None
     except Exception as e:
         logger.error(f"Error getting Telegram file URL: {e}")
@@ -390,6 +374,7 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
 
 
 
