@@ -23,18 +23,23 @@ class Aria2Manager:
     def sanitize_filename(self, filename: str) -> str:
         """Sanitize filenames to remove problematic characters"""
         if not filename:
-            return ""
+            return f"file_{int(time.time())}.mkv"
             
-        # Remove any invalid characters
+        # Remove any invalid characters but keep spaces and common symbols
         sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)
         
         # Ensure the filename is not empty after sanitization
         if not sanitized.strip():
-            sanitized = f"file_{int(time.time())}"
+            sanitized = f"file_{int(time.time())}.mkv"
             
+        # Remove any leading/trailing spaces and dots
+        sanitized = sanitized.strip().strip('.')
+        
         # Limit length to avoid filesystem issues
         if len(sanitized) > 200:
             name, ext = os.path.splitext(sanitized)
+            if not ext:
+                ext = '.mkv'
             sanitized = name[:200 - len(ext)] + ext
             
         return sanitized
@@ -99,7 +104,21 @@ class Aria2Manager:
             logger.error(f"Failed to initialize aria2c: {e}")
             self.initialized = False
             return False
-    
+    async def upload_file(self, file_path: str, endpoint: str, headers: dict = None) -> bool:
+        """Upload a file to external storage (placeholder method)"""
+        try:
+            if not os.path.exists(file_path):
+                logger.error(f"File not found for upload: {file_path}")
+                return False
+                
+            logger.info(f"Would upload {file_path} to {endpoint}")
+            # This is a placeholder - you need to implement actual upload logic
+            # For now, just return True to indicate "success"
+            return True
+            
+        except Exception as e:
+            logger.error(f"Upload failed: {e}")
+            return False
     async def is_aria2c_running(self) -> bool:
         """Check if aria2c process is running"""
         try:
