@@ -40,7 +40,7 @@ class Settings():
     ARIA2_ENABLED = True
     ARIA2_HOST = "http://localhost"
     ARIA2_PORT = 6800
-    ARIA2_SECRET = ""  # Will be set by setup script
+    ARIA2_SECRET = "eren123"  # Will be set by setup script
     ARIA2_MAX_CONCURRENT_DOWNLOADS = 3
     ARIA2_MAX_CONNECTION_PER_SERVER = 16
     ARIA2_SPLIT = 16
