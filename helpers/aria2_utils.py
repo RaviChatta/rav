@@ -155,52 +155,81 @@ max-download-limit=0
             return False
     
     async def download_file(self, url: str, download_path: str, filename: str) -> Optional[str]:
-        """Download a file using aria2c"""
-        if not self.initialized or not await self.test_connection():
-            logger.warning("Aria2c not available for download, using fallback")
+    """Download a file using aria2c with proper error handling"""
+    if not self.initialized or not await self.test_connection():
+        logger.warning("Aria2c not available for download")
+        return None
+        
+    # Validate inputs
+    if not url or not download_path or not filename:
+        logger.error(f"Invalid parameters for download: url={url}, path={download_path}, filename={filename}")
+        return None
+        
+    try:
+        # Ensure download directory exists
+        os.makedirs(download_path, exist_ok=True)
+        
+        # Sanitize filename
+        safe_filename = sanitize_filename(filename)
+        if not safe_filename:
+            logger.error(f"Failed to sanitize filename: {filename}")
             return None
             
+        options = {
+            "dir": download_path,
+            "out": safe_filename,
+        }
+        
+        logger.info(f"Starting aria2c download: {safe_filename} to {download_path}")
+        
+        # Add URI with timeout handling
         try:
-            os.makedirs(os.path.dirname(download_path), exist_ok=True)
-            
-            options = {
-                "dir": os.path.dirname(download_path),
-                "out": filename,
-            }
-            
-            logger.info(f"Starting aria2c download: {filename}")
             download = self.api.add_uris([url], options=options)
+        except Exception as e:
+            logger.error(f"Failed to add URI to aria2c: {e}")
+            return None
             
-            # Wait for completion with timeout
-            timeout = 3600
-            start_time = time.time()
-            last_progress = 0
-            
-            while download.is_active:
-                current_time = time.time()
-                if current_time - start_time > timeout:
+        # Wait for completion with timeout
+        timeout = 3600
+        start_time = time.time()
+        check_interval = 2  # Check every 2 seconds
+        
+        while download.is_active:
+            current_time = time.time()
+            if current_time - start_time > timeout:
+                try:
                     self.api.remove([download])
-                    raise TimeoutError("Download timed out")
+                    logger.error(f"Download timed out: {safe_filename}")
+                except:
+                    pass
+                raise TimeoutError("Download timed out")
+            
+            try:
+                download.update()
+                # Log progress every 10 seconds
+                if int(current_time - start_time) % 10 == 0:
+                    logger.debug(f"Download progress: {download.progress_string()} - {safe_filename}")
+            except Exception as e:
+                logger.warning(f"Error updating download status: {e}")
                 
-                # Update progress every 5 seconds
-                if current_time - last_progress > 5:
-                    download.update()
-                    logger.debug(f"Download progress: {download.progress_string()}")
-                    last_progress = current_time
-                
-                await asyncio.sleep(1)
-                
-            if download.is_complete:
-                file_path = download.files[0].path
+            await asyncio.sleep(check_interval)
+            
+        if download.is_complete:
+            file_path = download.files[0].path
+            if os.path.exists(file_path):
                 logger.info(f"✅ Download completed: {file_path}")
                 return file_path
             else:
-                logger.error(f"❌ Download failed: {download.error_message}")
+                logger.error(f"Download completed but file not found: {file_path}")
                 return None
-                
-        except Exception as e:
-            logger.error(f"Aria2c download error: {e}")
+        else:
+            error_msg = download.error_message or "Unknown error"
+            logger.error(f"❌ Download failed: {error_msg} - {safe_filename}")
             return None
+            
+    except Exception as e:
+        logger.error(f"Aria2c download error: {e}")
+        return None
     
     async def get_download_status(self) -> Dict[str, Any]:
         """Get current download status"""
