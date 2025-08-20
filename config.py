@@ -36,7 +36,24 @@ class Settings():
     # Liste des canaux pour le force subscribe (séparés par une virgule)
     FORCE_SUB_CHANNELS = os.getenv('FORCE_SUB_CHANNELS', ' ').split(',')
     ADMIN_MODE = False
-
+    # Aria2c configuration
+    ARIA2_ENABLED = True
+    ARIA2_HOST = "http://localhost"
+    ARIA2_PORT = 6800
+    ARIA2_SECRET = ""  # Will be set by setup script
+    ARIA2_MAX_CONCURRENT_DOWNLOADS = 3
+    ARIA2_MAX_CONNECTION_PER_SERVER = 16
+    ARIA2_SPLIT = 16
+    ARIA2_MAX_OVERALL_DOWNLOAD_LIMIT = "0"
+    ARIA2_MAX_DOWNLOAD_LIMIT = "0"
+    ARIA2_MAX_OVERALL_UPLOAD_LIMIT = "0"
+    ARIA2_MAX_UPLOAD_LIMIT = "0"
+    
+    # Upload configuration
+    UPLOAD_ENDPOINTS = {
+        "default": "https://your-upload-service.com/upload",
+        "backup": "https://backup-upload.com/upload"
+    }
         
     # Récupération et conversion sécurisée des IDs de chat
     def safe_int(var_name, default=None):
