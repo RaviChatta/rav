@@ -21,7 +21,7 @@ from typing import Optional, Tuple, Dict, List, Set
 # Database imports
 from database.data import hyoshcoder
 from config import settings
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, get_file_url,TimeFormatter
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, get_file_url,TimeFormatter,get_telegram_file_url
 from pyrogram.errors import MessageNotModified, BadRequest
 import html
 from html import escape as html_escape
@@ -857,21 +857,25 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             # Try aria2c first if enabled and available
             if use_aria2c:
                 try:
-                    # Get direct download link from Telegram - CORRECT APPROACH
+                    # Get direct download link from Telegram using Bot API
                     file_link = None
-                    try:
-                        if message.document:
-                            # Use the correct method to get file path
-                            file_path = await client.get_file_path(message.document.file_id)
-                            if file_path:
-                                file_link = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
-                                logger.info(f"Generated direct download URL for document")
-                            else:
-                                logger.warning("Could not get file path from Telegram")
-                                
-                    except Exception as e:
-                        logger.warning(f"Failed to get file path: {e}")
-                        file_link = None
+                    file_obj = None
+                    
+                    if message.document:
+                        file_obj = message.document
+                    elif message.video:
+                        file_obj = message.video
+                    elif message.audio:
+                        file_obj = message.audio
+                    
+                    if file_obj:
+                        # Use Bot API to get direct download URL
+                        file_link = await get_telegram_file_url(settings.BOT_TOKEN, file_obj.file_id)
+                        
+                        if file_link:
+                            logger.info(f"✅ Generated direct download URL for aria2c")
+                        else:
+                            logger.warning("Failed to generate direct download URL via Bot API")
                     
                     if file_link:
                         # Ensure download directory exists
@@ -879,7 +883,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                         os.makedirs(download_dir, exist_ok=True)
                         
                         # Use aria2c for download
-                        logger.info(f"Starting aria2c download for: {file_info['file_name']}")
+                        logger.info(f"🚀 Starting aria2c download: {file_info['file_name']}")
                         downloaded_path = await aria2_manager.download_file(
                             file_link, 
                             download_dir,
@@ -889,18 +893,19 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                         if downloaded_path and os.path.exists(downloaded_path):
                             path = downloaded_path
                             file_size = os.path.getsize(path)
-                            logger.info(f"✅ Aria2c download successful: {downloaded_path} ({humanbytes(file_size)})")
+                            logger.info(f"✅ Aria2c download successful: {humanbytes(file_size)}")
                             break
                         else:
-                            logger.warning("Aria2c download failed or file not found, falling back to Pyrogram")
+                            logger.warning("❌ Aria2c download failed, falling back to Pyrogram")
                     else:
-                        logger.warning("Could not generate direct download URL for aria2c, falling back to Pyrogram")
+                        logger.warning("❌ Could not generate direct download URL, falling back to Pyrogram")
+                        
                 except Exception as aria2_error:
                     logger.warning(f"Aria2c download attempt failed: {aria2_error}")
                     # Continue to pyrogram fallback
             
             # Fallback to Pyrogram download if aria2c fails or is disabled
-            logger.info(f"Falling back to Pyrogram download for: {file_info['file_name']}")
+            logger.info(f"📥 Falling back to Pyrogram download: {file_info['file_name']}")
             path = await client.download_media(
                 message,
                 file_name=temp_file_path,
@@ -910,7 +915,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             
             if path and os.path.exists(path):
                 file_size = os.path.getsize(path)
-                logger.info(f"✅ Pyrogram download successful: {path} ({humanbytes(file_size)})")
+                logger.info(f"✅ Pyrogram download successful: {humanbytes(file_size)}")
                 break
             else:
                 raise Exception("Download failed - file not created")
@@ -919,7 +924,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             logger.error(f"Download attempt {attempt + 1} failed: {e}")
             if attempt == max_download_retries - 1:
                 del renaming_operations[file_info['file_id']]
-                return await message.reply_text(f"❌ Download failed after {max_download_retries} attempts: {str(e)[:200]}")
+                return await message.reply_text(f"❌ Download failed after {max_download_retries} attempts")
             await asyncio.sleep(2 ** attempt)
 
     # Check if download was successful
@@ -931,7 +936,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     try:
         os.rename(path, renamed_file_path)
         path = renamed_file_path
-        logger.info(f"File renamed to: {renamed_file_path}")
+        logger.info(f"📝 File renamed to: {renamed_file_name}")
     except Exception as e:
         await message.reply_text(f"❌ Rename failed: {e}")
         if os.path.exists(temp_file_path):
@@ -962,7 +967,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 logger.info("✅ Metadata added successfully")
             else:
                 error_msg = error[:500] if error else "Unknown error"
-                logger.warning(f"Metadata failed: {error_msg}")
+                logger.warning(f"⚠️ Metadata failed: {error_msg}")
                 await message.reply_text(f"⚠️ Metadata failed: {error_msg}\nUsing original file")
                 path = renamed_file_path
 
@@ -1382,6 +1387,7 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
 
 
