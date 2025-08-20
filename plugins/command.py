@@ -1294,3 +1294,28 @@ async def command_dispatcher(client: Client, message: Message):
         msg = await message.reply_text("⚠️ An error occurred. Please try again.")
         asyncio.create_task(auto_delete_message(msg, 30))
         asyncio.create_task(auto_delete_message(message, 30))
+
+@Client.on_message(filters.command(["ariastatus", "speed"]))
+async def aria_status(client: Client, message: Message):
+    """Check aria2c status with detailed information"""
+    status = await check_aria2_status()
+    
+    if status["status"] == "disabled":
+        await message.reply_text("❌ Aria2c is disabled in configuration")
+        return
+        
+    if status["status"] == "error":
+        await message.reply_text(f"❌ Aria2c error: {status['error']}")
+        return
+    
+    text = (
+        "⚡ **Aria2c Turbo Mode Status**\n\n"
+        f"• **Status:** ✅ Active\n"
+        f"• **Download Speed:** {humanbytes(status['download_speed'])}/s\n"
+        f"• **Upload Speed:** {humanbytes(status['upload_speed'])}/s\n"
+        f"• **Active Downloads:** {status['active_downloads']}\n"
+        f"• **Total Downloads:** {status['total_downloads']}\n\n"
+        "**Multi-connection downloads enabled** 🚀"
+    )
+    
+    await message.reply_text(text)
