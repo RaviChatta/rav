@@ -353,6 +353,28 @@ async def get_file_url(client: Client, file_id: str) -> str:
     except Exception as e:
         print(f"Error getting file path: {e}")
         return None
+async def get_telegram_file_url(client: Client, file_id: str) -> str:
+    """
+    Get direct download URL for Telegram file using Bot API
+    """
+    try:
+        # Get file information from Telegram
+        file = await client.get_messages(client.me.id, file_id)
+        
+        if file.document:
+            file_size = file.document.file_size
+            file_name = file.document.file_name or f"file_{file_id}"
+            
+            # For documents, we need to use the file path approach
+            file_path = await client.get_file_path(file.document.file_id)
+            if file_path:
+                return f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+                
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting Telegram file URL: {e}")
+        return None
 async def check_aria2_status() -> Dict[str, Any]:
     """Check aria2c service status"""
     if not settings.ARIA2_ENABLED or not Aria2Manager.initialized:
@@ -371,6 +393,7 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
 
 
 
