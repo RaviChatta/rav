@@ -53,14 +53,11 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*converted\s*[)\]>}]?', re.IGNORECASE): lambda _: "converted",
 }
 
-# Patterns for extracting the name (clean title)
-NAME_PATTERNS = [
-    re.compile(r'(.*?)(?:S\d+E\d+|Season\s*\d+|S\d+\s*-\s*E\d+|\d{3,4}p|4k|HDRip|\[.*?\]|@.*?|\.mkv|\.mp4).*', re.IGNORECASE),
-    re.compile(r'(.*?)(?:\b\d{1,4}\b(?!\s*[pP])).*'),  # Removes standalone numbers (episode numbers)
-]
-
 async def extract_season(filename: str) -> Optional[str]:
-    """Extracts season number as string. Returns None if not found."""
+    """
+    Extracts season number as string.
+    Returns None if no season number is found.
+    """
     for pattern in SEASON_PATTERNS:
         match = pattern.search(filename)
         if match:
@@ -68,7 +65,10 @@ async def extract_season(filename: str) -> Optional[str]:
     return None
 
 async def extract_episode(filename: str) -> Optional[str]:
-    """Extracts episode number as string. Returns None if not found."""
+    """
+    Extracts episode number as string.
+    Returns None if no episode number is found.
+    """
     for pattern in EPISODE_PATTERNS:
         match = pattern.search(filename)
         if match:
@@ -76,7 +76,10 @@ async def extract_episode(filename: str) -> Optional[str]:
     return None
 
 async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
-    """Extracts both season and episode numbers. Returns None if neither is found."""
+    """
+    Extracts both season and episode numbers as strings.
+    Returns None if neither is found.
+    """
     season = await extract_season(filename)
     episode = await extract_episode(filename)
     
@@ -88,23 +91,17 @@ async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
     return None
 
 async def extract_quality(filename: str) -> str:
-    """Extracts video quality. Returns 'Unknown' if not found."""
+    """
+    Extracts video quality.
+    Returns "Unknown" if no quality is found.
+    """
     for pattern, extractor in QUALITY_PATTERNS.items():
         match = pattern.search(filename)
         if match:
             return extractor(match)
     return "Unknown"
 
-async def extract_name(filename: str) -> str:
-    """Extracts the clean name/title from the filename by removing metadata."""
-    for pattern in NAME_PATTERNS:
-        match = pattern.match(filename)
-        if match and match.group(1):
-            # Clean extra spaces and trailing separators
-            name = match.group(1).strip()
-            name = re.sub(r'[-._]+$', '', name)  # Remove trailing separators like ".", "-", "_"
-            return name.strip()
-    return filename  # Fallback: return original if no patterns match
+
 
 
 # Add this at the top of your file with other globals
@@ -113,7 +110,7 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
     diff = now - start
 
-    # Global control: Only update once every 1.5 seconds per message
+    # Global control: Only update once every X seconds per message
     last = last_progress_edit.get(message.chat.id, 0)
     
     # Dynamic delay: adjust based on file size
@@ -130,38 +127,59 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
     last_progress_edit[message.chat.id] = now
 
     try:
-        percentage = current * 100 / total
-        speed = current / diff if diff > 0 else 0
-        elapsed_time = round(diff) * 1000
-        time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
-        estimated_total_time = elapsed_time + time_to_completion
-
-        elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
-        estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
-
-        # Smooth Gradient Style (10th style)
-        progress = "{0}{1}".format(
-            ''.join(["▰" for _ in range(math.floor(percentage * 15 / 100))]),
-            ''.join(["▱" for _ in range(15 - math.floor(percentage * 15 / 100))])
-        )
+        # Detect aria2c-style download messages
+        is_aria2c_download = "Aria2c" in (message.text or "") and "Downloading" in ud_type
         
+        if is_aria2c_download:
+            # Aria2c: we may not have exact progress, so show a fun spinner bar
+            elapsed = diff
+            speed = current / elapsed if elapsed > 0 else 0
+            remaining = (total - current) / speed if speed > 0 else 0
 
-        tmp = progress + Txt.PROGRESS_BAR.format(
-            round(percentage, 2),
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),
-            estimated_total_time_str if estimated_total_time_str != '' else "0s"
-        )
+            progress_text = (
+                f"🚀 **Aria2c Turbo Download**\n\n"
+                f"{''.join(['▰' for _ in range(min(10, int(elapsed % 10)))])}"
+                f"{''.join(['▱' for _ in range(10 - min(10, int(elapsed % 10)))])}\n\n"
+                f"**Speed:** {humanbytes(speed)}/s\n"
+                f"**Downloaded:** {humanbytes(current)} / {humanbytes(total)}\n"
+                f"**Time:** {TimeFormatter(elapsed * 1000)}\n"
+                f"**ETA:** {TimeFormatter(remaining * 1000) if remaining > 0 else 'Calculating...'}"
+            )
 
-        await message.edit(
-            text=f"{ud_type}\n\n{tmp}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("• Cancel •", callback_data="close")]
-            ])
-        )
+            await message.edit_text(progress_text)
+
+        else:
+            # Regular Pyrogram download progress
+            percentage = current * 100 / total if total > 0 else 0
+            speed = current / diff if diff > 0 else 0
+            elapsed_time = round(diff) * 1000
+            time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
+            estimated_total_time = elapsed_time + time_to_completion
+
+            estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
+
+            progress = "{0}{1}".format(
+                ''.join(["▰" for _ in range(math.floor(percentage * 15 / 100))]),
+                ''.join(["▱" for _ in range(15 - math.floor(percentage * 15 / 100))])
+            )
+
+            tmp = progress + Txt.PROGRESS_BAR.format(
+                round(percentage, 2),
+                humanbytes(current),
+                humanbytes(total),
+                humanbytes(speed),
+                estimated_total_time_str if estimated_total_time_str != '' else "0s"
+            )
+
+            await message.edit(
+                text=f"{ud_type}\n\n{tmp}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("• Cancel •", callback_data="close")]
+                ])
+            )
+
     except Exception as e:
-        pass  # Optionally log e
+        pass  # optionally log error
 
 
 def humanbytes(size):
@@ -316,3 +334,30 @@ async def get_safe_media(media_type: str, user_id: int, fallback=None):
         logger.error(f"Error getting {media_type}: {e}")
     return fallback
 
+async def get_file_url(client: Client, file_id: str) -> Optional[str]:
+    """Get direct download URL for a file"""
+    try:
+        file = await client.get_file(file_id)
+        return f"https://api.telegram.org/file/bot{client.bot_token}/{file.file_path}"
+    except Exception as e:
+        logger.error(f"Error getting file URL: {e}")
+        return None
+
+async def check_aria2_status() -> Dict[str, Any]:
+    """Check aria2c service status"""
+    if not settings.ARIA2_ENABLED or not aria2_manager.initialized:
+        return {"status": "disabled", "active": False}
+    
+    try:
+        stats = aria2_manager.api.get_global_stats()
+        downloads = aria2_manager.api.get_downloads()
+        
+        return {
+            "status": "active",
+            "download_speed": stats.download_speed,
+            "upload_speed": stats.upload_speed,
+            "active_downloads": len([d for d in downloads if d.is_active]),
+            "total_downloads": len(downloads)
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e), "active": False}
