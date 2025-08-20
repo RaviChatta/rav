@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 import logging
 from typing import Optional
 from findanime import AnimeFinder
+from aria2_utils import aria2_manager   # ✅ Added import
 import os
 import sys
 
@@ -54,6 +55,7 @@ class Bot(Client):
         self.runner = None
         self.anime_finder: Optional[AnimeFinder] = None
         self.is_anime_finder_enabled = Config.ANIME_FINDER_ENABLED if hasattr(Config, 'ANIME_FINDER_ENABLED') else True
+
     async def save_restart_data(self, chat_id: int, message_id: int):
         """Save restart state to file"""
         try:
@@ -105,12 +107,12 @@ class Bot(Client):
         except Exception as e:
             await message.reply(f"❌ Restart failed: {str(e)}")
             logger.error(f"Restart error: {e}", exc_info=True)
+
     async def startup_tasks(self):
         """Run background tasks"""
         while True:
             try:
                 await asyncio.sleep(3600)  # Run every hour
-                # Add your cleanup tasks here
                 logger.info("Running periodic cleanup tasks")
             except Exception as e:
                 logger.error(f"Error in startup tasks: {e}")
@@ -135,6 +137,7 @@ class Bot(Client):
             except Exception as e:
                 logger.error(f"Error refreshing leaderboards: {e}", exc_info=False)
                 await asyncio.sleep(300)
+
     async def check_premium_expiry_task(client: Client):
         """Background task to check for expired premium users"""
         while True:
@@ -143,7 +146,8 @@ class Bot(Client):
                 await asyncio.sleep(3600)  # Check every hour
             except Exception as e:
                 logger.error(f"Premium expiry check error: {e}")
-                await asyncio.sleep(600)  # Wait 10 minutes before retrying if error occurs
+                await asyncio.sleep(600)
+
     async def initialize_anime_finder(self):
         if not self.is_anime_finder_enabled:
             return
@@ -164,6 +168,14 @@ class Bot(Client):
         self.uptime = Config.BOT_UPTIME
 
         logger.info(f"{me.first_name} has started... ✨️")
+
+        # ✅ Initialize aria2c
+        if settings.ARIA2_ENABLED:
+            aria2_status = await aria2_manager.initialize()
+            if aria2_status:
+                logger.info("✅ Aria2c initialized successfully")
+            else:
+                logger.warning("❌ Aria2c initialization failed, falling back to default methods")
 
         # Initialize anime finder
         anime_finder_status = await self.initialize_anime_finder()
@@ -202,14 +214,17 @@ class Bot(Client):
         # Start background tasks
         asyncio.create_task(self.auto_refresh_leaderboards())
         asyncio.create_task(self.cleanup_tasks())
-        asyncio.create_task(self.check_premium_expiry_task())  # Changed this line
+        asyncio.create_task(self.check_premium_expiry_task())
         logger.info("Premium expiry checker started")
-
-     #   asyncio.create_task(self.startup_tasks())
 
     async def stop(self, *args):
         """Cleanup before shutdown"""
         logger.info("Starting cleanup process...")
+
+        # ✅ Cleanup aria2 manager
+        if settings.ARIA2_ENABLED:
+            await aria2_manager.cleanup()
+            logger.info("Aria2 manager cleaned up")
         
         # Cleanup anime finder
         if self.anime_finder:
@@ -229,6 +244,7 @@ class Bot(Client):
         
         await super().stop()
         logger.info("Bot shutdown complete")
+
 
 async def start_services():
     """Start all bot services"""
@@ -260,6 +276,7 @@ async def start_services():
     finally:
         await bot.stop()
 
+
 if __name__ == "__main__":
     # Configure logging
     logging.basicConfig(
@@ -271,10 +288,8 @@ if __name__ == "__main__":
         ]
     )
 
-    # Set recursion limit
     sys.setrecursionlimit(10000)
 
-    # Create and run event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
@@ -286,7 +301,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
     finally:
-        # Cleanup tasks
         pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
         for task in pending:
             task.cancel()
