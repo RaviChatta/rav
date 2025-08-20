@@ -3,7 +3,17 @@ import math
 import random
 import re
 import time
-from typing import Optional, Tuple , Union
+from typing import (
+    Any,
+    Optional,
+    Tuple,
+    Union,
+    Dict,
+    List,
+    Callable,
+    Coroutine,
+    Awaitable,
+)
 import math, time
 from shortzy import Shortzy
 import asyncio
@@ -345,12 +355,12 @@ async def get_file_url(client: Client, file_id: str) -> str:
         return None
 async def check_aria2_status() -> Dict[str, Any]:
     """Check aria2c service status"""
-    if not settings.ARIA2_ENABLED or not aria2_manager.initialized:
+    if not settings.ARIA2_ENABLED or not Aria2Manager.initialized:
         return {"status": "disabled", "active": False}
     
     try:
-        stats = aria2_manager.api.get_global_stats()
-        downloads = aria2_manager.api.get_downloads()
+        stats = Aria2Manager.api.get_global_stats()
+        downloads = Aria2Manager.api.get_downloads()
         
         return {
             "status": "active",
@@ -361,6 +371,7 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
 
 
 
