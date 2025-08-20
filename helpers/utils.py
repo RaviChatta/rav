@@ -354,25 +354,20 @@ async def get_file_url(client: Client, file_id: str) -> str:
     except Exception as e:
         print(f"Error getting file path: {e}")
         return None
-async def get_telegram_file_url(bot_token: str, file_id: str) -> str:
+async def get_telegram_file_url(file_id: str) -> str:
     """
-    Get direct download URL for Telegram file using Bot API
+    Get direct download URL for Telegram file using Bot API.
+    Bot token is imported from config.
     """
     try:
-        # First, get file info from Bot API
         async with aiohttp.ClientSession() as session:
-            # Get file path from Bot API
-            api_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
+            api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}"
             async with session.get(api_url) as response:
                 data = await response.json()
-                
-                if data.get('ok') and data.get('result'):
-                    file_path = data['result']['file_path']
-                    # Return direct download URL
-                    return f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
-                
+                if data.get("ok") and data.get("result"):
+                    file_path = data["result"]["file_path"]
+                    return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
         return None
-        
     except Exception as e:
         logger.error(f"Error getting Telegram file URL: {e}")
         return None
@@ -397,6 +392,7 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
 
 
 
