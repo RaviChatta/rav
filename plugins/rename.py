@@ -857,25 +857,15 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             # Try aria2c first if enabled and available
             if use_aria2c:
                 try:
-                    # Get direct download link from Telegram - FIXED APPROACH
+                    # Get direct download link from Telegram - CORRECT APPROACH
                     file_link = None
                     try:
-                        # Get the file object first
-                        file_obj = None
                         if message.document:
-                            file_obj = message.document
-                        elif message.video:
-                            file_obj = message.video
-                        elif message.audio:
-                            file_obj = message.audio
-                            
-                        if file_obj:
-                            # Get the actual file path from Telegram servers
-                            file_path = await client.get_file_path(file_obj.file_id)
+                            # Use the correct method to get file path
+                            file_path = await client.get_file_path(message.document.file_id)
                             if file_path:
-                                # Construct the direct download URL
                                 file_link = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
-                                logger.info(f"Generated direct download URL: {file_link}")
+                                logger.info(f"Generated direct download URL for document")
                             else:
                                 logger.warning("Could not get file path from Telegram")
                                 
@@ -1392,5 +1382,6 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
 
