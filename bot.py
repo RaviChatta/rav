@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 import logging
 from typing import Optional
 from findanime import AnimeFinder
-from aria2_utils import aria2_manager   # ✅ Added import
+from helpers.aria2_utils import aria2_manager   # ✅ Added import
 import os
 import sys
 
