@@ -71,8 +71,8 @@ class Aria2Manager:
                 self.api = aria2p.API(self.client)
                 
                 # Test connection with a simple method
-                version_info = self.api.client.get_version()
-                logger.info(f"✅ Successfully connected to aria2c version {version_info['version']}")
+                version = self.api.get_version()
+                logger.info(f"✅ Successfully connected to aria2c version {version.version}")
 
                 
             except aria2p.ClientException as e:
@@ -104,21 +104,7 @@ class Aria2Manager:
             logger.error(f"Failed to initialize aria2c: {e}")
             self.initialized = False
             return False
-    async def upload_file(self, file_path: str, endpoint: str, headers: dict = None) -> bool:
-        """Upload a file to external storage (placeholder method)"""
-        try:
-            if not os.path.exists(file_path):
-                logger.error(f"File not found for upload: {file_path}")
-                return False
-                
-            logger.info(f"Would upload {file_path} to {endpoint}")
-            # This is a placeholder - you need to implement actual upload logic
-            # For now, just return True to indicate "success"
-            return True
-            
-        except Exception as e:
-            logger.error(f"Upload failed: {e}")
-            return False
+
     async def is_aria2c_running(self) -> bool:
         """Check if aria2c process is running"""
         try:
@@ -187,7 +173,7 @@ max-download-limit=0
             
         try:
             # Use a simple method to test connection
-            self.api.client.get_version()
+            self.api.get_version()
             return True
         except Exception as e:
             logger.warning(f"Connection test failed: {e}")
@@ -247,7 +233,7 @@ max-download-limit=0
                     download.update()
                     # Log progress every 10 seconds
                     if int(current_time - start_time) % 10 == 0:
-                        logger.debug(f"Download progress: {download.progress_string()} - {safe_filename}")
+                        logger.debug(f"Download progress: {download.progress}% - {safe_filename}")
                 except Exception as e:
                     logger.warning(f"Error updating download status: {e}")
                     
