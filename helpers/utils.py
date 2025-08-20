@@ -17,6 +17,7 @@ from pyrogram.types import (
 from scripts import Txt
 from config import settings
 import logging
+from pyrogram import Client
 
 logger = logging.getLogger(__name__)
 last_progress_edit = {}
@@ -361,3 +362,4 @@ async def check_aria2_status() -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "error": str(e), "active": False}
+
