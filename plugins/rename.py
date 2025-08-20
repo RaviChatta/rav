@@ -7,6 +7,7 @@ import os
 import time
 import re
 import pytz
+import aria2p
 from helpers.aria2_utils import aria2_manager
 import aiohttp
 import asyncio
@@ -840,18 +841,19 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     temp_file_path = f"{renamed_file_path}_{file_uuid}"
 
     # Enhanced download section with aria2c
+    # Enhanced download section with aria2c
     max_download_retries = 2
     queue_message = None
-    use_aria2c = settings.ARIA2_ENABLED and aria2_manager.initialized
+    use_aria2c = settings.ARIA2_ENABLED and aria2_manager.initialized and await aria2_manager.test_connection()
     
     for attempt in range(max_download_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
                 return
-
+    
             queue_message = await message.reply_text(
                 f"📥 Downloading #{queue_position}..." + 
-                (" (Aria2c)" if use_aria2c else "")
+                (" (Aria2c)" if use_aria2c else " (Pyrogram)")
             )
             
             # Try aria2c first if enabled and available
@@ -870,10 +872,10 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                     
                     if file_obj:
                         # Use Bot API to get direct download URL
-                        file_link = await get_telegram_file_url(settings.BOT_TOKEN, file_obj.file_id)
+                        file_link = await get_telegram_file_url(client, file_obj.file_id, settings.BOT_TOKEN)
                         
                         if file_link:
-                            logger.info(f"✅ Generated direct download URL for aria2c")
+                            logger.info(f"✅ Generated direct download URL for aria2c: {file_link[:100]}...")
                         else:
                             logger.warning("Failed to generate direct download URL via Bot API")
                     
@@ -897,11 +899,14 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                             break
                         else:
                             logger.warning("❌ Aria2c download failed, falling back to Pyrogram")
+                            use_aria2c = False  # Disable aria2c for next attempts
                     else:
                         logger.warning("❌ Could not generate direct download URL, falling back to Pyrogram")
+                        use_aria2c = False
                         
                 except Exception as aria2_error:
                     logger.warning(f"Aria2c download attempt failed: {aria2_error}")
+                    use_aria2c = False  # Disable aria2c for next attempts
                     # Continue to pyrogram fallback
             
             # Fallback to Pyrogram download if aria2c fails or is disabled
@@ -926,7 +931,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
                 del renaming_operations[file_info['file_id']]
                 return await message.reply_text(f"❌ Download failed after {max_download_retries} attempts")
             await asyncio.sleep(2 ** attempt)
-
     # Check if download was successful
     if not path or not os.path.exists(path):
         del renaming_operations[file_info['file_id']]
@@ -1387,6 +1391,7 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
 
 
 
