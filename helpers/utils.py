@@ -28,7 +28,8 @@ from scripts import Txt
 from config import settings
 import logging
 from pyrogram import Client
-from helpers.aria2_utils import Aria2Manager
+from helpers.aria2_utils import aria2_manager  # import the instance
+
 logger = logging.getLogger(__name__)
 last_progress_edit = {}
 
@@ -377,12 +378,12 @@ async def get_telegram_file_url(client: Client, file_id: str) -> str:
         return None
 async def check_aria2_status() -> Dict[str, Any]:
     """Check aria2c service status"""
-    if not settings.ARIA2_ENABLED or not Aria2Manager.initialized:
+    if not settings.ARIA2_ENABLED or not aria2_manager.initialized:
         return {"status": "disabled", "active": False}
     
     try:
-        stats = Aria2Manager.api.get_global_stats()
-        downloads = Aria2Manager.api.get_downloads()
+        stats = aria2_manager.api.get_global_stats()
+        downloads = aria2_manager.api.get_downloads()
         
         return {
             "status": "active",
