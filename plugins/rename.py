@@ -21,7 +21,7 @@ from typing import Optional, Tuple, Dict, List, Set
 # Database imports
 from database.data import hyoshcoder
 from config import settings
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, get_file_url,TimeFormatter
 from pyrogram.errors import MessageNotModified, BadRequest
 import html
 from html import escape as html_escape
@@ -1425,3 +1425,4 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
+
