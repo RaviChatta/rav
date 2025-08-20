@@ -5,8 +5,8 @@ import os
 import aiohttp
 import subprocess
 import time
-import re
 import json
+import re
 from typing import Optional, Dict, Any
 from config import settings
 
@@ -20,6 +20,25 @@ class Aria2Manager:
         self.session = None
         self.manual_mode = False
         
+    def sanitize_filename(self, filename: str) -> str:
+        """Sanitize filenames to remove problematic characters"""
+        if not filename:
+            return ""
+            
+        # Remove any invalid characters
+        sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)
+        
+        # Ensure the filename is not empty after sanitization
+        if not sanitized.strip():
+            sanitized = f"file_{int(time.time())}"
+            
+        # Limit length to avoid filesystem issues
+        if len(sanitized) > 200:
+            name, ext = os.path.splitext(sanitized)
+            sanitized = name[:200 - len(ext)] + ext
+            
+        return sanitized
+    
     async def initialize(self):
         """Initialize aria2c client with proper authentication handling"""
         try:
@@ -171,7 +190,7 @@ max-download-limit=0
             os.makedirs(download_path, exist_ok=True)
             
             # Sanitize filename
-            safe_filename = sanitize_filename(filename)
+            safe_filename = self.sanitize_filename(filename)
             if not safe_filename:
                 logger.error(f"Failed to sanitize filename: {filename}")
                 return None
@@ -251,24 +270,7 @@ max-download-limit=0
             }
         except Exception as e:
             return {"status": "error", "error": str(e)}
-    def sanitize_filename(filename: str) -> str:
-        """Sanitize filenames to remove problematic characters"""
-        if not filename:
-            return ""
-            
-        # Remove any invalid characters
-        sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)
-        
-        # Ensure the filename is not empty after sanitization
-        if not sanitized.strip():
-            sanitized = f"file_{int(time.time())}"
-            
-        # Limit length to avoid filesystem issues
-        if len(sanitized) > 200:
-            name, ext = os.path.splitext(sanitized)
-            sanitized = name[:200 - len(ext)] + ext
-            
-        return sanitized
+    
     async def cleanup(self):
         """Cleanup resources"""
         if self.session:
