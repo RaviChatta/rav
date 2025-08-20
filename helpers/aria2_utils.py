@@ -1,115 +1,243 @@
-import os
-import subprocess
-import socket
-import time
-import logging
 import aria2p
+import asyncio
+import logging
+import os
+import aiohttp
+import subprocess
+import time
+import json
+from typing import Optional, Dict, Any
+from config import settings
 
 logger = logging.getLogger(__name__)
 
-
-class Aria2Helper:
-    def __init__(self, host="http://localhost", port=6800, secret=""):
-        self.host = host
-        self.port = port
-        self.secret = secret
-        self.aria2 = None
+class Aria2Manager:
+    def __init__(self):
+        self.client = None
         self.api = None
-        self.process = None
-
-    def is_port_in_use(self, port):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(("localhost", port)) == 0
-
-    def start_aria2c(self):
-        """Start aria2c manually if not already running"""
-        if self.is_port_in_use(self.port):
-            logger.info("ℹ️ Aria2c already running on port %s", self.port)
-            return True
-
-        cmd = [
-            "aria2c",
-            f"--enable-rpc",
-            f"--rpc-listen-port={self.port}",
-            f"--rpc-allow-origin-all",
-            f"--rpc-listen-all=false",
-        ]
-        if self.secret:
-            cmd.append(f"--rpc-secret={self.secret}")
-
+        self.initialized = False
+        self.session = None
+        self.manual_mode = False
+        
+    async def initialize(self):
+        """Initialize aria2c client with proper authentication handling"""
         try:
-            self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            logger.warning("⚡ Starting aria2c manually...")
-            time.sleep(3)  # give aria2c time to boot
-            if not self.is_port_in_use(self.port):
-                logger.error("❌ Failed to start aria2c on port %s", self.port)
+            if not settings.ARIA2_ENABLED:
+                logger.info("Aria2c is disabled in configuration")
                 return False
-            logger.info("✅ Aria2c started manually")
-            return True
-        except Exception as e:
-            logger.error("❌ Error starting aria2c: %s", str(e))
-            return False
-
-    def initialize(self):
-        """Initialize aria2c connection"""
-        try:
-            if not self.is_port_in_use(self.port):
-                if not self.start_aria2c():
-                    logger.error("❌ Aria2c is not running and could not be started")
+            
+            logger.info(f"Attempting to connect to aria2c at {settings.ARIA2_HOST}:{settings.ARIA2_PORT}")
+            
+            # First, test if aria2c is running with a simple connection test
+            if not await self.is_aria2c_running():
+                logger.warning("Aria2c is not running, attempting to start...")
+                if not await self.start_aria2c():
+                    logger.error("Failed to start aria2c")
                     return False
+            
+            # Now try to connect with proper authentication
+            try:
+                self.client = aria2p.Client(
+                    host=settings.ARIA2_HOST,
+                    port=settings.ARIA2_PORT,
+                    secret=settings.ARIA2_SECRET,
+                    timeout=10
+                )
+                self.api = aria2p.API(self.client)
+                
+                # Test connection with a simple method
+                version_info = self.api.client.get_version()
+                logger.info(f"✅ Successfully connected to aria2c version {version_info['version']}")
 
-            self.aria2 = aria2p.Client(
-                host=f"{self.host}:{self.port}/jsonrpc",
-                secret=self.secret
-            )
-            self.api = aria2p.API(self.aria2)
-
-            version_info = self.api.client.get_version()
-            logger.info(f"✅ Successfully connected to aria2c v{version_info['version']}")
+                
+            except aria2p.ClientException as e:
+                if "Unauthorized" in str(e) or "401" in str(e):
+                    logger.error("❌ Authentication failed - wrong secret key?")
+                    logger.info("Please check your ARIA2_SECRET in config.py matches the aria2c config")
+                    return False
+                else:
+                    raise e
+            
+            # Set options for better performance
+            options = {
+                "max-concurrent-downloads": str(settings.ARIA2_MAX_CONCURRENT_DOWNLOADS),
+                "max-connection-per-server": str(settings.ARIA2_MAX_CONNECTION_PER_SERVER),
+                "split": str(settings.ARIA2_SPLIT),
+            }
+            
+            try:
+                self.api.set_global_options(options)
+            except Exception as e:
+                logger.warning(f"Could not set global options: {e}")
+            
+            self.session = aiohttp.ClientSession()
+            self.initialized = True
+            logger.info("Aria2c client initialized successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize aria2c: {e}")
+            self.initialized = False
+            return False
+    
+    async def is_aria2c_running(self) -> bool:
+        """Check if aria2c process is running"""
+        try:
+            result = subprocess.run(['pgrep', '-x', 'aria2c'], 
+                                  capture_output=True, text=True)
+            return result.returncode == 0
+        except:
+            return False
+    
+    async def start_aria2c(self) -> bool:
+        """Start aria2c manually with proper configuration"""
+        try:
+            # Create config directory
+            os.makedirs('/root/.config/aria2', exist_ok=True)
+            os.makedirs('/root/downloads', exist_ok=True)
+            
+            # Use the secret from config (if available) or generate new one
+            secret = settings.ARIA2_SECRET if settings.ARIA2_SECRET else "default_secret_123"
+            
+            # Create config file
+            config_content = f"""dir=/root/downloads
+max-concurrent-downloads={settings.ARIA2_MAX_CONCURRENT_DOWNLOADS}
+max-connection-per-server={settings.ARIA2_MAX_CONNECTION_PER_SERVER}
+split={settings.ARIA2_SPLIT}
+min-split-size=1M
+continue=true
+file-allocation=prealloc
+log-level=info
+log=/root/aria2.log
+enable-rpc=true
+rpc-listen-all=true
+rpc-listen-port={settings.ARIA2_PORT}
+rpc-allow-origin-all=true
+rpc-secret={secret}
+max-overall-download-limit=0
+max-download-limit=0
+"""
+            
+            with open('/root/.config/aria2/aria2.conf', 'w') as f:
+                f.write(config_content)
+            
+            # Start aria2c
+            process = subprocess.Popen([
+                'aria2c', '--conf-path=/root/.config/aria2/aria2.conf', '-D'
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Wait for startup
+            await asyncio.sleep(3)
+            
+            if await self.is_aria2c_running():
+                self.manual_mode = True
+                logger.info("✅ Aria2c started manually")
+                return True
+            else:
+                logger.error("❌ Failed to start aria2c manually")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to start aria2c manually: {e}")
+            return False
+    
+    async def test_connection(self) -> bool:
+        """Test if we can communicate with aria2c"""
+        if not self.api:
+            return False
+            
+        try:
+            # Use a simple method to test connection
+            self.api.client.get_version()
             return True
         except Exception as e:
-            logger.error("Failed to initialize aria2c: %s", str(e))
+            logger.warning(f"Connection test failed: {e}")
             return False
-
-    def add_download(self, url, options=None):
-        """Add new download to aria2"""
-        if not self.api:
-            logger.error("❌ Aria2 API not initialized")
+    
+    async def download_file(self, url: str, download_path: str, filename: str) -> Optional[str]:
+        """Download a file using aria2c"""
+        if not self.initialized or not await self.test_connection():
+            logger.warning("Aria2c not available for download, using fallback")
             return None
+            
         try:
-            return self.api.add_uris([url], options=options or {})
+            os.makedirs(os.path.dirname(download_path), exist_ok=True)
+            
+            options = {
+                "dir": os.path.dirname(download_path),
+                "out": filename,
+            }
+            
+            logger.info(f"Starting aria2c download: {filename}")
+            download = self.api.add_uris([url], options=options)
+            
+            # Wait for completion with timeout
+            timeout = 3600
+            start_time = time.time()
+            last_progress = 0
+            
+            while download.is_active:
+                current_time = time.time()
+                if current_time - start_time > timeout:
+                    self.api.remove([download])
+                    raise TimeoutError("Download timed out")
+                
+                # Update progress every 5 seconds
+                if current_time - last_progress > 5:
+                    download.update()
+                    logger.debug(f"Download progress: {download.progress_string()}")
+                    last_progress = current_time
+                
+                await asyncio.sleep(1)
+                
+            if download.is_complete:
+                file_path = download.files[0].path
+                logger.info(f"✅ Download completed: {file_path}")
+                return file_path
+            else:
+                logger.error(f"❌ Download failed: {download.error_message}")
+                return None
+                
         except Exception as e:
-            logger.error("❌ Failed to add download: %s", str(e))
+            logger.error(f"Aria2c download error: {e}")
             return None
-
-    def get_download_status(self):
-        """Return global download stats"""
-        if not self.api:
-            logger.error("❌ Aria2 API not initialized")
-            return None
+    
+    async def get_download_status(self) -> Dict[str, Any]:
+        """Get current download status"""
+        if not self.initialized or not await self.test_connection():
+            return {"status": "not_connected"}
+            
         try:
             stats = self.api.get_global_stats()
             downloads = self.api.get_downloads()
-
+            
             return {
-                "download_speed": stats["downloadSpeed"],
-                "upload_speed": stats["uploadSpeed"],
-                "num_active": stats["numActive"],
-                "num_waiting": stats["numWaiting"],
-                "num_stopped": stats["numStopped"],
+                "download_speed": stats.download_speed,
+                "upload_speed": stats.upload_speed,
+                "num_active": stats.num_active,
+                "num_waiting": stats.num_waiting,
+                "num_stopped": stats.num_stopped,
                 "total_downloads": len(downloads)
             }
         except Exception as e:
-            logger.error("❌ Failed to fetch stats: %s", str(e))
-            return None
+            return {"status": "error", "error": str(e)}
+    
+    async def cleanup(self):
+        """Cleanup resources"""
+        if self.session:
+            await self.session.close()
+        
+        if self.manual_mode:
+            # Kill manually started aria2c
+            try:
+                subprocess.run(['pkill', '-x', 'aria2c'], 
+                             stdout=subprocess.DEVNULL, 
+                             stderr=subprocess.DEVNULL)
+                logger.info("Stopped manually started aria2c")
+            except:
+                pass
+        
+        self.initialized = False
 
-    def shutdown(self):
-        """Stop aria2c"""
-        try:
-            if self.api:
-                self.api.shutdown()
-            if self.process:
-                self.process.terminate()
-                logger.info("🛑 Aria2c terminated")
-        except Exception as e:
-            logger.error("❌ Error shutting down aria2c: %s", str(e))
+# Global instance
+aria2_manager = Aria2Manager()
