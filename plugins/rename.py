@@ -1,30 +1,24 @@
-from pyrogram import Client, filters
-from pyrogram.errors import FloodWait, MessageNotModified, BadRequest
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrofork import Client, filters
+from pyrofork.errors import FloodWait, MessageNotModified, BadRequest
+from pyrofork.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from pyrofork.enums import ParseMode, ChatAction
 from PIL import Image
 from datetime import datetime, timedelta
 import os
 import time
 import re
 import pytz
-import aria2p
-from helpers.aria2_utils import aria2_manager
-import aiohttp
 import asyncio
 import random
 import shutil
-from pyrogram.types import InputMediaPhoto
 import uuid
 import logging
-from pyrogram.enums import ParseMode, ChatAction
 import json
 from typing import Optional, Tuple, Dict, List, Set
 # Database imports
 from database.data import hyoshcoder
 from config import settings
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, get_file_url,TimeFormatter,get_telegram_file_url
-from pyrogram.errors import MessageNotModified, BadRequest
-import html
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
 from html import escape as html_escape
 
 def escape_markdown(text: str) -> str:
@@ -47,6 +41,7 @@ sequential_operations = {}  # For sequential mode
 active_sequences = {}  # For sequence handling
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
+file_processing_counters = {}  # Track processing counters
 
 # Sequence handling variables
 active_sequences: Dict[int, List[Dict[str, str]]] = {}
@@ -128,9 +123,9 @@ def sanitize_filename(filename: str) -> str:
     return sanitized.encode('ascii', 'ignore').decode('ascii').strip()
 
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
-    """Get or create semaphore for user"""
+    """Get or create semaphore for user - now set to 3 concurrent operations"""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)
+        user_semaphores[user_id] = asyncio.Semaphore(3)  # Increased to 3 concurrent processes
     return user_semaphores[user_id]
 
 async def get_stream_indexes(input_path: str):
@@ -290,7 +285,7 @@ async def send_to_dump_channel(
     Enhanced send to dump channel with better error handling and logging
     
     Args:
-        client: Pyrogram Client
+        client: Pyrofork Client
         user_id: User ID to lookup dump channel
         file_path: Path to media file
         caption: Caption text (max 1024 chars)
@@ -703,7 +698,7 @@ async def process_user_queue(client: Client, user_id: int):
     """Process all files in the user's queue with semaphore control"""
     # Initialize semaphore for this user if not exists
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)  # Allow 2 concurrent processes
+        user_semaphores[user_id] = asyncio.Semaphore(3)  # Increased to 3 concurrent processes
     
     while user_file_queues.get(user_id, {}).get('queue'):
         async with user_semaphores[user_id]:
@@ -758,9 +753,8 @@ async def process_user_queue(client: Client, user_id: int):
         if len(user_file_queues[user_id]['queue']) == 0:
             del user_file_queues[user_id]
 
-
 async def process_single_file(client: Client, file_info: dict, user_data: dict):
-    """Process a single file with all the renaming logic and aria2c integration"""
+    """Process a single file with all the renaming logic"""
     message = file_info['message']
     user_id = message.from_user.id
     queue_position = file_info['queue_position']
@@ -769,6 +763,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     points_data = user_data.get("points", {})
     user_points = points_data.get("balance", 0)
     format_template = user_data.get("format_template", "")
+    media_preference = user_data.get("media_preference", file_info['media_type'])
     src_info = await hyoshcoder.get_src_info(user_id)
 
     # Get points config
@@ -840,112 +835,36 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     file_uuid = str(uuid.uuid4())[:8]
     temp_file_path = f"{renamed_file_path}_{file_uuid}"
 
-    # Enhanced download section with aria2c
-    # Enhanced download section with aria2c
-    max_download_retries = 2
+    # Download file with retry logic
+    max_download_retries = 1
     queue_message = None
-    use_aria2c = settings.ARIA2_ENABLED and aria2_manager.initialized and await aria2_manager.test_connection()
-    
     for attempt in range(max_download_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
                 return
-    
-            queue_message = await message.reply_text(
-                f"📥 Downloading #{queue_position}..." + 
-                (" (Aria2c)" if use_aria2c else " (Pyrogram)")
-            )
-            
-            # Try aria2c first if enabled and available
-            if use_aria2c:
-                try:
-                    # Get direct download link from Telegram using Bot API
-                    file_link = None
-                    file_obj = None
-                    
-                    if message.document:
-                        file_obj = message.document
-                    elif message.video:
-                        file_obj = message.video
-                    elif message.audio:
-                        file_obj = message.audio
-                    
-                    if file_obj:
-                        # Use Bot API to get direct download URL
-                        file_link = await get_telegram_file_url(client, file_obj.file_id, settings.BOT_TOKEN)
-                        
-                        if file_link:
-                            logger.info(f"✅ Generated direct download URL for aria2c: {file_link[:100]}...")
-                        else:
-                            logger.warning("Failed to generate direct download URL via Bot API")
-                    
-                    if file_link:
-                        # Ensure download directory exists
-                        download_dir = os.path.dirname(temp_file_path)
-                        os.makedirs(download_dir, exist_ok=True)
-                        
-                        # Use aria2c for download
-                        logger.info(f"🚀 Starting aria2c download: {file_info['file_name']}")
-                        downloaded_path = await aria2_manager.download_file(
-                            file_link, 
-                            download_dir,
-                            os.path.basename(temp_file_path)
-                        )
-                        
-                        if downloaded_path and os.path.exists(downloaded_path):
-                            path = downloaded_path
-                            file_size = os.path.getsize(path)
-                            logger.info(f"✅ Aria2c download successful: {humanbytes(file_size)}")
-                            break
-                        else:
-                            logger.warning("❌ Aria2c download failed, falling back to Pyrogram")
-                            use_aria2c = False  # Disable aria2c for next attempts
-                    else:
-                        logger.warning("❌ Could not generate direct download URL, falling back to Pyrogram")
-                        use_aria2c = False
-                        
-                except Exception as aria2_error:
-                    logger.warning(f"Aria2c download attempt failed: {aria2_error}")
-                    use_aria2c = False  # Disable aria2c for next attempts
-                    # Continue to pyrogram fallback
-            
-            # Fallback to Pyrogram download if aria2c fails or is disabled
-            logger.info(f"📥 Falling back to Pyrogram download: {file_info['file_name']}")
+
+            queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
             path = await client.download_media(
                 message,
                 file_name=temp_file_path,
                 progress=progress_for_pyrogram,
                 progress_args=(f"Downloading #{queue_position}", queue_message, time.time()),
             )
-            
-            if path and os.path.exists(path):
-                file_size = os.path.getsize(path)
-                logger.info(f"✅ Pyrogram download successful: {humanbytes(file_size)}")
-                break
-            else:
-                raise Exception("Download failed - file not created")
-            
+            break
         except Exception as e:
-            logger.error(f"Download attempt {attempt + 1} failed: {e}")
             if attempt == max_download_retries - 1:
                 del renaming_operations[file_info['file_id']]
-                return await message.reply_text(f"❌ Download failed after {max_download_retries} attempts")
+                return await message.reply_text(f"❌ Download failed: {e}")
             await asyncio.sleep(2 ** attempt)
-    # Check if download was successful
-    if not path or not os.path.exists(path):
-        del renaming_operations[file_info['file_id']]
-        return await message.reply_text("❌ Download failed - file not found")
 
     # Rename file
     try:
         os.rename(path, renamed_file_path)
         path = renamed_file_path
-        logger.info(f"📝 File renamed to: {renamed_file_name}")
     except Exception as e:
         await message.reply_text(f"❌ Rename failed: {e}")
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
-        del renaming_operations[file_info['file_id']]
         return
 
     # Add metadata if enabled
@@ -968,10 +887,8 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             if success:
                 metadata_added = True
                 path = metadata_file_path
-                logger.info("✅ Metadata added successfully")
             else:
                 error_msg = error[:500] if error else "Unknown error"
-                logger.warning(f"⚠️ Metadata failed: {error_msg}")
                 await message.reply_text(f"⚠️ Metadata failed: {error_msg}\nUsing original file")
                 path = renamed_file_path
 
@@ -986,49 +903,47 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     custom_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
     
     # Get file info
-    file_size = os.path.getsize(path)
-    file_size_human = humanbytes(file_size)
+    file_size_human = humanbytes(file_info['size'])
+    duration = convert(file_info.get('duration', 0))
     
     # Create caption
     if custom_caption:
         formatted_text = custom_caption.format(
             filename=html.escape(renamed_file_name),
             filesize=file_size_human,
-            duration="N/A"
+            duration=duration
         )
         caption = f"""<b><blockquote>{formatted_text}</blockquote></b>"""
     else:
         caption = f"""<b><blockquote>{html.escape(renamed_file_name)}</blockquote></b>"""
     
-    # Handle thumbnail for documents
+    # Handle thumbnail
     if custom_thumb:
         thumb_path = await client.download_media(custom_thumb)
-    elif message.document and hasattr(message.document, 'thumbs') and message.document.thumbs:
-        try:
-            thumb_path = await client.download_media(message.document.thumbs[0].file_id)
-        except Exception as e:
-            logger.warning(f"Thumbnail download failed: {e}")
-            thumb_path = None
+    elif file_info['media_type'] == "video" and hasattr(message.video, 'thumbs') and message.video.thumbs:
+        thumb_path = await client.download_media(message.video.thumbs[0].file_id)
+    elif file_info['media_type'] == "audio" and hasattr(message.audio, 'thumbs') and message.audio.thumbs:
+        thumb_path = await client.download_media(message.audio.thumbs[0].file_id)
     
-    if thumb_path and os.path.exists(thumb_path):
+    if thumb_path:
         try:
             with Image.open(thumb_path) as img:
                 img = img.convert("RGB")
                 img.thumbnail((320, 320))
                 img.save(thumb_path, "JPEG", quality=85)
         except Exception as e:
-            logger.warning(f"Thumbnail processing error: {e}")
+            logger.warning(f"Thumbnail error: {e}")
             thumb_path = None
     
-    # Upload section
+    # Upload flow with retry logic
     max_upload_retries = 3
     for attempt in range(max_upload_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
                 return
     
-            # Prepare upload parameters
-            upload_params = {
+            # Prepare common upload parameters
+            common_params = {
                 'caption': caption,
                 'parse_mode': ParseMode.HTML,
                 'thumb': thumb_path if thumb_path and os.path.exists(thumb_path) else None,
@@ -1043,36 +958,92 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             if dump_channel:
                 try:
                     channel_id = int(dump_channel)
-                    if channel_id < 0:
-                        # Send to dump channel
-                        await client.send_document(
-                            chat_id=channel_id,
-                            document=path,
-                            caption=(
-                                f"<b>📄 Document Renamed</b>\n"
-                                f"📁 Original: <code>{html.escape(file_info['file_name'])}</code>\n"
-                                f"📁 Renamed: <code>{html.escape(renamed_file_name)}</code>\n"
-                                f"📊 Size: {file_size_human}\n"
-                                f"👤 User: {message.from_user.first_name}\n"
-                                f"🆔 ID: <code>{user_id}</code>"
-                            ),
-                            thumb=upload_params['thumb'],
-                            parse_mode=ParseMode.HTML
-                        )
-                        dump_success = True
-                        logger.info("✅ File sent to dump channel")
-                        
+                    if channel_id < 0:  # Negative ID indicates a channel
+                        chat = await client.get_chat(channel_id)
+                        if chat.type in ("channel", "supergroup"):
+                            member = await client.get_chat_member(channel_id, client.me.id)
+                            if member and member.privileges and member.privileges.can_post_messages:
+                                # Prepare dump channel caption
+                                user = message.from_user
+                                full_name = user.first_name
+                                if user.last_name:
+                                    full_name += f" {user.last_name}"
+                                username = f"@{user.username}" if user.username else "N/A"
+                                
+                                user_data = await hyoshcoder.read_user(user_id)
+                                is_premium = user_data.get("is_premium", False) if user_data else False
+                                premium_status = '✅' if is_premium else '❌'
+                                
+                                dump_caption = (
+                                    f"<b>File Details</b>\n"
+                                    f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
+                                    f"Size: {humanbytes(file_info['size'])}\n"
+                                )
+                                
+                                # Send to dump channel based on file type
+                                if file_info['media_type'] == "document":
+                                    await client.send_document(
+                                        chat_id=channel_id,
+                                        document=path,
+                                        caption=dump_caption,
+                                        thumb=common_params['thumb'],
+                                        parse_mode=ParseMode.HTML
+                                    )
+                                    dump_success = True
+                                elif file_info['media_type'] == "video":
+                                    await client.send_video(
+                                        chat_id=channel_id,
+                                        video=path,
+                                        caption=dump_caption,
+                                        thumb=common_params['thumb'],
+                                        duration=file_info.get('duration', 0),
+                                        supports_streaming=True,
+                                        parse_mode=ParseMode.HTML
+                                    )
+                                    dump_success = True
+                                elif file_info['media_type'] == "audio":
+                                    await client.send_audio(
+                                        chat_id=channel_id,
+                                        audio=path,
+                                        caption=dump_caption,
+                                        thumb=common_params['thumb'],
+                                        duration=file_info.get('duration', 0),
+                                        parse_mode=ParseMode.HTML
+                                    )
+                                    dump_success = True
+                                    
+                                if dump_success:
+                                    try:
+                                        await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
+                                    except:
+                                        pass
                 except Exception as e:
                     logger.error(f"Error sending to dump channel: {e}")
                     dump_success = False
     
-            # Send to original chat
-            await client.send_document(
-                chat_id=message.chat.id,
-                document=path,
-                **upload_params
-            )
-            logger.info("✅ File sent to user successfully")
+            # If dump channel not set or failed, send to original chat
+            if not dump_success:
+                if file_info['media_type'] == "document":
+                    await client.send_document(
+                        chat_id=message.chat.id,
+                        document=path,
+                        **common_params
+                    )
+                elif file_info['media_type'] == "video":
+                    await client.send_video(
+                        chat_id=message.chat.id,
+                        video=path,
+                        duration=file_info.get('duration', 0),
+                        supports_streaming=True,
+                        **common_params
+                    )
+                elif file_info['media_type'] == "audio":
+                    await client.send_audio(
+                        chat_id=message.chat.id,
+                        audio=path,
+                        duration=file_info.get('duration', 0),
+                        **common_params
+                    )
     
             # Track successful operation
             await track_rename_operation(
@@ -1092,10 +1063,16 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             await asyncio.sleep(e.value + 5)
             await message.reply_text(f"⚠️ Flood wait: {e.value} seconds")
             continue
+        except BadRequest as e:
+            if "FILE_PART_INVALID" in str(e) and attempt < max_upload_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            await message.reply_text(f"❌ Upload failed: {str(e)[:200]}")
+            raise
         except Exception as e:
             logger.error(f"Upload attempt {attempt + 1} failed: {e}")
             if attempt == max_upload_retries - 1:
-                await message.reply_text("❌ Failed after multiple upload retries")
+                await message.reply_text("❌ Failed after multiple retries")
                 raise
             await asyncio.sleep(5 * (attempt + 1))
             continue
@@ -1120,6 +1097,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
 
     if file_info['file_id'] in renaming_operations:
         del renaming_operations[file_info['file_id']]
+
 @Client.on_message(filters.media_group & (filters.group | filters.private))
 async def handle_media_group_completion(client: Client, message: Message):
     """Handle completion message for batch uploads"""
@@ -1391,8 +1369,3 @@ async def generate_screenshots_command(client: Client, message: Message):
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
             logger.warning(f"Cleanup failed: {cleanup_error}")
-
-
-
-
-
