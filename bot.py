@@ -3,6 +3,7 @@ import asyncio
 import pytz
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from pytz import timezone
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -53,7 +54,57 @@ class Bot(Client):
         self.runner = None
         self.anime_finder: Optional[AnimeFinder] = None
         self.is_anime_finder_enabled = Config.ANIME_FINDER_ENABLED if hasattr(Config, 'ANIME_FINDER_ENABLED') else True
+    async def save_restart_data(self, chat_id: int, message_id: int):
+        """Save restart state to file"""
+        try:
+            restart_file = Path(".restart")
+            restart_file.write_text(f"{chat_id}\n{message_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving restart data: {e}")
+            return False
 
+    async def check_restart_status(self):
+        """Check if this is a restart and notify"""
+        restart_file = Path(".restart")
+        if not restart_file.exists():
+            return False
+        
+        try:
+            chat_id, message_id = restart_file.read_text().split()
+            await self.edit_message_text(
+                chat_id=int(chat_id),
+                message_id=int(message_id),
+                text="✅ Bot restarted successfully!"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Restart notification failed: {e}")
+            return False
+        finally:
+            try:
+                restart_file.unlink(missing_ok=True)
+            except:
+                pass
+
+    async def restart(self, message: Message):
+        """Gracefully restart the bot"""
+        try:
+            msg = await message.reply("🔄 Restarting bot... Please wait 15 seconds")
+            
+            # Save restart state
+            if not await self.save_restart_data(msg.chat.id, msg.id):
+                await message.reply("⚠️ Couldn't save restart state, continuing anyway...")
+            
+            # Properly disconnect
+            await self.stop()
+            
+            # Start new process
+            os.execl(sys.executable, sys.executable, *sys.argv)
+            
+        except Exception as e:
+            await message.reply(f"❌ Restart failed: {str(e)}")
+            logger.error(f"Restart error: {e}", exc_info=True)
     async def startup_tasks(self):
         """Run background tasks"""
         while True:
@@ -103,7 +154,8 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
-        
+        await self.check_restart_status()
+
         await initialize_database()
         hyoshcoder.set_client(self)
         me = await self.get_me()

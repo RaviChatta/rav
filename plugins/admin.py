@@ -5,7 +5,11 @@ import secrets
 import asyncio
 import re
 from contextlib import suppress
-
+import os
+import sys
+import asyncio
+from pathlib import Path
+from pyrogram import Client as Bot
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     Message,
@@ -1459,6 +1463,10 @@ async def reset_database_command(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Reset DB command error: {e}")
         await message.reply("❌ Error processing reset command")
+@Client.on_message(filters.command("restart") & filters.user(ADMIN_USER_ID))
+async def restart_command(client: Bot, message: Message):
+    """Admin-only restart command"""
+    await client.restart(message)
 @Client.on_message(filters.command("admin") & filters.user(ADMIN_USER_ID))
 async def admin_command(client: Client, message: Message):
     await AdminPanel.show_main_menu(client, message)

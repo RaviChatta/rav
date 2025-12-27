@@ -1,5 +1,5 @@
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait, MessageNotModified, BadRequest
+from pyrogram.errors import FloodWait, MessageNotModified, BadRequest, PeerIdInvalid
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image
 from datetime import datetime, timedelta
@@ -7,44 +7,36 @@ import os
 import time
 import re
 import pytz
-
 import asyncio
 import random
 import shutil
+import html 
 from pyrogram.types import InputMediaPhoto
 import uuid
 import logging
 from pyrogram.enums import ParseMode, ChatAction
 import json
 from typing import Optional, Tuple, Dict, List, Set
+from html import escape as html_escape
+
 # Database imports
 from database.data import hyoshcoder
 from config import settings
 from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
-from pyrogram.errors import MessageNotModified, BadRequest
-import html
-from html import escape as html_escape
 
-def escape_markdown(text: str) -> str:
-    """Custom Markdown escaper for Telegram"""
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return ''.join(f'\\{char}' if char in escape_chars else char for char in text)
-
-def escape_html(text: str) -> str:
-    """Escape text for HTML parse mode"""
-    return html_escape(text, quote=False)
-    
 logger = logging.getLogger(__name__)
 
 # Global variables to manage operations
 user_file_queues = {}  # Tracks all files in queue per user
 user_semaphores = {}   # Semaphores per user for concurrency control
+user_active_tasks = {}  # Tracks active tasks per user
 renaming_operations = {}  # Tracks currently processing files
 user_batch_trackers = {}  # Track batch operations per user
 sequential_operations = {}  # For sequential mode
 active_sequences = {}  # For sequence handling
 cancel_operations = {}  # Track cancel requests
 processed_files = set()  # Track processed files to prevent duplicate point deductions
+file_processing_counters = {}  # Track concurrent file processing
 
 # Sequence handling variables
 active_sequences: Dict[int, List[Dict[str, str]]] = {}
@@ -86,6 +78,12 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
             "date": datetime.now().date().isoformat()
         })
 
+        user_data = await hyoshcoder.users.find_one({"_id": user_id})
+        if not user_data:
+            return False
+
+        balance_after = user_data.get("points", {}).get("balance", 0) - points_deducted
+
         await hyoshcoder.users.update_one(
             {"_id": user_id},
             {
@@ -108,7 +106,7 @@ async def track_rename_operation(user_id: int, original_name: str, new_name: str
             "amount": -points_deducted,
             "description": f"Renamed {original_name} to {new_name}",
             "timestamp": datetime.now(),
-            "balance_after": (await hyoshcoder.get_points(user_id)) - points_deducted
+            "balance_after": balance_after
         })
 
         # Mark file as processed
@@ -126,11 +124,12 @@ def sanitize_filename(filename: str) -> str:
     return sanitized.encode('ascii', 'ignore').decode('ascii').strip()
 
 async def get_user_semaphore(user_id: int) -> asyncio.Semaphore:
-    """Get or create semaphore for user"""
+    """Get or create semaphore for user with max 3 concurrent processes"""
     if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)
+        user_semaphores[user_id] = asyncio.Semaphore(3)
+        user_active_tasks[user_id] = 0
     return user_semaphores[user_id]
-
+    
 async def get_stream_indexes(input_path: str):
     try:
         probe = await asyncio.create_subprocess_exec(
@@ -280,27 +279,11 @@ async def send_to_dump_channel(
     client: Client,
     user_id: int,
     file_path: str,
-    caption: str = "",
-    thumb_path: Optional[str] = None,
+    original_message: Message,
+    queue_position: int,
     **kwargs
 ) -> bool:
-    """
-    Enhanced send to dump channel with better error handling and logging
-    
-    Args:
-        client: Pyrogram Client
-        user_id: User ID to lookup dump channel
-        file_path: Path to media file
-        caption: Caption text (max 1024 chars)
-        thumb_path: Path to thumbnail image
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if not os.path.exists(file_path):
-        logger.error(f"File not found: {file_path}")
-        return False
-
+    """Send file to dump channel with comprehensive error handling"""
     try:
         # Get dump channel from database
         dump_channel = await hyoshcoder.get_user_channel(user_id)
@@ -308,76 +291,91 @@ async def send_to_dump_channel(
             logger.debug(f"No dump channel set for user {user_id}")
             return False
 
-        # Verify channel exists and bot has permissions
-        try:
-            # Convert to integer and validate
-            channel_id = int(dump_channel)
-            if channel_id >= 0:
-                logger.warning(f"Invalid channel ID format (must be negative): {dump_channel}")
-                return False
-                
-            chat = await client.get_chat(channel_id)
-            if chat.type not in ("channel", "supergroup"):
-                logger.warning(f"Invalid chat type {chat.type} for {channel_id}")
-                return False
-                
-            # Check bot permissions
-            member = await client.get_chat_member(channel_id, client.me.id)
-            if not member or not member.privileges or not member.privileges.can_post_messages:
-                logger.warning(f"Bot lacks posting permissions in channel {channel_id}")
-                return False
-                
-        except (ValueError, PeerIdInvalid) as e:
-            logger.error(f"Invalid channel ID or can't access channel {dump_channel}: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Can't access dump channel {dump_channel}: {e}")
+        # Verify channel
+        is_valid, error_msg = await verify_dump_channel(client, dump_channel)
+        if not is_valid:
+            logger.warning(f"Invalid dump channel for user {user_id}: {error_msg}")
+            await original_message.reply_text(
+                f"⚠️ Your dump channel is not properly configured: {error_msg}\n"
+                "Please update it with /set_dump",
+                parse_mode=ParseMode.HTML
+            )
             return False
 
-        # Rest of the function remains the same...
-        send_params = {
-            "chat_id": channel_id,
-            "caption": caption[:1024],
-            "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None,
-            **kwargs
+        # Prepare user info
+        user = original_message.from_user
+        full_name = user.first_name
+        if user.last_name:
+            full_name += f" {user.last_name}"
+        username = f"@{user.username}" if user.username else "N/A"
+
+        # Prepare caption
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        dump_caption = (
+            f"<b>📁 File Details</b>\n"
+            f"├ <b>Name:</b> <code>{html.escape(file_name)}</code>\n"
+            f"├ <b>Size:</b> {humanbytes(file_size)}\n"
+            f"├ <b>User:</b> {full_name} ({username})\n"
+            f"└ <b>User ID:</b> <code>{user_id}</code>\n"
+            f"<b>Queue Position:</b> #{queue_position}"
+        )
+
+        # Prepare common parameters
+        common_params = {
+            "chat_id": int(dump_channel),
+            "caption": dump_caption,
+            "parse_mode": ParseMode.HTML,
+            "progress": progress_for_pyrogram,
+            "progress_args": (f"Uploading to dump channel #{queue_position}", None, time.time())
         }
 
-        # Determine media type and send appropriately
+        # Add thumb if available
+        if kwargs.get("thumb_path") and os.path.exists(kwargs["thumb_path"]):
+            common_params["thumb"] = kwargs["thumb_path"]
+
+        # Determine file type and send
         ext = os.path.splitext(file_path)[1].lower()
-        
         try:
             if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm'):
                 await client.send_video(
                     video=file_path,
+                    duration=kwargs.get("duration", 0),
                     supports_streaming=True,
-                    **send_params
+                    **common_params
                 )
             elif ext in ('.mp3', '.flac', '.m4a', '.wav', '.ogg'):
                 await client.send_audio(
                     audio=file_path,
-                    **send_params
+                    duration=kwargs.get("duration", 0),
+                    **common_params
                 )
             elif ext in ('.jpg', '.jpeg', '.png', '.webp'):
                 await client.send_photo(
                     photo=file_path,
-                    **{k: v for k, v in send_params.items() if k != "thumb"}
+                    **common_params
                 )
             else:
                 await client.send_document(
                     document=file_path,
-                    **send_params
+                    **common_params
                 )
             
-            logger.info(f"Successfully sent {file_path} to dump channel {channel_id}")
+            logger.info(f"Successfully sent file to dump channel {dump_channel}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to send to dump channel: {e}")
+            
+        except FloodWait as e:
+            logger.warning(f"Flood wait for {e.value} seconds")
+            await asyncio.sleep(e.value + 2)
+            return False
+            
+        except Exception as send_error:
+            logger.error(f"Error sending to dump channel: {send_error}")
             return False
 
     except Exception as e:
-        logger.error(f"Unexpected error in send_to_dump_channel: {e}")
+        logger.error(f"Unexpected error in dump channel processing: {e}")
         return False
-
 async def get_user_rank(user_id: int, time_range: str = "all") -> Tuple[Optional[int], int]:
     """Get user's global rank and total renames with time range support"""
     try:
@@ -415,8 +413,8 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
         # Check if operation was canceled
         if user_id in cancel_operations and cancel_operations[user_id]:
             del cancel_operations[user_id]
-            return await client.send_message(user_id, "❌ Batch processing was canceled!")
-        
+            return
+            
         user_rank, total_renames = await get_user_rank(user_id)
         user_points = await hyoshcoder.get_points(user_id)
         
@@ -425,72 +423,30 @@ async def send_completion_message(client: Client, user_id: int, start_time: floa
         avg_time = time_taken / file_count if file_count > 0 else 0
         avg_mins, avg_secs = divmod(int(avg_time), 60)
         
-        completion_msg = (
-            f"❐ Batch Rename Completed\n\n"
-            f"⌬ Total Files Processed: {file_count}\n"
-            f"⌬ Total Points Used: {points_used}\n"
-            f"⌬ Points Remaining: {user_points}\n"
-            f"⌬ Total Time Taken: {mins}m {secs}s\n"
-            f"⌬ Average Time Per File: {avg_mins}m {avg_secs}s\n"
-            f"⌬ Your Total Renames: {total_renames}\n"
-            f"⌬ Global Rank: #{user_rank if user_rank else 'N/A'}"
+        completion_text = (
+            f"✅ **Batch Processing Complete**\n\n"
+            f"📊 **Files Processed:** {file_count}\n"
+            f"⏱ **Total Time:** {mins}m {secs}s\n"
+            f"⏳ **Avg Time/File:** {avg_mins}m {avg_secs}s\n"
+            f"💎 **Points Used:** {points_used}\n"
+            f"💰 **Remaining Points:** {user_points}\n"
         )
         
-        await client.send_message(user_id, completion_msg)
-    except Exception as e:
-        logger.error(f"Error sending completion message: {e}")
-        await client.send_message(user_id, "✅ Batch processing completed successfully!")
-
-async def send_single_success_message(client: Client, message: Message, file_name: str, renamed_file_name: str, 
-                                    start_time: float, rename_cost: int, metadata_added: bool):
-    """Send success message for single file operations"""
-    try:
-        # Check if operation was canceled
-        if message.from_user.id in cancel_operations and cancel_operations[message.from_user.id]:
-            del cancel_operations[message.from_user.id]
-            return await message.reply_text("❌ Processing was canceled!")
+        if user_rank:
+            completion_text += f"\n🏆 **Your Rank:** #{user_rank}\n"
+            completion_text += f"📝 **Total Renames:** {total_renames}\n"
         
-        elapsed_seconds = time.time() - start_time
-        minutes, seconds = divmod(int(elapsed_seconds), 60)
-        
-        if minutes > 0:
-            time_taken_str = f"{minutes}m {seconds}s"
-        else:
-            time_taken_str = f"{seconds}s"
+        try:
+            await client.send_message(
+                chat_id=user_id,
+                text=completion_text
+            )
+        except Exception as e:
+            logger.error(f"Error sending completion message: {e}")
 
-        remaining_points = (await hyoshcoder.get_points(message.from_user.id)) - rename_cost
-        success_msg = (
-            f"✅ 𝗙𝗶𝗹𝗲 𝗥𝗲𝗻𝗮𝗺𝗲𝗱 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹𝗹𝘆!\n\n"
-            f"➲ 𝗢𝗿𝗶𝗴𝗶𝗻𝗮𝗹: `{file_name}`\n"
-            f"➲ 𝗥𝗲𝗻𝗮𝗺𝗲𝗱: `{renamed_file_name}`\n"
-            f"➲ 𝗧𝗶𝗺𝗲 𝗧𝗮𝗸𝗲𝗻: {time_taken_str}\n"
-            f"➲ 𝗠𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝗔𝗱𝗱𝗲𝗱: {'𝗬𝗲𝘀' if metadata_added else '𝗡𝗼'}\n"
-            f"➲ 𝗣𝗼𝗶𝗻𝘁𝘀 𝗨𝘀𝗲𝗱: {rename_cost}\n"
-            f"➲ 𝗥𝗲𝗺𝗮𝗶𝗻𝗶𝗻𝗴 𝗣𝗼𝗶𝗻𝘁𝘀: {remaining_points}"
-        )
-
-        await message.reply_text(success_msg)
     except Exception as e:
-        logger.error(f"Error sending success message: {e}")
-        await message.reply_text("✅ File processed successfully!")
-
-@Client.on_message(filters.command("cancel"))
-async def cancel_processing(client: Client, message: Message):
-    """Cancel current processing operations"""
-    user_id = message.from_user.id
-    cancel_operations[user_id] = True
-    
-    # Clean up any ongoing operations
-    if user_id in user_batch_trackers:
-        del user_batch_trackers[user_id]
-    if user_id in file_processing_counters:
-        del file_processing_counters[user_id]
-    if user_id in sequential_operations:
-        sequential_operations[user_id]["files"] = []
-    
-    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
-
-# SEQUENCE HANDLERS
+        logger.error(f"Error in completion message: {e}")
+        
 @Client.on_message(filters.command(["ssequence", "startsequence"]))
 async def start_sequence(client: Client, message: Message):
     """Start a file sequence collection"""
@@ -570,7 +526,6 @@ async def end_sequence(client: Client, message: Message):
         # Send files with delay to avoid flooding
         for file_data in sorted_files:
             if user_id in cancel_operations and cancel_operations[user_id]:
-                await message.reply_text("❌ Sequence processing was canceled!")
                 return
 
             try:
@@ -622,25 +577,6 @@ async def end_sequence(client: Client, message: Message):
             except Exception as e:
                 logger.error(f"Error sending file {file['file_name']}: {e}")
                 missing_files.append(file['file_name'])
-
-        # Prepare success message
-        success_message = (
-            f"🎉 **SEQUENCE COMPLETED** 🎉\n\n"
-            f"▫️ **Total Files Sent:** `{len(sorted_files)}`\n"
-            f"▫️ **Time Taken:** `{time_str}`\n"
-        )
-
-        # Add missing files info if any
-        if missing_files:
-            success_message += (
-                f"\n❌ **Missing Files:** `{len(missing_files)}`\n"
-                f"`{', '.join(missing_files[:3])}`"
-            )
-            if len(missing_files) > 3:
-                success_message += f" +{len(missing_files)-3} more"
-
-        # Send final success message after all files are sent
-        await message.reply_text(success_message)
 
         # Clean up messages
         if delete_messages:
@@ -764,63 +700,79 @@ async def auto_rename_files(client: Client, message: Message):
         asyncio.create_task(process_user_queue(client, user_id))
 
 async def process_user_queue(client: Client, user_id: int):
-    """Process all files in the user's queue with semaphore control"""
-    # Initialize semaphore for this user if not exists
-    if user_id not in user_semaphores:
-        user_semaphores[user_id] = asyncio.Semaphore(2)  # Allow 2 concurrent processes
+    """Process all files in the user's queue with proper semaphore control"""
+    semaphore = await get_user_semaphore(user_id)
     
-    while user_file_queues.get(user_id, {}).get('queue'):
-        async with user_semaphores[user_id]:
+    while True:
+        # Check if we should stop processing
+        if user_id not in user_file_queues or not user_file_queues[user_id].get('queue'):
+            break
+            
+        # Check if we've reached max concurrent tasks
+        if user_active_tasks[user_id] >= 3:
+            await asyncio.sleep(1)
+            continue
+            
+        # Get the next file
+        try:
             file_info = user_file_queues[user_id]['queue'].pop(0)
-            try:
-                # Get user data for each file
-                user_data = await hyoshcoder.read_user(user_id)
-                if not user_data:
-                    await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
-                    continue
-
-                # Check sequential mode from database
-                sequential_mode = user_data.get("sequential_mode", False)
-                
-                # Handle sequential mode
-                if sequential_mode:
-                    if user_id not in sequential_operations:
-                        sequential_operations[user_id] = {"files": [], "expected_count": 0}
-
-                    sequential_operations[user_id]["expected_count"] += 1
-                    while len(sequential_operations[user_id]["files"]) > 0:
-                        await asyncio.sleep(1)
-                        if user_id in cancel_operations and cancel_operations[user_id]:
-                            await file_info['message'].reply_text("❌ Processing canceled by user")
-                            break
-
-                await process_single_file(client, file_info, user_data)
-                
-                # Handle batch completion if this was the last file in a batch
-                if (user_file_queues[user_id]['batch_data'] and 
-                    len(user_file_queues[user_id]['queue']) == 0):
-                    batch_data = user_file_queues[user_id]['batch_data']
-                    await send_completion_message(
-                        client,
-                        user_id,
-                        batch_data["start_time"],
-                        batch_data["count"],
-                        batch_data["points_used"]
-                    )
-                    user_file_queues[user_id]['batch_data'] = None
-                
-            except Exception as e:
-                logger.error(f"Error processing file for {user_id}: {e}")
-                try:
-                    await file_info['message'].reply_text(f"❌ Error processing file: {str(e)[:500]}")
-                except:
-                    pass
+        except IndexError:
+            break
+            
+        # Acquire semaphore and increment active tasks
+        await semaphore.acquire()
+        user_active_tasks[user_id] += 1
+        
+        # Process the file in a separate task
+        task = asyncio.create_task(
+            process_single_file_wrapper(client, file_info, user_id, semaphore)
+        )
+        
+        # Small delay to prevent flooding
+        await asyncio.sleep(0.5)
     
     # Cleanup when done
-    if user_id in user_file_queues:
-        user_file_queues[user_id]['is_processing'] = False
-        if len(user_file_queues[user_id]['queue']) == 0:
-            del user_file_queues[user_id]
+    if user_id in user_file_queues and not user_file_queues[user_id].get('queue'):
+        del user_file_queues[user_id]
+
+async def process_single_file_wrapper(client: Client, file_info: dict, user_id: int, semaphore: asyncio.Semaphore):
+    """Wrapper to ensure semaphore is properly released"""
+    try:
+        # Get user data
+        user_data = await hyoshcoder.read_user(user_id)
+        if not user_data:
+            await file_info['message'].reply_text("❌ Unable to load your information. Please type /start to register.")
+            return
+            
+        # Process the file
+        await process_single_file(client, file_info, user_data)
+        
+    except Exception as e:
+        logger.error(f"Error processing file for {user_id}: {e}")
+        try:
+            await file_info['message'].reply_text(f"❌ Error processing file: {str(e)[:500]}")
+        except:
+            pass
+    finally:
+        # Release semaphore and decrement active tasks
+        semaphore.release()
+        user_active_tasks[user_id] -= 1
+        
+        # Handle batch completion if this was the last file
+        if (user_id in user_file_queues and 
+            user_file_queues[user_id].get('batch_data') and 
+            len(user_file_queues[user_id]['queue']) == 0 and
+            user_active_tasks[user_id] == 0):
+            
+            batch_data = user_file_queues[user_id]['batch_data']
+            await send_completion_message(
+                client,
+                user_id,
+                batch_data["start_time"],
+                batch_data["count"],
+                batch_data["points_used"]
+            )
+            user_file_queues[user_id]['batch_data'] = None
 
 async def process_single_file(client: Client, file_info: dict, user_data: dict):
     """Process a single file with all the renaming logic"""
@@ -910,7 +862,7 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     for attempt in range(max_download_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
-                return await message.reply_text("❌ Processing canceled by user")
+                return
 
             queue_message = await message.reply_text(f"📥 Downloading #{queue_position}...")
             path = await client.download_media(
@@ -1009,7 +961,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
     for attempt in range(max_upload_retries):
         try:
             if user_id in cancel_operations and cancel_operations[user_id]:
-                await message.reply_text("❌ Processing canceled by user")
                 return
     
             # Prepare common upload parameters
@@ -1022,75 +973,135 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             }
     
             # Try dump channel first if configured
+            # Try dump channel first if configured
             dump_success = False
-            dump_channel = await hyoshcoder.get_user_channel(user_id)
-            
-            if dump_channel:
-                try:
-                    channel_id = int(dump_channel)
-                    if channel_id < 0:  # Negative ID indicates a channel
-                        chat = await client.get_chat(channel_id)
-                        if chat.type in ("channel", "supergroup"):
+            try:
+                dump_channel = await hyoshcoder.get_user_channel(user_id)
+                
+                if dump_channel:
+                    try:
+                        channel_id = int(dump_channel)
+                        if channel_id < 0:  # Negative ID indicates a channel/supergroup
+                            # Verify channel and permissions
+                            chat = await client.get_chat(channel_id)
+                            if chat.type not in ("channel", "supergroup"):
+                                logger.warning(f"Invalid chat type {chat.type} for dump channel {channel_id}")
+                                raise ValueError("Not a channel or supergroup")
+                            
                             member = await client.get_chat_member(channel_id, client.me.id)
-                            if member and member.privileges and member.privileges.can_post_messages:
-                                # Prepare dump channel caption
-                                user = message.from_user
-                                full_name = user.first_name
-                                if user.last_name:
-                                    full_name += f" {user.last_name}"
-                                username = f"@{user.username}" if user.username else "N/A"
-                                
-                                user_data = await hyoshcoder.read_user(user_id)
-                                is_premium = user_data.get("is_premium", False) if user_data else False
-                                premium_status = '✅' if is_premium else '❌'
-                                
-                                dump_caption = (
-                                    f"<b>File Details</b>\n"
-                                    f"Name: <code>{html.escape(renamed_file_name)}</code>\n"
-                                    f"Size: {humanbytes(file_info['size'])}\n"
-                                )
-                                
-                                # Send to dump channel based on file type
+                            if not member or not member.privileges:
+                                logger.warning(f"Bot has no privileges in channel {channel_id}")
+                                raise ValueError("No privileges in channel")
+                            
+                            if not member.privileges.can_post_messages:
+                                logger.warning(f"Bot can't post messages in channel {channel_id}")
+                                raise ValueError("No post permission")
+                            
+                            if not member.privileges.can_send_media_messages:
+                                logger.warning(f"Bot can't send media in channel {channel_id}")
+                                raise ValueError("No media permission")
+                            
+                            # Prepare user info for caption
+                            user = file_info['message'].from_user
+                            full_name = user.first_name
+                            if user.last_name:
+                                full_name += f" {user.last_name}"
+                            username = f"@{user.username}" if user.username else "N/A"
+                            
+                            # Prepare dump channel caption
+                            dump_caption = (
+                                f"<b>📁 File Details</b>\n"
+                                f"├ <b>Name:</b> <code>{html.escape(renamed_file_name)}</code>\n"
+                                f"├ <b>Size:</b> {humanbytes(file_info['size'])}\n"
+                                f"├ <b>User:</b> {full_name} ({username})\n"
+                                f"└ <b>User ID:</b> <code>{user_id}</code>\n"
+                                f"<b>Original Name:</b> <code>{html.escape(file_info['file_name'])}</code>"
+                            )
+                            
+                            # Common parameters for all media types
+                            common_params = {
+                                "chat_id": channel_id,
+                                "caption": dump_caption,
+                                "parse_mode": ParseMode.HTML,
+                                "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None,
+                                "progress": progress_for_pyrogram,
+                                "progress_args": (f"Uploading to dump channel #{queue_position}", queue_message, time.time())
+                            }
+                            
+                            # Send based on file type
+                            try:
                                 if file_info['media_type'] == "document":
                                     await client.send_document(
-                                        chat_id=channel_id,
                                         document=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
-                                        parse_mode=ParseMode.HTML
+                                        **common_params
                                     )
-                                    dump_success = True
                                 elif file_info['media_type'] == "video":
                                     await client.send_video(
-                                        chat_id=channel_id,
                                         video=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
                                         duration=file_info.get('duration', 0),
                                         supports_streaming=True,
-                                        parse_mode=ParseMode.HTML
+                                        **common_params
                                     )
-                                    dump_success = True
                                 elif file_info['media_type'] == "audio":
                                     await client.send_audio(
-                                        chat_id=channel_id,
                                         audio=path,
-                                        caption=dump_caption,
-                                        thumb=common_params['thumb'],
                                         duration=file_info.get('duration', 0),
-                                        parse_mode=ParseMode.HTML
+                                        **common_params
                                     )
+                                
+                                dump_success = True
+                                logger.info(f"Successfully sent file to dump channel {channel_id}")
+                                
+                            except FloodWait as e:
+                                logger.warning(f"Flood wait for {e.value} seconds")
+                                await asyncio.sleep(e.value + 2)
+                                # Retry once after flood wait
+                                try:
+                                    if file_info['media_type'] == "document":
+                                        await client.send_document(
+                                            document=path,
+                                            **common_params
+                                        )
+                                    elif file_info['media_type'] == "video":
+                                        await client.send_video(
+                                            video=path,
+                                            duration=file_info.get('duration', 0),
+                                            supports_streaming=True,
+                                            **common_params
+                                        )
+                                    elif file_info['media_type'] == "audio":
+                                        await client.send_audio(
+                                            audio=path,
+                                            duration=file_info.get('duration', 0),
+                                            **common_params
+                                        )
                                     dump_success = True
-                                    
-                                if dump_success:
-                                    try:
-                                        await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
-                                    except:
-                                        pass
-                except Exception as e:
-                    logger.error(f"Error sending to dump channel: {e}")
-                    dump_success = False
-    
+                                except Exception as retry_error:
+                                    logger.error(f"Retry failed for dump channel: {retry_error}")
+                                    dump_success = False
+                            
+                            except Exception as send_error:
+                                logger.error(f"Error sending to dump channel: {send_error}")
+                                dump_success = False
+                            
+                            if dump_success:
+                                try:
+                                    await queue_message.edit_text(f"✅ File #{queue_position} sent to dump channel!")
+                                except Exception as edit_error:
+                                    logger.warning(f"Couldn't update queue message: {edit_error}")
+                    
+                    except ValueError as ve:
+                        logger.warning(f"Channel verification failed: {ve}")
+                
+                        dump_success = False
+                    
+                    except Exception as channel_error:
+                        logger.error(f"Unexpected error with dump channel: {channel_error}")
+                        dump_success = False
+            
+            except Exception as e:
+                logger.error(f"Error in dump channel processing: {e}")
+                dump_success = False
             # If dump channel not set or failed, send to original chat
             if not dump_success:
                 if file_info['media_type'] == "document":
@@ -1126,13 +1137,6 @@ async def process_single_file(client: Client, file_info: dict, user_data: dict):
             # Update batch tracking if applicable
             if user_file_queues.get(user_id, {}).get('batch_data'):
                 user_file_queues[user_id]['batch_data']["points_used"] += rename_cost
-    
-            # Send success message for single files
-            if not user_file_queues.get(user_id, {}).get('batch_data'):
-                await send_single_success_message(
-                    client, message, file_info['file_name'], renamed_file_name,
-                    start_time, rename_cost, metadata_added
-                )
     
             break  # Success - exit retry loop
     
@@ -1189,15 +1193,6 @@ async def handle_media_group_completion(client: Client, message: Message):
         if not batch_data.get("is_batch"):
             return
 
-        # Send completion message
-        await send_completion_message(
-            client,
-            user_id,
-            batch_data["start_time"],
-            batch_data["count"],
-            batch_data["points_used"]
-        )
-
         # Cleanup
         user_file_queues[user_id]['batch_data'] = None
         if user_id in sequential_operations:
@@ -1205,10 +1200,6 @@ async def handle_media_group_completion(client: Client, message: Message):
 
     except Exception as e:
         logger.error(f"Error in handle_media_group_completion: {e}")
-        try:
-            await client.send_message(user_id, "✅ Batch finished but error showing stats.")
-        except:
-            pass
 
 @Client.on_message(filters.command("cancel"))
 async def cancel_processing(client: Client, message: Message):
@@ -1225,8 +1216,13 @@ async def cancel_processing(client: Client, message: Message):
     if user_id in sequential_operations:
         sequential_operations[user_id]["files"] = []
     
-    await message.reply_text("🛑 Cancel request received. Current operations will be stopped after completing current file.")
-
+    if user_id in user_active_tasks:
+        user_active_tasks[user_id] = 0
+    
+    await message.reply_text(
+        "🛑 Cancel request received. Current operations will be stopped.\n"
+        f"Active downloads cancelled: {user_active_tasks.get(user_id, 0)}"
+    )
 # LEADERBOARD HANDLERS
 @Client.on_message(filters.command(["leaderboard", "top"]))
 async def show_leaderboard(client: Client, message: Message):
@@ -1321,7 +1317,6 @@ async def show_leaderboard(client: Client, message: Message):
         except:
             pass
         await message.reply_text("❌ Failed to load leaderboard. Please try again later.")
-# SCREENSHOT GENERATOR (MAX 4K)
 
 async def generate_screenshots(video_path: str, output_dir: str, count: int = 10) -> List[str]:
     """Generate screenshots at the video's native resolution using ffmpeg."""
@@ -1448,9 +1443,7 @@ async def generate_screenshots_command(client: Client, message: Message):
             {"$inc": {"points.balance": -screenshot_cost}}
         )
 
-        await processing_msg.edit_text(
-            f"✅ {len(screenshot_paths)} full-resolution screenshots sent! (-{screenshot_cost} points)"
-        )
+        await processing_msg.delete()
 
     except Exception as e:
         logger.error(f"Error in screenshot command: {e}")
